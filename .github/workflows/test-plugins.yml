@@ -1,0 +1,47 @@
+name: Test plugins
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  plugin-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+        with:
+          path: plugins
+
+      - name: Check out HaloDaemon
+        uses: actions/checkout@v4
+        with:
+          repository: TimP4w/HaloDaemon
+          path: halodaemon
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: halodaemon/src
+
+      - name: Build halod plugin-test harness
+        run: cargo build -p halod --features plugin-test
+        working-directory: halodaemon/src
+
+      - name: Run halod plugin-test on every package with a test.lua
+        run: |
+          set -euo pipefail
+          status=0
+          for dir in */; do
+            dir="${dir%/}"
+            [ -f "$dir/plugin.yaml" ] || continue
+            [ -f "$dir/test.lua" ] || { echo "$dir: no test.lua — skipping"; continue; }
+            echo "::group::$dir"
+            ../halodaemon/src/target/debug/halod plugin-test "$dir" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+        working-directory: plugins

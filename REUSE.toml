@@ -1,0 +1,10 @@
+version = 1
+SPDX-PackageName = "HaloDaemon-plugins"
+SPDX-PackageSupplier = "Timucin Besken <beskent@gmail.com>"
+SPDX-PackageDownloadLocation = "https://github.com/TimP4w/HaloDaemon-plugins"
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Timucin Besken <beskent@gmail.com>"
+SPDX-License-Identifier = "GPL-3.0-or-later"

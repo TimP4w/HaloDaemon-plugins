@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: tomasf <https://github.com/tomasf/evnia>
+#
+id: philips_evnia
+name: Philips Evnia 49
+author: HaloDaemon
+version: 1.0.0
+license: GPL-3.0-or-later
+description: Philips Evnia 49M2C8900 — DDC/CI picture/OSD controls + Ambiglow RGB.
+devices:
+- vendor: Philips
+  model: 49M2C8900
+  name: Philips Evnia 49
+  device_type: monitor
+  transport: usb_control
+  vid: 0x2109
+  pid: 0x8884
+  pre_scan: false
+  probe: quick
+transports:
+  usb_control:
+    interface: 0
+    endpoints:
+    - id: ambiglow
+      vid: 3314
+      pid: 45569
+      interface: 0

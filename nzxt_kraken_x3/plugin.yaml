@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: liquidctl contributors <https://github.com/liquidctl/liquidctl>
+#
+id: nzxt_kraken_x3
+name: NZXT Kraken X53/X63/X73
+author: HaloDaemon
+version: 1.0.0
+license: GPL-3.0-or-later
+description: 'NZXT Kraken X-series: ring + logo RGB (no LCD, no software pump/fan control).'
+devices:
+- vendor: NZXT
+  model: Kraken X
+  name: Kraken X53/X63/X73
+  device_type: a_i_o
+  transport: hid
+  vid: 0x1E71
+  pid: 0x2007
+  pre_scan: false
+  probe: quick
+- vendor: NZXT
+  model: Kraken X
+  name: Kraken X53/X63/X73
+  device_type: a_i_o
+  transport: hid
+  vid: 0x1E71
+  pid: 0x2014
+  pre_scan: false
+  probe: quick
+transports:
+  hid:
+    report_size: 64
+    timeout_ms: 1000
+    feature_report: false

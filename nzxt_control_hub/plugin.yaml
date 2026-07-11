@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: Aleksandr Mezin <mezin.alexander@gmail.com>
+#
+id: nzxt_control_hub
+name: NZXT RGB & Fan Controller
+author: HaloDaemon
+version: 1.0.0
+license: GPL-3.0-or-later
+description: 'NZXT Control Hub: 5-channel RGB + fan hub with chained accessories.'
+devices:
+- vendor: NZXT
+  model: Control Hub
+  device_type: hub
+  transport: hid
+  vid: 0x1E71
+  pid: 0x2022
+  pre_scan: false
+  probe: quick
+transports:
+  hid:
+    report_size: 64
+    timeout_ms: 1000
+    feature_report: false
