@@ -4,56 +4,57 @@
 id: nzxt_kraken
 name: NZXT Kraken Z/Elite
 author: HaloDaemon
-version: 1.0.0
+version: 1.0.1
 license: GPL-3.0-or-later
-description: 'NZXT Kraken Z/Elite family: RGB, pump fan, liquid-temp sensor, accessory fan child, and
-  LCD.'
+description:
+  "NZXT Kraken Z/Elite family: RGB, pump fan, liquid-temp sensor, accessory fan child, and
+  LCD."
 devices:
-- vendor: NZXT
-  model: Kraken
-  name: Kraken Z53/63/73
-  device_type: a_i_o
-  transport: hid
-  vid: 0x1E71
-  pid: 0x3008
-  pre_scan: false
-  probe: quick
-- vendor: NZXT
-  model: Kraken
-  name: Kraken Elite 2023
-  device_type: a_i_o
-  transport: hid
-  vid: 0x1E71
-  pid: 0x300C
-  pre_scan: false
-  probe: quick
-- vendor: NZXT
-  model: Kraken
-  name: Kraken 2023
-  device_type: a_i_o
-  transport: hid
-  vid: 0x1E71
-  pid: 0x300E
-  pre_scan: false
-  probe: quick
-- vendor: NZXT
-  model: Kraken
-  name: Kraken Elite V2
-  device_type: a_i_o
-  transport: hid
-  vid: 0x1E71
-  pid: 0x3012
-  pre_scan: false
-  probe: quick
-- vendor: NZXT
-  model: Kraken
-  name: Kraken Plus 2024
-  device_type: a_i_o
-  transport: hid
-  vid: 0x1E71
-  pid: 0x3014
-  pre_scan: false
-  probe: quick
+  - vendor: NZXT
+    model: Kraken
+    name: Kraken Z53/63/73
+    device_type: a_i_o
+    transport: hid
+    vid: 0x1E71
+    pid: 0x3008
+    pre_scan: false
+    probe: quick
+  - vendor: NZXT
+    model: Kraken
+    name: Kraken Elite 2023
+    device_type: a_i_o
+    transport: hid
+    vid: 0x1E71
+    pid: 0x300C
+    pre_scan: false
+    probe: quick
+  - vendor: NZXT
+    model: Kraken
+    name: Kraken 2023
+    device_type: a_i_o
+    transport: hid
+    vid: 0x1E71
+    pid: 0x300E
+    pre_scan: false
+    probe: quick
+  - vendor: NZXT
+    model: Kraken
+    name: Kraken Elite V2
+    device_type: a_i_o
+    transport: hid
+    vid: 0x1E71
+    pid: 0x3012
+    pre_scan: false
+    probe: quick
+  - vendor: NZXT
+    model: Kraken
+    name: Kraken Plus 2024
+    device_type: a_i_o
+    transport: hid
+    vid: 0x1E71
+    pid: 0x3014
+    pre_scan: false
+    probe: quick
 transports:
   hid:
     report_size: 64

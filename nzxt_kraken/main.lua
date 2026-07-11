@@ -390,7 +390,8 @@ return {
     local size = LCD_SIZES[dev.match.pid] or { 320, 320 }
     lcd_w, lcd_h = size[1], size[2]
     local brightness, rotation = read_lcd_state(dev)
-    log("NZXT Kraken initialized")
+    log("NZXT Kraken initialized with LCD %dx%d, brightness %d%%, rotation %d°",
+      lcd_w, lcd_h, brightness, rotation)
     return {
       ok = true,
       lcd = {
