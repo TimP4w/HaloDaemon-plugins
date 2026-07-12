@@ -23,6 +23,8 @@ same consent/permission flow as a community-repo plugin: nothing is auto-granted
 | Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](docs/protocols/corsair-dram.md) |
 | Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
 | OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
+| ASUS | Aura USB controllers | 0b05:1866, 1867, 1872, 18a3, 18a5, 18f3, 1939, 19af, 1a30, 1a6c, 1aa6, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/)  | [ASUS Aura USB](protocols/asus-aura-usb.md)
+
 
 Plus [`halo_effects`](halo_effects/) — the stock library of pixmap/direct RGB effects and the
 reference implementation of the effect-plugin API (not tied to any device).
