@@ -19,6 +19,7 @@ same consent/permission flow as a community-repo plugin: nothing is auto-granted
 | NZXT | Kraken X53, X63, X73 | 1e71:2007, 2014 | [`nzxt_kraken_x3`](nzxt_kraken_x3/) | [NZXT](docs/protocols/nzxt.md) |
 | NZXT | Control Hub (+ chained F-series fans) | 1e71:2022 | [`nzxt_control_hub`](nzxt_control_hub/) | [NZXT](docs/protocols/nzxt.md) |
 | ASUS/ENE | SMBus RGB (DRAM, GPU) | — | [`ene_smbus`](ene_smbus/) | [ENE SMBus](docs/protocols/ene-smbus.md) |
+| ASUS | Aura USB motherboard RGB (on-board zones + ARGB headers) | 0b05:1aa6, 18a3, 1866, 18a5, 18f3, 1867, 1872, 1939, 19af, 1a30, 1a6c, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/) | [Aura USB (OpenRGB)](https://gitlab.com/CalcProgrammer1/OpenRGB) |
 | Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](docs/protocols/corsair-dram.md) |
 | Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
 | OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
@@ -34,8 +35,8 @@ Every package with a `test.lua` is run in CI, without hardware, via `halod
 plugin-test <package-dir>` (see
 [.github/workflows/test-plugins.yml](.github/workflows/test-plugins.yml)).
 Covered today: [`nzxt_kraken`](nzxt_kraken/), [`nzxt_kraken_x3`](nzxt_kraken_x3/),
-[`nzxt_control_hub`](nzxt_control_hub/) — the harness currently only drives
-`hid`/`tcp`-transport device plugins; see
+[`nzxt_control_hub`](nzxt_control_hub/), [`asus_aura_usb`](asus_aura_usb/) — the
+harness currently only drives `hid`/`tcp`-transport device plugins; see
 [docs/plugins.md](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#testing-a-package-without-hardware)
 in the main repo for the harness API.
 

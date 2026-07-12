@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# SPDX-FileCopyrightText: Martin Hartl (inlart) and OpenRGB contributors <https://gitlab.com/CalcProgrammer1/OpenRGB>
+#
+id: asus_aura_usb
+name: ASUS Aura USB
+author: HaloDaemon
+version: 1.0.0
+license: GPL-2.0-or-later
+description: ASUS Aura USB motherboard RGB — per-LED direct control of the on-board zones and ARGB headers, plus the on-board native effects.
+devices:
+- vendor: ASUS
+  model: ASUS Aura Motherboard
+  name: ASUS Aura
+  device_type: motherboard
+  transport: hid
+  vid: 0x0B05
+  pids:
+  - 0x1AA6
+  - 0x18A3
+  - 0x1866
+  - 0x18A5
+  - 0x18F3
+  - 0x1867
+  - 0x1872
+  - 0x1939
+  - 0x19AF
+  - 0x1A30
+  - 0x1A6C
+  - 0x1B3B
+  - 0x1BED
+  pre_scan: false
+  probe: quick
+# Raw 65-byte HID reports starting with 0xEC (no report-id prefix), matching
+# OpenRGB / the legacy driver — report_size = 0 is raw passthrough, so main.lua
+# builds the exact wire buffer itself.
+transports:
+  hid:
+    report_size: 0
+    timeout_ms: 1000
