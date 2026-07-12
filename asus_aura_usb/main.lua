@@ -49,8 +49,17 @@ local NAMED_ZONES = {
 
 -- Per-device runtime state, populated by initialize(). Each device has its own
 -- Lua VM, so a single module-level table is safe.
-local st = { zones = {} }
--- st.zones: array of { id, name, led_count, direct_channel, effect_channel|nil }
+local st = {
+  -- Fixed on-board zones (the mainboard LEDs and any board-specific named zone
+  -- like the ROG logo): { id, name, led_count, direct_channel }.
+  zones = {},
+  -- Chainable ARGB headers: { id, name, direct_channel }. The user attaches
+  -- strips of their own length; the host composes and calls write_ext_frame.
+  channels = {},
+  -- Effect (hardware) channels for the native effects — every ARGB header,
+  -- 1..argb_count. The on-board mainboard channel (0) is not an effect channel.
+  effect_channels = {},
+}
 
 -- ── Wire helpers ─────────────────────────────────────────────────────────────
 
@@ -153,9 +162,9 @@ local function send_effect(dev, effect_channel, mode, color)
   dev.transport:write(b)
 end
 
-local function zone_by_id(id)
-  for _, z in ipairs(st.zones) do
-    if z.id == id then return z end
+local function direct_channel_for(list, id)
+  for _, e in ipairs(list) do
+    if e.id == id then return e.direct_channel end
   end
   return nil
 end
@@ -164,7 +173,7 @@ end
 
 return {
   rgb = {
-    zones = {}, -- reported dynamically by initialize()
+    zones = {}, -- fixed on-board zones, reported dynamically by initialize()
     native_effects = {
       { id = "off", name = "Off", params = {} },
       { id = "breathing", name = "Breathing", params = {
@@ -174,6 +183,10 @@ return {
       { id = "rainbow_wave", name = "Rainbow Wave", params = {} },
     },
   },
+
+  -- Chain capability marker: the ARGB headers (channels) are reported
+  -- dynamically by initialize() once the config table is read.
+  chain = { channels = {} },
 
   initialize = function(dev)
     stop_gen2(dev)
@@ -214,10 +227,16 @@ return {
 
     local pid = dev.match and dev.match.pid
 
-    -- Build the zone list: fixed on-board zone first (when present), then one
-    -- zone per ARGB header.
+    -- Split the channels: the on-board mainboard LEDs and any board-specific
+    -- named header (e.g. the ROG logo) are fixed RGB zones; every other ARGB
+    -- header is a chainable channel the user attaches a strip to. Every ARGB
+    -- header (0..argb_count-1) is also a native-effect channel (effect_channel = i+1).
     st.zones = {}
+    st.channels = {}
+    st.effect_channels = {}
     local zones_out = {}
+    local chain_out = {}
+
     if mb_leds > 0 then
       st.zones[#st.zones + 1] =
         { id = "motherboard", name = "Motherboard", led_count = mb_leds, direct_channel = MB_DIRECT_CHANNEL }
@@ -227,19 +246,30 @@ return {
 
     local named = NAMED_ZONES[pid] or {}
     for i = 0, argb_count - 1 do
+      st.effect_channels[#st.effect_channels + 1] = i + 1
       local nm = named[i]
-      local id = nm and nm.id or ("argb_" .. i)
-      local name = nm and nm.name or ("ARGB Header " .. (i + 1))
-      st.zones[#st.zones + 1] =
-        { id = id, name = name, led_count = led_counts[i + 1], direct_channel = i, effect_channel = i + 1 }
-      zones_out[#zones_out + 1] =
-        { id = id, name = name, topology = "linear", led_count = led_counts[i + 1] }
+      if nm then
+        -- A board-specific fixed header (e.g. logo): a plain RGB zone.
+        st.zones[#st.zones + 1] =
+          { id = nm.id, name = nm.name, led_count = led_counts[i + 1], direct_channel = i }
+        zones_out[#zones_out + 1] =
+          { id = nm.id, name = nm.name, topology = "linear", led_count = led_counts[i + 1] }
+      else
+        -- A generic ARGB header: a chain channel. `max_leds` is the header's
+        -- capacity; the user composes strips up to it.
+        local id = "argb_" .. i
+        st.channels[#st.channels + 1] = { id = id, name = "ARGB Header " .. (i + 1), direct_channel = i }
+        chain_out[#chain_out + 1] =
+          { id = id, name = "ARGB Header " .. (i + 1), max_leds = led_counts[i + 1] }
+      end
     end
 
-    return { ok = true, model = MODELS[pid], zones = zones_out }
+    return { ok = true, model = MODELS[pid], zones = zones_out, chain = chain_out }
   end,
 
-  -- User-driven mode change.
+  -- User-driven mode change. Static/per-led touch only the fixed on-board zones;
+  -- the chainable ARGB headers are driven by the host's chain composition via
+  -- write_ext_frame. Native effects run on the hardware for every ARGB header.
   apply = function(dev, state)
     local mode = state.mode
     if mode == "static" then
@@ -264,16 +294,23 @@ return {
       local m = MODES[state.id]
       if not m then error("Aura: unknown effect " .. tostring(state.id)) end
       local color = (state.params and state.params.color) or { r = 255, g = 255, b = 255 }
-      for _, z in ipairs(st.zones) do
-        if z.effect_channel then send_effect(dev, z.effect_channel, m, color) end
+      for _, ec in ipairs(st.effect_channels) do
+        send_effect(dev, ec, m, color)
       end
     end
-    -- "engine" / "direct_effect": handled per-frame via write_frame.
+    -- "engine" / "direct_effect": handled per-frame via write_frame / write_ext_frame.
   end,
 
-  -- Canvas-engine per-frame path.
+  -- Canvas-engine per-frame path for the fixed on-board zones.
   write_frame = function(dev, zone_id, colors)
-    local z = zone_by_id(zone_id)
-    if z then send_direct(dev, z.direct_channel, colors) end
+    local dc = direct_channel_for(st.zones, zone_id)
+    if dc then send_direct(dev, dc, colors) end
+  end,
+
+  -- Composed per-frame path for a chainable ARGB header (the host has already
+  -- merged every strip the user attached to this channel).
+  write_ext_frame = function(dev, channel_id, colors)
+    local dc = direct_channel_for(st.channels, channel_id)
+    if dc then send_direct(dev, dc, colors) end
   end,
 }

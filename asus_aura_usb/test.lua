@@ -37,25 +37,33 @@ return function(h)
   h:assert_eq(w[6].data[3], 2, "last set-direct is ARGB effect channel 2")
   dev:clear()
 
-  -- Static: on-board zone (3 LEDs, direct channel 4) then argb_0 (10, ch0) and
-  -- argb_1 (8, ch1) — one direct packet each, apply bit (0x80) set.
+  -- With no board-specific named header (the test device has no pid), the two
+  -- ARGB headers are chain channels; only the fixed on-board zone (3 LEDs, direct
+  -- channel 4) is touched by a static apply.
   dev:apply({ mode = "static", color = { r = 1, g = 2, b = 3 } })
   local sw = dev:writes()
-  h:assert_eq(#sw, 3, "static → one direct packet per zone")
+  h:assert_eq(#sw, 1, "static → only the fixed on-board zone (headers are chained)")
   h:assert_eq(sw[1].data[2], 0x40, "CMD_DIRECT")
   h:assert_eq(sw[1].data[3], 0x84, "on-board channel 4 + apply bit")
   h:assert_eq(sw[1].data[5], 3, "on-board LED count")
   h:assert_eq(sw[1].data[6], 1, "led0 R")
   h:assert_eq(sw[1].data[7], 2, "led0 G")
   h:assert_eq(sw[1].data[8], 3, "led0 B")
-  h:assert_eq(sw[2].data[3], 0x80, "argb_0 channel 0 + apply bit")
-  h:assert_eq(sw[2].data[5], 10, "argb_0 LED count")
-  h:assert_eq(sw[3].data[3], 0x81, "argb_1 channel 1 + apply bit")
-  h:assert_eq(sw[3].data[5], 8, "argb_1 LED count")
   dev:clear()
 
-  -- Native effect: only the two ARGB effect channels (the on-board zone has no
-  -- effect channel).
+  -- Chain: a composed frame for header argb_0 routes to direct channel 0.
+  dev:write_ext_frame("argb_1", { { r = 4, g = 5, b = 6 }, { r = 7, g = 8, b = 9 } })
+  local cw = dev:writes()
+  h:assert_eq(#cw, 1, "write_ext_frame → one direct packet")
+  h:assert_eq(cw[1].data[2], 0x40, "CMD_DIRECT")
+  h:assert_eq(cw[1].data[3], 0x81, "argb_1 → direct channel 1 + apply bit")
+  h:assert_eq(cw[1].data[5], 2, "two composed LEDs")
+  h:assert_eq(cw[1].data[6], 4, "led0 R")
+  h:assert_eq(cw[1].data[11], 9, "led1 B")
+  dev:clear()
+
+  -- Native effect: both ARGB effect channels (the on-board zone has no effect
+  -- channel).
   dev:apply({ mode = "native_effect", id = "breathing", params = { color = { r = 9, g = 8, b = 7 } } })
   local ew = dev:writes()
   h:assert_eq(#ew, 2, "breathing → one 0x3B packet per ARGB effect channel")
