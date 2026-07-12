@@ -5,12 +5,13 @@ id: openrgb
 type: integration
 name: OpenRGB
 author: HaloDaemon
-version: 1.0.0
+version: 1.0.1
 license: GPL-3.0-or-later
 description: Connects to an OpenRGB server and exposes its controllers as devices.
 permissions:
-- network
-- os
+  - network
+  - os
+  - secure_storage
 transports:
   tcp:
     host_key: host
