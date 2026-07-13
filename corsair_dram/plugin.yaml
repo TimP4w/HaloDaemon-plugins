@@ -8,6 +8,8 @@ author: HaloDaemon
 version: 1.0.0
 license: GPL-2.0-or-later
 description: Corsair iCUE DRAM RGB (Vengeance / Dominator, DDR4 & DDR5).
+permissions:
+  - smbus
 devices:
 - vendor: Corsair
   model: iCUE DRAM

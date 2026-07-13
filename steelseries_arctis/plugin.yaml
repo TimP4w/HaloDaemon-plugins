@@ -10,6 +10,8 @@ description:
   "SteelSeries Arctis Nova Pro Wireless / Wireless X base station: battery, mic
   controls, noise-cancelling, wireless/base-station settings, and a 10-band
   equalizer."
+permissions:
+  - audio_routing
 devices:
   - vendor: SteelSeries
     model: Arctis Nova Pro Wireless
