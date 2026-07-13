@@ -10,22 +10,14 @@
 -- routed back to it via `write_controller_frame`/`apply_controller` with the
 -- controller's enumeration `index`. Keeping a single connection avoids the
 -- connect-storm that crashes the server when a client opens one socket per
--- controller, and lets one reader safely consume ACKs.
+-- controller, and keeps all protocol reads serialized on one connection.
 --
 -- Protocol: OpenRGB's published network wire format (see its
 -- RGBController::GetDeviceDescriptionData/GetModeDescriptionData/
 -- GetZoneDescriptionData and NetworkServer.cpp). This client speaks protocol
--- version 6, chosen for its per-packet ACK: the server ACKs a queued
--- `UpdateZoneLEDs` only once the controller's own worker thread has actually
--- applied the frame to hardware. Blocking on that ACK before returning turns
--- each write into a real completion, so a controller can never outrun its
--- device — no unbounded server-side backlog, no lag, and sibling controllers
--- (e.g. the sticks of a DRAM kit) stay in phase instead of drifting.
---
--- Version 6 also changes the wire in ways this parser must honour: controllers
--- are addressed by an opaque *id* (from the controller-count reply) rather than
--- their index; mode/LED descriptions drop their `value` field; and zone
--- descriptions gain segments, flags and nested zone-modes.
+-- protocol version 3, deliberately negotiated for compatibility with
+-- released OpenRGB servers. Its replies use controller indices and do not
+-- carry per-request ACK packets.
 --
 -- Scope: enumerate controllers/zones and drive them via Direct/custom mode
 -- (`SetCustomMode` + `UpdateZoneLEDs`). Mode switching, profiles and
@@ -33,18 +25,17 @@
 
 local PKT_REQUEST_CONTROLLER_COUNT = 0
 local PKT_REQUEST_CONTROLLER_DATA = 1
-local PKT_ACK = 10
 local PKT_REQUEST_PROTOCOL_VERSION = 40
 local PKT_SET_CLIENT_NAME = 50
 local PKT_RGBCONTROLLER_UPDATEZONELEDS = 1051
 local PKT_RGBCONTROLLER_SETCUSTOMMODE = 1100
 
--- Protocol version this client negotiates. ACKs (and the id-based addressing +
--- v6 description layout this file parses) exist only at >= 6.
-local CLIENT_PROTOCOL_VERSION = 6
+-- Version 3 is supported by released OpenRGB servers and has a stable schema.
+-- Version 6 is still unreleased on many installations; requesting it and then
+-- waiting for its ACK semantics makes a successful connection time out on
+-- older servers after they have already accepted SET_CLIENT_NAME.
+local CLIENT_PROTOCOL_VERSION = 3
 
--- Enumeration index → opaque server controller id (v6 addresses writes by id).
-local controller_ids = {}
 -- Enumeration index → its zones ({ id = <zone index string>, led_count = n }),
 -- cached at enumeration so apply/per-LED can size each zone without a live
 -- descriptor. One shared VM serves every controller, hence the index keying.
@@ -71,24 +62,13 @@ local function recv_header(dev)
   return string.unpack("<I4I4I4", dev.transport:read(12))
 end
 
--- Read server messages until (and including) the trailing ACK, returning the
--- payload of the first message whose id is `want_id` (nil if none/omitted). At
--- v6 the server ACKs almost every request after any reply it sends, and a
--- queued LED write is ACKed by the controller's worker thread once the frame is
--- applied — so draining to the ACK is exactly the backpressure point. Any
--- unrelated broadcast that arrives in between is read and discarded.
-local function recv_until_ack(dev, want_id)
-  local captured
-  while true do
-    local _, pkt_id, size = recv_header(dev)
-    local payload = (size > 0) and dev.transport:read(size) or ""
-    if want_id and pkt_id == want_id and not captured then
-      captured = payload
-    end
-    if pkt_id == PKT_ACK then
-      return captured
-    end
+-- Read the one reply packet expected for a protocol-v3 request.
+local function recv_payload(dev, want_id)
+  local _, pkt_id, size = recv_header(dev)
+  if pkt_id ~= want_id then
+    error("openrgb: unexpected reply " .. pkt_id .. ", wanted " .. want_id)
   end
+  return (size > 0) and dev.transport:read(size) or ""
 end
 
 -- Several client->server payloads repeat their own byte length as a leading
@@ -117,12 +97,12 @@ local function read_str(data, pos)
   return data:sub(p, p + len - 1), p + len
 end
 
--- Skip one ModeDescription at protocol v6: name, then 11 u32 fields (the v3
--- `value` is dropped at >= 6; brightness_min/max/brightness stay), then a
+-- Skip one ModeDescription at protocol v3: name, then 12 u32 fields (`value`
+-- is present below v6; brightness_min/max/brightness are present at v3), then a
 -- length-prefixed colour array.
 local function skip_mode(data, pos)
   local _, p = read_str(data, pos)
-  p = p + 4 * 11
+  p = p + 4 * 12
   local num_colors
   num_colors, p = read_u16(data, p)
   return p + num_colors * 4
@@ -136,19 +116,7 @@ local function skip_matrix(data, pos)
   return pos + size
 end
 
--- Skip one SegmentDescription at v6: name, type, start_idx, leds_count, then a
--- per-segment matrix block and flags (both v6 additions).
-local function skip_segment(data, pos)
-  local _, p = read_str(data, pos)
-  p = p + 4 -- type
-  p = p + 4 -- start_idx
-  p = p + 4 -- leds_count
-  p = skip_matrix(data, p)
-  p = p + 4 -- flags
-  return p
-end
-
--- Read one ZoneDescription at v6. `id` is the zone's 0-based ordinal as a string
+-- Read one ZoneDescription at v3. `id` is the zone's 0-based ordinal as a string
 -- (what `UpdateZoneLEDs` addresses); everything past `leds_count` is walked only
 -- to advance `pos` to the next zone.
 local function read_zone(data, pos, zero_based_index)
@@ -159,23 +127,6 @@ local function read_zone(data, pos, zero_based_index)
   local leds_count
   leds_count, p = read_u32(data, p)
   p = skip_matrix(data, p) -- zone matrix (unconditional)
-
-  local num_segments
-  num_segments, p = read_u16(data, p) -- segments (>= 4)
-  for _ = 1, num_segments do
-    p = skip_segment(data, p)
-  end
-
-  p = p + 4 -- zone flags (>= 5)
-
-  local num_modes
-  num_modes, p = read_u16(data, p) -- zone modes (>= 6)
-  p = p + 4 -- zone active_mode
-  for _ = 1, num_modes do
-    p = skip_mode(data, p)
-  end
-  local _display_name
-  _display_name, p = read_str(data, p)
 
   local zone = {
     id = tostring(zero_based_index),
@@ -194,27 +145,19 @@ local function pack_colors(colors)
   return table.concat(parts)
 end
 
-local function controller_id(index)
-  return controller_ids[index] or index
-end
-
 -- Put the controller into Direct/Custom mode exactly once per connection, so
--- per-LED writes land on writable LEDs. Inline-processed, but still ACKed at v6.
+-- per-LED writes land on writable LEDs.
 local function ensure_custom_mode(dev, index)
   if not custom_mode_sent[index] then
-    send_packet(dev, controller_id(index), PKT_RGBCONTROLLER_SETCUSTOMMODE)
-    recv_until_ack(dev)
+    send_packet(dev, index, PKT_RGBCONTROLLER_SETCUSTOMMODE)
     custom_mode_sent[index] = true
   end
 end
 
--- Push one zone's contiguous colour array and block until the server ACKs that
--- the frame was applied — the backpressure that keeps us from outrunning the
--- device (and its siblings in phase).
+-- Push one zone's contiguous colour array.
 local function send_zone(dev, index, zone_idx, colors)
   local rest = string.pack("<I4", zone_idx) .. string.pack("<I2", #colors) .. pack_colors(colors)
-  send_packet(dev, controller_id(index), PKT_RGBCONTROLLER_UPDATEZONELEDS, with_data_size(rest))
-  recv_until_ack(dev)
+  send_packet(dev, index, PKT_RGBCONTROLLER_UPDATEZONELEDS, with_data_size(rest))
 end
 
 return {
@@ -226,32 +169,27 @@ return {
   },
 
   initialize = function(dev)
-    -- One handshake on the single shared connection. SET_CLIENT_NAME is sent
-    -- before the version is negotiated, so it is not yet ACKed; the version
-    -- request negotiates v6 and its ACK (plus the version/server-string
-    -- replies) is drained here.
+    -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
+    -- one REQUEST_PROTOCOL_VERSION response on released servers.
     send_packet(dev, 0, PKT_SET_CLIENT_NAME, "HaloDaemon\0")
     send_packet(dev, 0, PKT_REQUEST_PROTOCOL_VERSION, string.pack("<I4", CLIENT_PROTOCOL_VERSION))
-    recv_until_ack(dev)
+    local version = read_u32(recv_payload(dev, PKT_REQUEST_PROTOCOL_VERSION), 1)
+    if version < CLIENT_PROTOCOL_VERSION then
+      error("openrgb: server protocol " .. version .. " is older than required version " .. CLIENT_PROTOCOL_VERSION)
+    end
     return true
   end,
 
   enumerate_controllers = function(dev)
     send_packet(dev, 0, PKT_REQUEST_CONTROLLER_COUNT)
-    local cpayload = recv_until_ack(dev, PKT_REQUEST_CONTROLLER_COUNT)
-    local count, cp = read_u32(cpayload, 1)
-    -- v6: the count is followed by `count` controller ids, in enumeration order.
-    controller_ids = {}
-    for index = 0, count - 1 do
-      controller_ids[index], cp = read_u32(cpayload, cp)
-    end
+    local count = read_u32(recv_payload(dev, PKT_REQUEST_CONTROLLER_COUNT), 1)
 
     controller_zones = {}
     custom_mode_sent = {}
     local controllers = {}
     for index = 0, count - 1 do
-      send_packet(dev, controller_id(index), PKT_REQUEST_CONTROLLER_DATA)
-      local data = recv_until_ack(dev, PKT_REQUEST_CONTROLLER_DATA)
+      send_packet(dev, index, PKT_REQUEST_CONTROLLER_DATA, string.pack("<I4", CLIENT_PROTOCOL_VERSION))
+      local data = recv_payload(dev, PKT_REQUEST_CONTROLLER_DATA)
 
       -- Leading duplicate reply_size (u32), then DeviceDescription.
       local pos = 5
@@ -282,7 +220,7 @@ return {
       for z = 1, num_zones do
         zones[z], pos = read_zone(data, pos, z - 1)
       end
-      -- LEDs/colours and the v6 trailing fields follow but aren't needed; the
+      -- LEDs/colours follow but aren't needed; the
       -- whole message was already consumed via the packet size.
 
       controller_zones[index] = zones
