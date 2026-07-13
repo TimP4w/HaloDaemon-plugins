@@ -129,8 +129,8 @@ Color[num_colors]            -- present on the wire, not parsed (see below)
 
 A `String` is `uint16 length` followed by exactly `length` bytes. OpenRGB
 always writes a trailing `'\0'` and counts it in `length` (`strlen(...) + 1`,
-`strcpy` on the server side) — this client doesn't care either way, since it
-reads exactly `length` bytes regardless of what's inside them.
+`strcpy` on the server side). The client removes that terminator before it
+uses or returns the string.
 
 `data_size`'s value is a straight duplicate of the packet header's
 `message_size` field (`NetworkServer::SendReply_ControllerData` writes the
@@ -233,8 +233,9 @@ math beyond "write the bytes in this order."
 
 ## Fields deliberately not parsed
 
-- `description`/`version`/`serial`/`location` strings — read (to advance the
-  parse position correctly) but discarded.
+- `description`/`version` strings — read only to advance the parse position.
+- `serial`/`location` strings — returned with each controller so HaloDaemon
+  can detect another driver controlling the same local hardware.
 - LEDs and colors sections of `DeviceDescription` — see above.
 - Everything mode-related beyond skipping past it: no mode listing, no mode
   switching via `UPDATEMODE`, no `SAVEMODE`.
@@ -243,12 +244,5 @@ math beyond "write the bytes in this order."
 
 ## Testing
 
-[`drivers/plugins/openrgb_test.rs`](../../src/daemon/src/drivers/plugins/openrgb_test.rs)
-drives the real plugin through the real worker + TCP transport against an
-in-process fake OpenRGB server built from this same spec, asserting both
-directions of the wire format byte-for-byte (including a real `vendor` field
-and a full `ModeDescription` entry, not an empty/degenerate reply — a
-previous version of this test used `num_modes = 0` and missed the `vendor`
-field, which meant it never actually exercised the mode-skipping code path
-and passed despite the client misparsing every real OpenRGB server; see the
-`controller_data_payload` doc comment).
+[`openrgb/test.lua`](../../openrgb/test.lua) drives the real plugin through
+HaloDaemon's `plugin-test` integration harness with scripted protocol replies.

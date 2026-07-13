@@ -94,7 +94,11 @@ local function read_str(data, pos)
   if len == 0 then
     return "", p
   end
-  return data:sub(p, p + len - 1), p + len
+  local value = data:sub(p, p + len - 1)
+  if value:sub(-1) == "\0" then
+    value = value:sub(1, -2)
+  end
+  return value, p + len
 end
 
 -- Skip one ModeDescription at protocol v3: name, then 12 u32 fields (`value`
@@ -227,6 +231,8 @@ return {
       controllers[#controllers + 1] = {
         index = index,
         name = (name ~= "" and name) or ("Controller " .. index),
+        serial = (_serial ~= "" and _serial) or nil,
+        location = (_location ~= "" and _location) or nil,
         zones = zones,
       }
     end

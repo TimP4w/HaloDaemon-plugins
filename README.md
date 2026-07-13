@@ -5,9 +5,10 @@ seeds a non-removable record for this repository and clones it at startup; a net
 first launch is logged and never blocks boot — the daemon simply has no official plugins until a
 later successful clone.
 
-Every plugin here is a normal directory package (`plugin.yaml` + `main.lua`, see
-[docs/plugins.md](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md) in the main
-repo for the package format and the Lua plugin API) — this repo carries **no special trust**
+Every plugin here is a normal directory package (`plugin.yaml` + `main.lua`; see the local
+[manifest reference](docs/manifest-reference.md) and [Lua API reference](docs/lua-api.md), or
+the [daemon's plugin guide](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md)) —
+this repo carries **no special trust**
 beyond being pre-registered. Installing, enabling, and updating any plugin here goes through the
 same consent/permission flow as a community-repo plugin: nothing is auto-granted.
 
@@ -24,9 +25,6 @@ same consent/permission flow as a community-repo plugin: nothing is auto-granted
 | Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
 | SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](docs/protocols/steelseries-arctis.md) |
 | OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
-| ASUS | Aura USB controllers | 0b05:1866, 1867, 1872, 18a3, 18a5, 18f3, 1939, 19af, 1a30, 1a6c, 1aa6, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/)  | [ASUS Aura USB](protocols/asus-aura-usb.md)
-
-
 Plus [`halo_effects`](halo_effects/) — the stock library of pixmap/direct RGB effects and the
 reference implementation of the effect-plugin API (not tied to any device).
 
@@ -39,10 +37,9 @@ plugin-test <package-dir>` (see
 [.github/workflows/test-plugins.yml](.github/workflows/test-plugins.yml)).
 Covered today: [`nzxt_kraken`](nzxt_kraken/), [`nzxt_kraken_x3`](nzxt_kraken_x3/),
 [`nzxt_control_hub`](nzxt_control_hub/), [`asus_aura_usb`](asus_aura_usb/),
-[`steelseries_arctis`](steelseries_arctis/) — the
+[`steelseries_arctis`](steelseries_arctis/), and [`openrgb`](openrgb/) — the
 harness currently only drives `hid`/`tcp`-transport device plugins; see
-[docs/plugins.md](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#testing-a-package-without-hardware)
-in the main repo for the harness API.
+the [test harness section](docs/lua-api.md#testlua-harness) for its API and limitations.
 
 ## Licensing
 

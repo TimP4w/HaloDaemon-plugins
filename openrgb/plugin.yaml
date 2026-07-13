@@ -10,7 +10,6 @@ license: GPL-3.0-or-later
 description: Connects to an OpenRGB server and exposes its controllers as devices.
 permissions:
   - network
-  - os
 transports:
   tcp:
     host_key: host
