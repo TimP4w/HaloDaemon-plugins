@@ -16,3 +16,4 @@ transports:
     host_key: host
     port_key: port
     timeout_ms: 5000
+    allow_private: true
