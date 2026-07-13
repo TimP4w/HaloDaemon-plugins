@@ -22,6 +22,7 @@ same consent/permission flow as a community-repo plugin: nothing is auto-granted
 | ASUS | Aura USB motherboard RGB (on-board zones + ARGB headers) | 0b05:1aa6, 18a3, 1866, 18a5, 18f3, 1867, 1872, 1939, 19af, 1a30, 1a6c, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/) | [Aura USB (OpenRGB)](https://gitlab.com/CalcProgrammer1/OpenRGB) |
 | Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](docs/protocols/corsair-dram.md) |
 | Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
+| SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](docs/protocols/steelseries-arctis.md) |
 | OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
 | ASUS | Aura USB controllers | 0b05:1866, 1867, 1872, 18a3, 18a5, 18f3, 1939, 19af, 1a30, 1a6c, 1aa6, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/)  | [ASUS Aura USB](protocols/asus-aura-usb.md)
 
@@ -37,7 +38,8 @@ Every package with a `test.lua` is run in CI, without hardware, via `halod
 plugin-test <package-dir>` (see
 [.github/workflows/test-plugins.yml](.github/workflows/test-plugins.yml)).
 Covered today: [`nzxt_kraken`](nzxt_kraken/), [`nzxt_kraken_x3`](nzxt_kraken_x3/),
-[`nzxt_control_hub`](nzxt_control_hub/), [`asus_aura_usb`](asus_aura_usb/) — the
+[`nzxt_control_hub`](nzxt_control_hub/), [`asus_aura_usb`](asus_aura_usb/),
+[`steelseries_arctis`](steelseries_arctis/) — the
 harness currently only drives `hid`/`tcp`-transport device plugins; see
 [docs/plugins.md](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#testing-a-package-without-hardware)
 in the main repo for the harness API.
@@ -47,6 +49,7 @@ in the main repo for the harness API.
 Each package's `plugin.yaml`/`main.lua` carries its own SPDX header — several device protocols
 here were reverse-engineered against prior open-source work ([liquidctl](https://github.com/liquidctl/liquidctl),
 [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), the Linux [`nzxt-smart2`](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c)
-driver, [tomasf/evnia](https://github.com/tomasf/evnia)) and are licensed accordingly
+driver, [tomasf/evnia](https://github.com/tomasf/evnia),
+[linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager)) and are licensed accordingly
 (GPL-2.0-or-later or GPL-3.0-or-later); everything else defaults to GPL-3.0-or-later. See
 [REUSE.toml](REUSE.toml) and [LICENSES/](LICENSES/).
