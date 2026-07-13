@@ -12,6 +12,10 @@ this repo carries **no special trust**
 beyond being pre-registered. Installing, enabling, and updating any plugin here goes through the
 same consent/permission flow as a community-repo plugin: nothing is auto-granted.
 
+Each manifest declares a supported HaloDaemon SemVer range and an exact plugin
+API generation. The daemon requires both to match before loading or updating a
+plugin; see [Compatibility](docs/manifest-reference.md#compatibility).
+
 ## Supported devices
 
 | Vendor | Model | VID:PID | Plugin | Protocol |

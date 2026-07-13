@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: Martin Hartl (inlart) and OpenRGB contributors <https://gitlab.com/CalcProgrammer1/OpenRGB>
 #
 id: asus_aura_usb
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: ASUS Aura USB
 author: HaloDaemon
 version: 1.0.0

@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: Timucin Besken <beskent@gmail.com>
 #
 id: openrgb
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 type: integration
 name: OpenRGB
 author: HaloDaemon

@@ -25,6 +25,7 @@ files, not symlinks; `entry` must remain inside the package. The default entry i
 | Field | Type | Default | Meaning |
 |---|---|---:|---|
 | `id` | string | required | Stable ASCII identifier; must match the directory name. |
+| `compatibility` | table | required | Supported HaloDaemon SemVer range and exact plugin API generation. |
 | `type` | `device`, `effect`, `integration` | `device` | Discovery and execution model. |
 | `name` | string | `id` | Display name. |
 | `author` | string | empty | Author shown in the plugin UI. |
@@ -41,6 +42,21 @@ files, not symlinks; `entry` must remain inside the package. The default entry i
 The YAML values above override entry-script values with the same purpose. Put identity, devices,
 permissions, and transport declarations in YAML so review and consent never require executing
 untrusted Lua.
+
+### Compatibility
+
+Every package must declare both compatibility dimensions:
+
+```yaml
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
+```
+
+`halod` is a Cargo-style SemVer requirement matched against the daemon release.
+`plugin_api` is matched exactly against the Lua plugin API generation implemented
+by that daemon. Both must match. Incompatible repository content is not offered
+as an update, and an explicit update request cannot install it.
 
 ### Plugin kinds
 
@@ -87,6 +103,9 @@ Example:
 
 ```yaml
 id: example_hid
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: Example HID Ring
 author: Example Author
 version: 1.0.0

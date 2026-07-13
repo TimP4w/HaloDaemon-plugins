@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: Aleksandr Mezin <mezin.alexander@gmail.com>
 #
 id: nzxt_control_hub
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: NZXT RGB & Fan Controller
 author: HaloDaemon
 version: 1.0.0

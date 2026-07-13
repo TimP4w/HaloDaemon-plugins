@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: liquidctl contributors <https://github.com/liquidctl/liquidctl>
 #
 id: nzxt_kraken_x3
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: NZXT Kraken X53/X63/X73
 author: HaloDaemon
 version: 1.0.0

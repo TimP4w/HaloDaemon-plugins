@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: linux-arctis-manager contributors <https://github.com/elegos/Linux-Arctis-Manager>
 #
 id: steelseries_arctis
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: SteelSeries Arctis Nova Pro Wireless
 author: HaloDaemon
 version: 1.0.0

@@ -3,6 +3,9 @@
 # SPDX-FileCopyrightText: Erik Gilling (konkers) — OpenRGB project
 #
 id: corsair_dram
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: Corsair DRAM RGB
 author: HaloDaemon
 version: 1.0.0

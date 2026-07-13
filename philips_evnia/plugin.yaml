@@ -2,6 +2,9 @@
 # SPDX-FileCopyrightText: tomasf <https://github.com/tomasf/evnia>
 #
 id: philips_evnia
+compatibility:
+  halod: ">=0.2.0"
+  plugin_api: 1
 name: Philips Evnia 49
 author: HaloDaemon
 version: 1.0.0
