@@ -89,6 +89,7 @@ Supported match kinds are:
 
 - `hid`: `vid`, `pid` or `pids`, plus optional `usage_page`, `usage`, and
   `interface`. Use `hid: { any: true }` only for intentional generic support.
+- `usb_control`: concrete `vid` and `pid`, plus an optional interface number.
 - `smbus`: `bus`, concrete `addresses`, and optional scan limits. GPU matches
   additionally use explicit `pci_match` entries.
 - `hwmon`: only the explicit generic form `hwmon: { any: true }`.
