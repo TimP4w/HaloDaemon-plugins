@@ -46,6 +46,12 @@ identity, descriptors, and initial values. A package may only return
 capabilities listed in `capabilities`; malformed runtime descriptors are
 discarded individually rather than disabling valid siblings.
 
+For device capabilities, `initialize` is also the descriptor source. Return
+`zones` and `native_effects` for RGB, `controls` for choice/range/boolean/action
+surfaces, `dpi` for bounds/steps/mode, `lcd` for panel and RGB-restore policy,
+and `fan` for the physical channel. These are intentionally not YAML fields:
+they can differ by hardware revision, firmware, or the detected physical root.
+
 ## Catalog fields
 
 | Field | Meaning |
