@@ -27,7 +27,7 @@ local PKT_REQUEST_CONTROLLER_COUNT = 0
 local PKT_REQUEST_CONTROLLER_DATA = 1
 local PKT_REQUEST_PROTOCOL_VERSION = 40
 local PKT_SET_CLIENT_NAME = 50
-local PKT_RGBCONTROLLER_UPDATEZONELEDS = 1051
+local PKT_RGBCONTROLLER_UPDATELEDS = 1050
 local PKT_RGBCONTROLLER_SETCUSTOMMODE = 1100
 
 -- Version 3 is supported by released OpenRGB servers and has a stable schema.
@@ -37,11 +37,14 @@ local PKT_RGBCONTROLLER_SETCUSTOMMODE = 1100
 local CLIENT_PROTOCOL_VERSION = 3
 
 -- Enumeration index → its zones ({ id = <zone index string>, led_count = n }),
--- cached at enumeration so apply/per-LED can size each zone without a live
--- descriptor. One shared VM serves every controller, hence the index keying.
+-- cached in the root VM for enumeration. Controller callbacks run in their
+-- own VMs and use the descriptor HaloDaemon injects as `dev.zones` instead.
 local controller_zones = {}
 -- Enumeration index → whether `SetCustomMode` was already sent this connection.
 local custom_mode_sent = {}
+-- Enumeration index → complete controller colour buffer. Controller workers
+-- populate this lazily from their injected zone descriptors.
+local controller_colors = {}
 
 local BLACK = { r = 0, g = 0, b = 0 }
 
@@ -158,10 +161,50 @@ local function ensure_custom_mode(dev, index)
   end
 end
 
--- Push one zone's contiguous colour array.
-local function send_zone(dev, index, zone_idx, colors)
-  local rest = string.pack("<I4", zone_idx) .. string.pack("<I2", #colors) .. pack_colors(colors)
-  send_packet(dev, index, PKT_RGBCONTROLLER_UPDATEZONELEDS, with_data_size(rest))
+-- The root and every controller have separate Lua VMs. The root fills
+-- controller_zones while enumerating; a controller VM instead receives its
+-- synthesized RgbZone descriptors through dev.zones. Normalize both shapes:
+-- enumeration zones carry led_count, while RgbZone carries a leds array.
+local function zones_for(dev, index)
+  local zones = controller_zones[index] or dev.zones or {}
+  local normalized = {}
+  for i, zone in ipairs(zones) do
+    normalized[i] = {
+      id = zone.id,
+      led_count = zone.led_count or #(zone.leds or {}),
+    }
+  end
+  return normalized
+end
+
+local function controller_buffer(dev, index)
+  local zones = zones_for(dev, index)
+  local cached = controller_colors[index]
+  if not cached then
+    cached = {}
+    for _, zone in ipairs(zones) do
+      cached[zone.id] = string.rep("\0\0\0\0", zone.led_count)
+    end
+    controller_colors[index] = cached
+  end
+  return zones, cached
+end
+
+local function send_controller(dev, index)
+  local zones, cached = controller_buffer(dev, index)
+  local packed = {}
+  local color_count = 0
+  for i, zone in ipairs(zones) do
+    packed[i] = cached[zone.id]
+    color_count = color_count + zone.led_count
+  end
+  local rest = string.pack("<I2", color_count) .. table.concat(packed)
+  send_packet(dev, index, PKT_RGBCONTROLLER_UPDATELEDS, with_data_size(rest))
+end
+
+local function set_zone_colors(dev, index, zone_id, colors)
+  local _, cached = controller_buffer(dev, index)
+  cached[tostring(zone_id)] = pack_colors(colors)
 end
 
 return {
@@ -183,6 +226,7 @@ return {
 
     controller_zones = {}
     custom_mode_sent = {}
+    controller_colors = {}
     local controllers = {}
     for index = 0, count - 1 do
       send_packet(dev, index, PKT_REQUEST_CONTROLLER_DATA, string.pack("<I4", CLIENT_PROTOCOL_VERSION))
@@ -236,11 +280,20 @@ return {
   -- (enumeration order) rather than any per-device identity.
   write_controller_frame = function(dev, index, zone_id, colors)
     ensure_custom_mode(dev, index)
-    send_zone(dev, index, tonumber(zone_id) or 0, colors)
+    set_zone_colors(dev, index, zone_id, colors)
+    send_controller(dev, index)
+  end,
+
+  write_controller_frame_batch = function(dev, index, frames)
+    ensure_custom_mode(dev, index)
+    for _, frame in ipairs(frames) do
+      set_zone_colors(dev, index, frame.zone_id, frame.colors)
+    end
+    send_controller(dev, index)
   end,
 
   apply_controller = function(dev, index, state)
-    local zones = controller_zones[index]
+    local zones = zones_for(dev, index)
     if not zones then
       return
     end
@@ -251,19 +304,22 @@ return {
         return
       end
       ensure_custom_mode(dev, index)
+      local _, cached = controller_buffer(dev, index)
       for _, zone in ipairs(zones) do
         local colors = {}
         for i = 1, zone.led_count do
           colors[i] = color
         end
-        send_zone(dev, index, tonumber(zone.id) or 0, colors)
+        cached[zone.id] = pack_colors(colors)
       end
+      send_controller(dev, index)
     elseif state.mode == "per_led" then
       local zmap = state.zones
       if not zmap then
         return
       end
       ensure_custom_mode(dev, index)
+      local _, cached = controller_buffer(dev, index)
       for _, zone in ipairs(zones) do
         -- Sparse map keyed by the LED's 0-based id; unpainted LEDs fall back to
         -- black, matching `per_led_frame` on the native-driver side.
@@ -272,8 +328,9 @@ return {
         for i = 1, zone.led_count do
           colors[i] = (led_map and led_map[tostring(i - 1)]) or BLACK
         end
-        send_zone(dev, index, tonumber(zone.id) or 0, colors)
+        cached[zone.id] = pack_colors(colors)
       end
+      send_controller(dev, index)
     end
   end,
 }
