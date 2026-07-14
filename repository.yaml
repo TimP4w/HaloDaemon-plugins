@@ -50,4 +50,4 @@ packages:
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.0.0
-    sha256: bfcededc7b0a73a5b8963d9bcf0754a1e7388ceadbe9bb8132daa832c2b0ceed
+    sha256: d0a75d9dcb0f42779e95756849dd780593efc5c7714598778f450c5eb4b2f983
