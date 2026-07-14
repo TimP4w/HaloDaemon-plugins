@@ -275,6 +275,7 @@ return {
       ok = true,
       model = info.version,
       zones = { { id = "leds", name = "LEDs", topology = "linear", led_count = info.led_count } },
+      native_effects = NATIVE_EFFECTS,
     }
   end,
 

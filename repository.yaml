@@ -22,7 +22,7 @@ packages:
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
-    sha256: 6bd88d738383b7f92bd6756c1c58b3ec7b86ed43f6fedf37dc719dc8ea5c75ae
+    sha256: 0ff946fdde6ed0df6dc6a190d5705105d560cdf55c3714946a57099901484f1c
   - id: halo_effects
     path: halo_effects
     version: 1.0.0
