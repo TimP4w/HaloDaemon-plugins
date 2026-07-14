@@ -34,3 +34,101 @@ transports:
     report_size: 64
     timeout_ms: 1000
     feature_report: false
+chain:
+  channels:
+  - id: '0'
+    max_leds: 40
+    name: Aer/F Fan
+  accessories:
+  - fan: false
+    led_count: 8
+    id: 19
+    topology: ring
+    name: F120 RGB
+  - fan: false
+    led_count: 8
+    id: 20
+    topology: ring
+    name: F140 RGB
+  - fan: false
+    led_count: 8
+    id: 23
+    topology: ring
+    name: F140 RGB Core
+  - fan: false
+    led_count: 8
+    id: 24
+    topology: ring
+    name: F140 RGB Core
+  - fan: false
+    led_count: 16
+    id: 27
+    rings: 2
+    topology: rings
+    name: F240 RGB Core
+  - fan: false
+    led_count: 16
+    id: 28
+    rings: 2
+    topology: rings
+    name: F240 RGB Core
+  - fan: false
+    led_count: 24
+    id: 29
+    rings: 3
+    topology: rings
+    name: F360 RGB Core
+  - fan: false
+    led_count: 24
+    id: 30
+    rings: 3
+    topology: rings
+    name: F360 RGB Core
+  - fan: false
+    led_count: 24
+    id: 31
+    rings: 3
+    topology: rings
+    name: F420 RGB Core
+sensor: {}
+rgb:
+  zones:
+  - id: ring
+    leds:
+    - id: 0
+      y: 0.2030151519016501
+      x: 0.7969848480983499
+    - id: 1
+      y: 0.5
+      x: 0.9199999999999999
+    - id: 2
+      y: 0.7969848480983499
+      x: 0.7969848480983499
+    - id: 3
+      y: 0.9199999999999999
+      x: 0.5
+    - id: 4
+      y: 0.7969848480983499
+      x: 0.2030151519016501
+    - id: 5
+      y: 0.5
+      x: 0.08000000000000002
+    - id: 6
+      y: 0.2030151519016501
+      x: 0.20301515190164998
+    - id: 7
+      y: 0.08000000000000002
+      x: 0.49999999999999994
+    topology:
+      type: ring
+    name: Ring
+  - id: logo
+    leds:
+    - id: 0
+      y: 0.5
+      x: 0.5
+    topology:
+      type: linear
+    name: Logo
+poll:
+  interval_ms: 500

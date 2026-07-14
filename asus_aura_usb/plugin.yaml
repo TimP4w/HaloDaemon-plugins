@@ -35,3 +35,28 @@ transports:
   hid:
     report_size: 0
     timeout_ms: 1000
+chain:
+  channels: []
+rgb:
+  zones: []
+  native_effects:
+  - id: off
+    name: Off
+    params: []
+  - id: breathing
+    name: Breathing
+    params:
+    - id: color
+      default:
+        g: 255
+        r: 255
+        b: 255
+      kind:
+        kind: color
+      label: Color
+  - id: spectrum_cycle
+    name: Spectrum Cycle
+    params: []
+  - id: rainbow_wave
+    name: Rainbow Wave
+    params: []

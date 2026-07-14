@@ -237,8 +237,6 @@ local NATIVE_EFFECTS = {
 
 -- ── Plugin ───────────────────────────────────────────────────────────────────
 return {
-  rgb = { zones = {}, native_effects = NATIVE_EFFECTS },
-
   initialize = function(dev)
     local addr = dev.match.addr
     local info = dev.transport:batch(function(ops)

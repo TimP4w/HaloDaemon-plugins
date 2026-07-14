@@ -1,18 +1,17 @@
 # Lua plugin API reference
 
-HaloDaemon embeds Lua 5.4. A plugin's entry script returns one manifest table containing capability
-sections and functions. Each physical device gets its own Lua VM and worker, so module-level state
-is device-local. Transport calls look synchronous to Lua and are executed on that worker.
+HaloDaemon embeds Lua 5.4. `plugin.yaml` contains every declaration: device matching, permissions,
+transports, capabilities, configuration, and effects. The entry script returns only callback
+functions. Each physical device gets its own Lua VM and worker, so module-level state is
+device-local. Transport calls look synchronous to Lua and are executed on that worker.
 
 See the [manifest reference](manifest-reference.md) for `plugin.yaml`, device matching, transports,
-permissions, and the capability-section shapes.
+permissions, and capability-section shapes.
 
 ## Entry script
 
 ```lua
 return {
-  rgb = { zones = { ... } },
-
   initialize = function(dev)
     return true
   end,
@@ -26,9 +25,11 @@ return {
 }
 ```
 
-The table is evaluated once in a restricted, declaration-only VM, then the source is evaluated in
-each worker VM. The declaration pass has no `halod` or `log` globals. Do not call runtime helpers,
-perform I/O, or create lasting side effects at top level; call helpers only inside callbacks.
+The daemon reads the entry script as inert source while loading the manifest; it does not compile or
+execute Lua to obtain declarations. Normal workers evaluate the source only on activation (after
+consent for a plugin that declares permissions). SMBus `pre_scan` also runs only after activation
+is ready, in a throwaway VM during discovery before address probes. Keep module scope limited to
+constants and helper-function definitions; perform device or service I/O only inside callbacks.
 
 ## Globals and sandbox
 
@@ -45,8 +46,10 @@ Available standard libraries include `string`, `table`, and `math`, plus Lua 5.4
 `os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, `collectgarbage` are removed.
 With the `os` permission, a reduced `os` table exposes only `os.time()` and `os.clock()`.
 
-Each VM has memory, instruction, wall-time, and native-allocation limits. A callback must not busy
-wait; use bounded work and `halod.sleep_ms` only for hardware-mandated gaps.
+Each runtime VM has a 64 MiB Lua heap limit and a 50,000,000-instruction budget reset per callback.
+Device callbacks have a 30-second request deadline; effect callbacks have a 2-second deadline.
+These are in-process guardrails, not process isolation. A callback must not busy-wait; use bounded
+work and `halod.sleep_ms` only for hardware-mandated gaps.
 
 ## The `dev` object
 
@@ -70,7 +73,11 @@ Do not retain `dev.transport:batch`'s scoped `ops` value after its callback retu
 ### `pre_scan(dev)`
 
 Runs once per matching SMBus bus before address probes when the YAML device sets `pre_scan: true`.
-Only declared `addresses` and `extra_addresses` are in scope.
+Only declared `addresses` and `extra_addresses` are in scope; plugin config is unavailable. The VM
+has the normal 64 MiB/instruction limits plus a 5-second wall-clock timeout. The scanner contributes
+the declaration only when the plugin is enabled, fully consented, and pinned to its acknowledged
+content hash. Transport injection independently requires the effective `smbus` grant. PCI gates,
+address scope, rate limits, VM limits, and the timeout remain additional constraints.
 
 ### `initialize(dev) -> boolean | table | nil`
 
@@ -226,9 +233,11 @@ Each record may use `zones` as RGB shorthand or declare any normal capability se
 `equalizer`, `pairing`, `onboard_profiles`, `key_remap`, or `chain`). Each becomes an independent
 top-level device. Its worker receives the controller index in `dev.match.index`.
 
-For integration children, the worker dispatches RGB through `apply_controller(dev, index, state)`
-and `write_controller_frame(dev, index, zone_id, colors)`. The integration wrapper may expose the
-ordinary `apply`/`write_frame` names and route them internally, as the OpenRGB plugin does.
+For integration children, the worker dispatches RGB through
+`apply_controller(dev, index, state)` and
+`write_controller_frame(dev, index, zone_id, colors)`. These controller-specific
+names are required; ordinary device-plugin `apply`/`write_frame` callbacks are
+not used for integration-child RGB.
 
 ## Stream transport: HID and TCP
 
@@ -244,8 +253,10 @@ All byte inputs accept a Lua string or `halod.buffer`; reads return Lua strings.
 | `:write_many({data, ...})` | Write several packets under one backend operation. |
 | `:write_bulk(data)` | USB bulk-OUT payload used by LCD-capable devices. |
 
-TCP is a byte stream: a read may return fewer bytes than requested. Implement a `read_exact` loop
-when the protocol has fixed framing. HID report sizing/padding is handled by the HID backend.
+TCP has no message framing, but HaloDaemon deliberately implements `read(size)` as read-exact: it
+returns exactly `size` bytes or errors on timeout/EOF. Read a fixed header first, decode its payload
+length, then request exactly that many bytes. HID report sizing/padding is handled by the HID
+backend.
 
 ## USB vendor-control transport
 

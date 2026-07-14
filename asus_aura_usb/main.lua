@@ -172,22 +172,6 @@ end
 -- ── Plugin ───────────────────────────────────────────────────────────────────
 
 return {
-  rgb = {
-    zones = {}, -- fixed on-board zones, reported dynamically by initialize()
-    native_effects = {
-      { id = "off", name = "Off", params = {} },
-      { id = "breathing", name = "Breathing", params = {
-        { id = "color", label = "Color", kind = { kind = "color" }, default = { r = 255, g = 255, b = 255 } },
-      } },
-      { id = "spectrum_cycle", name = "Spectrum Cycle", params = {} },
-      { id = "rainbow_wave", name = "Rainbow Wave", params = {} },
-    },
-  },
-
-  -- Chain capability marker: the ARGB headers (channels) are reported
-  -- dynamically by initialize() once the config table is read.
-  chain = { channels = {} },
-
   initialize = function(dev)
     stop_gen2(dev)
 

@@ -74,33 +74,6 @@ local function ring_zone()
 end
 
 return {
-  rgb = {
-    zones = {
-      { id = "ring", name = "Ring", topology = { type = "ring" }, leds = ring_zone() },
-      { id = "logo", name = "Logo", topology = { type = "linear" },
-        leds = { { id = 0, x = 0.5, y = 0.5 } } },
-    },
-  },
-  sensor = {},
-  poll = { interval_ms = 500 },
-
-  -- RGB-only external accessory header (no software fan-duty control on this
-  -- wire family — `fan = false` keeps the child accessory's speed uncontrollable).
-  chain = {
-    channels = { { id = "0", name = "Aer/F Fan", max_leds = 40 } },
-    accessories = {
-      { id = 0x13, name = "F120 RGB", led_count = 8, topology = "ring", fan = false },
-      { id = 0x14, name = "F140 RGB", led_count = 8, topology = "ring", fan = false },
-      { id = 0x17, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = false },
-      { id = 0x18, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = false },
-      { id = 0x1B, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = false },
-      { id = 0x1C, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = false },
-      { id = 0x1D, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = false },
-      { id = 0x1E, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = false },
-      { id = 0x1F, name = "F420 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = false },
-    },
-  },
-
   initialize = function(dev)
     dev.transport:write(string.char(0x70, 0x02, 0x01, 0xB8, 0x01)) -- INIT_SET
     dev.transport:write(string.char(0x70, 0x01))                   -- firmware push

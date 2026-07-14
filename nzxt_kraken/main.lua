@@ -347,39 +347,6 @@ local function upload_gif(dev, resized)
 end
 
 return {
-  rgb = {
-    zones = {
-      { id = "ring", name = "Pump Ring", topology = { type = "ring" },
-        leds = (function()
-          local l = {}
-          for i = 0, RING_LEDS - 1 do
-            local a = (i / RING_LEDS) * 2 * math.pi
-            l[#l + 1] = { id = i, x = 0.5 + 0.45 * math.sin(a), y = 0.5 - 0.45 * math.cos(a) }
-          end
-          return l
-        end)() },
-    },
-  },
-  fan = { channel = 0 }, -- the pump (Kraken's own fan capability)
-  sensor = {},
-  lcd = { needs_rgb_restore = true }, -- uploads reset the ring LEDs
-  poll = { interval_ms = 500 },
-
-  chain = {
-    channels = { { id = "0", name = "Aer/F Fan", max_leds = 40 } },
-    accessories = {
-      { id = 0x13, name = "F120 RGB", led_count = 8, topology = "ring", fan = true },
-      { id = 0x14, name = "F140 RGB", led_count = 8, topology = "ring", fan = true },
-      { id = 0x17, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = true },
-      { id = 0x18, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = true },
-      { id = 0x1B, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = true },
-      { id = 0x1C, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = true },
-      { id = 0x1D, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-      { id = 0x1E, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-      { id = 0x1F, name = "F420 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-    },
-  },
-
   initialize = function(dev)
     -- Drain any stale HID reports from a previous session (e.g. unread LCD
     -- transfer ACKs from streaming) so they don't desync the init handshake.

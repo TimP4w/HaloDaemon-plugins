@@ -165,13 +165,6 @@ local function send_zone(dev, index, zone_idx, colors)
 end
 
 return {
-  config = {
-    fields = {
-      { key = "host", label = "Server host", kind = "text", default = "127.0.0.1" },
-      { key = "port", label = "Server port", kind = "number", default = "6742" },
-    },
-  },
-
   initialize = function(dev)
     -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
     -- one REQUEST_PROTOCOL_VERSION response on released servers.

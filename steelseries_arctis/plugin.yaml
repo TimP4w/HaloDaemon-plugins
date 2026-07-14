@@ -37,3 +37,125 @@ transports:
     report_size: 64
     timeout_ms: 1000
     feature_report: false
+choice:
+  choices:
+  - label: Microphone Gain
+    category: Microphone
+    key: gain
+    display: inline
+    options:
+    - id: '0'
+      label: Low
+    - id: '1'
+      label: High
+  - label: Sidetone
+    category: Microphone
+    key: sidetone
+    display: inline
+    options:
+    - id: '0'
+      label: Off
+    - id: '1'
+      label: Low
+    - id: '2'
+      label: Medium
+    - id: '3'
+      label: High
+  - label: Mode
+    category: Noise Cancelling
+    key: nc_mode
+    display: inline
+    options:
+    - id: '0'
+      label: Off
+    - id: '1'
+      label: Transparent
+    - id: '2'
+      label: Noise Cancelling
+  - label: Wireless Mode
+    category: Base Station
+    key: wireless_mode
+    display: inline
+    options:
+    - id: '0'
+      label: Maximum Speed
+    - id: '1'
+      label: Maximum Range
+  - label: Auto-Off Timeout
+    category: Base Station
+    key: auto_off
+    display: list
+    options:
+    - id: '0'
+      label: Off
+    - id: '1'
+      label: 1 min
+    - id: '2'
+      label: 5 min
+    - id: '3'
+      label: 10 min
+    - id: '4'
+      label: 15 min
+    - id: '5'
+      label: 30 min
+    - id: '6'
+      label: 60 min
+  - label: Screen Mode
+    category: Base Station
+    key: screen_mode
+    display: inline
+    options:
+    - id: '0'
+      label: Detailed
+    - id: '1'
+      label: Simple
+  - label: Sonar EQ
+    category: Audio
+    key: sonar_eq
+    display: toggle
+    options:
+    - id: '0'
+      label: Off
+    - id: '1'
+      label: On
+boolean:
+  booleans:
+  - label: Microphone
+    key: mic_active
+    read_only: true
+    category: Microphone
+  - label: Bluetooth
+    key: bt_connection
+    read_only: true
+    category: Bluetooth
+  - label: Auto-Mute
+    key: bt_auto_mute
+    read_only: true
+    category: Bluetooth
+range:
+  ranges:
+  - label: Microphone Volume
+    default: 10
+    category: Microphone
+    step: 1
+    key: mic_volume
+    max: 10
+    min: 1
+  - label: LED Brightness
+    default: 100
+    category: Microphone
+    step: 10
+    key: mic_led_brightness
+    max: 100
+    min: 10
+  - label: Transparency Level
+    default: 1
+    category: Noise Cancelling
+    step: 1
+    key: nc_level
+    max: 10
+    min: 1
+battery: {}
+equalizer: {}
+poll:
+  interval_ms: 250

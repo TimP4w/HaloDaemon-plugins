@@ -19,12 +19,11 @@ against the actual server source, not a paraphrase of it.
 
 ## Overview
 
-TCP, little-endian throughout. HaloDaemon connects as a client via the
-[`tcp` transport](../transports/tcp.md); the implementation is the built-in
-Lua plugin
-[`drivers/plugins/builtins/openrgb.lua`](../../src/daemon/src/drivers/plugins/builtins/openrgb.lua)
-(a [config-instantiated integration plugin](../plugins.md), not a hardware
-device — it connects to a host/port the user configures).
+TCP, little-endian throughout. HaloDaemon connects as a client through its
+[`tcp` plugin transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#stream-transport-tcp);
+the implementation is this repository's [`openrgb/main.lua`](../../openrgb/main.lua)
+integration package (not a hardware device—it connects to a host/port the user
+configures).
 
 **Scope implemented:** connect, name the client, enumerate controllers and
 their zones, and drive them in Direct/custom mode (`SetCustomMode` +

@@ -781,3 +781,45 @@ devices:
   - vendor: 0x1002
     sub_vendor: 0x1043
     confirmed: false
+rgb:
+  native_effects:
+  - name: Breathing
+    params:
+    - label: Color
+      default:
+        b: 0
+        g: 0
+        r: 255
+      id: color
+      kind:
+        kind: color
+    - label: Speed
+      default: normal
+      id: speed
+      kind:
+        options:
+        - fastest
+        - fast
+        - normal
+        - slow
+        - slowest
+        kind: enum
+    id: breathing
+  - name: Spectrum Wave
+    params:
+    - label: Speed
+      default: normal
+      id: speed
+      kind:
+        options:
+        - fastest
+        - fast
+        - normal
+        - slow
+        - slowest
+        kind: enum
+    id: spectrum_wave
+  - name: Off
+    params: []
+    id: off
+  zones: []

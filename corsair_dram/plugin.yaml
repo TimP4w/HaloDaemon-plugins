@@ -39,3 +39,79 @@ devices:
   - 0x001F
   pre_scan: false
   probe: quick
+rgb:
+  zones: []
+  native_effects:
+  - name: Breathing
+    params:
+    - kind:
+        kind: color
+      default:
+        g: 128
+        r: 0
+        b: 255
+      label: Color
+      id: color
+    - kind:
+        kind: enum
+        options:
+        - slow
+        - medium
+        - fast
+      default: medium
+      label: Speed
+      id: speed
+    id: breathing
+  - name: Rainbow Wave
+    params:
+    - kind:
+        kind: enum
+        options:
+        - slow
+        - medium
+        - fast
+      default: medium
+      label: Speed
+      id: speed
+    - kind:
+        kind: enum
+        options:
+        - up
+        - down
+        - left
+        - right
+      default: right
+      label: Direction
+      id: direction
+    id: rainbow_wave
+  - name: Color Shift
+    params:
+    - kind:
+        kind: color
+      default:
+        g: 0
+        r: 255
+        b: 0
+      label: Color 1
+      id: color1
+    - kind:
+        kind: color
+      default:
+        g: 0
+        r: 0
+        b: 255
+      label: Color 2
+      id: color2
+    - kind:
+        kind: enum
+        options:
+        - slow
+        - medium
+        - fast
+      default: medium
+      label: Speed
+      id: speed
+    id: color_shift
+  - name: Off
+    params: []
+    id: off

@@ -10,3 +10,306 @@ author: HaloDaemon
 version: 1.0.0
 license: GPL-3.0-or-later
 description: The stock library of pixmap and direct RGB effects, and the reference effect-plugin implementation.
+effects:
+- name: Plasma
+  params:
+  - label: Speed
+    default: 0.8
+    id: speed
+    kind:
+      step: 0.1
+      min: 0.1
+      max: 3.0
+      kind: range
+  id: plasma
+  kind: pixmap
+- name: Rainbow Wave
+  params:
+  - label: Speed
+    default: 0.2
+    id: speed
+    kind:
+      step: 0.05
+      min: 0.0
+      max: 2.0
+      kind: range
+  - label: Scale
+    default: 1.0
+    id: scale
+    kind:
+      step: 0.5
+      min: 0.5
+      max: 5.0
+      kind: range
+  id: rainbow
+  kind: pixmap
+- name: Random Flash
+  params:
+  - label: Cells
+    default: 4.0
+    id: cells
+    kind:
+      step: 1.0
+      min: 2.0
+      max: 8.0
+      kind: range
+  - label: Interval (s)
+    default: 1.0
+    id: interval
+    kind:
+      step: 0.1
+      min: 0.2
+      max: 5.0
+      kind: range
+  - label: Decay (s)
+    default: 0.6
+    id: decay
+    kind:
+      step: 0.05
+      min: 0.05
+      max: 3.0
+      kind: range
+  - label: Random color per flash
+    default: false
+    id: random_color
+    kind:
+      kind: boolean
+  - label: Color
+    default:
+      b: 248
+      g: 189
+      r: 56
+    id: color
+    kind:
+      kind: color
+  id: random_flash
+  kind: pixmap
+- name: Audio Spectrum
+  params:
+  - label: Low Color
+    default:
+      b: 255
+      g: 120
+      r: 0
+    id: color_low
+    kind:
+      kind: color
+  - label: High Color
+    default:
+      b: 120
+      g: 0
+      r: 255
+    id: color_high
+    kind:
+      kind: color
+  - label: Fill
+    default: bars
+    id: fill
+    kind:
+      options:
+      - bars
+      - solid
+      kind: enum
+  id: audio_spectrum
+  kind: pixmap
+- name: Comet
+  params:
+  - label: Color
+    default:
+      b: 255
+      g: 160
+      r: 0
+    id: color
+    kind:
+      kind: color
+  - label: Speed
+    default: 0.3
+    id: speed
+    kind:
+      step: 0.05
+      min: 0.05
+      max: 3.0
+      kind: range
+  - label: Direction
+    default: forward
+    id: direction
+    kind:
+      options:
+      - forward
+      - backward
+      kind: enum
+  id: comet
+  kind: direct
+- name: Breathing
+  params:
+  - label: Color
+    default:
+      b: 255
+      g: 128
+      r: 0
+    id: color
+    kind:
+      kind: color
+  - label: Speed
+    default: 0.5
+    id: speed
+    kind:
+      step: 0.1
+      min: 0.1
+      max: 3.0
+      kind: range
+  id: breathing
+  kind: direct
+- name: Audio Beat
+  params:
+  - label: Color
+    default:
+      b: 40
+      g: 40
+      r: 255
+    id: color
+    kind:
+      kind: color
+  - label: Decay
+    default: 0.4
+    id: decay
+    kind:
+      step: 0.05
+      min: 0.1
+      max: 2.0
+      kind: range
+  - label: Sensitivity
+    default: 0.5
+    id: sensitivity
+    kind:
+      step: 0.05
+      min: 0.0
+      max: 1.0
+      kind: range
+  id: audio_beat
+  kind: direct
+- name: Audio Level
+  params:
+  - label: Color
+    default:
+      b: 120
+      g: 200
+      r: 0
+    id: color
+    kind:
+      kind: color
+  - label: Hue Shift
+    default: false
+    id: hue_shift
+    kind:
+      kind: boolean
+  - label: Smoothing
+    default: 0.3
+    id: smoothing
+    kind:
+      step: 0.05
+      min: 0.0
+      max: 1.0
+      kind: range
+  - label: Sensitivity
+    default: 1.0
+    id: sensitivity
+    kind:
+      step: 0.1
+      min: 0.1
+      max: 3.0
+      kind: range
+  id: audio_level
+  kind: direct
+- name: Sensor Gradient
+  params:
+  - label: Sensor
+    default: ''
+    id: sensor
+    kind:
+      kind: sensor
+  - label: Mode
+    default: gradient
+    id: mode
+    kind:
+      options:
+      - gradient
+      - meter
+      kind: enum
+  - label: Color A
+    default:
+      b: 255
+      g: 128
+      r: 0
+    id: color_a
+    kind:
+      kind: color
+  - label: Color B
+    default:
+      b: 0
+      g: 0
+      r: 255
+    id: color_b
+    kind:
+      kind: color
+  - label: Min
+    default: 20.0
+    id: min
+    kind:
+      min: -100000.0
+      max: 100000.0
+      kind: number
+  - label: Max
+    default: 90.0
+    id: max
+    kind:
+      min: -100000.0
+      max: 100000.0
+      kind: number
+  - label: Smoothing
+    default: 0.3
+    id: smoothing
+    kind:
+      step: 0.05
+      min: 0.0
+      max: 1.0
+      kind: range
+  id: sensor_gradient
+  kind: direct
+- name: Sensor Steps
+  params:
+  - label: Sensor
+    default: ''
+    id: sensor
+    kind:
+      kind: sensor
+  - label: Steps
+    default:
+    - color:
+        b: 0
+        g: 255
+        r: 0
+      value: 40
+    - color:
+        b: 0
+        g: 140
+        r: 255
+      value: 60
+    - color:
+        b: 0
+        g: 0
+        r: 255
+      value: 80
+    id: steps
+    kind:
+      kind: steps
+  - label: Smoothing
+    default: 0.3
+    id: smoothing
+    kind:
+      step: 0.05
+      min: 0.0
+      max: 1.0
+      kind: range
+  id: sensor_steps
+  kind: direct

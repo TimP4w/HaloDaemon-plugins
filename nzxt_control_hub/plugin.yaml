@@ -24,3 +24,73 @@ transports:
     report_size: 64
     timeout_ms: 1000
     feature_report: false
+chain:
+  channels:
+  - id: '0'
+    max_leds: 96
+    name: Channel 1
+  - id: '1'
+    max_leds: 96
+    name: Channel 2
+  - id: '2'
+    max_leds: 96
+    name: Channel 3
+  - id: '3'
+    max_leds: 96
+    name: Channel 4
+  - id: '4'
+    max_leds: 96
+    name: Channel 5
+  accessories:
+  - fan: true
+    led_count: 8
+    id: 19
+    topology: ring
+    name: F120 RGB
+  - fan: true
+    led_count: 8
+    id: 20
+    topology: ring
+    name: F140 RGB
+  - fan: true
+    led_count: 8
+    id: 23
+    topology: ring
+    name: F140 RGB Core
+  - fan: true
+    led_count: 8
+    id: 24
+    topology: ring
+    name: F140 RGB Core
+  - fan: true
+    led_count: 16
+    id: 27
+    rings: 2
+    topology: rings
+    name: F240 RGB Core
+  - fan: true
+    led_count: 16
+    id: 28
+    rings: 2
+    topology: rings
+    name: F240 RGB Core
+  - fan: true
+    led_count: 24
+    id: 29
+    rings: 3
+    topology: rings
+    name: F360 RGB Core
+  - fan: true
+    led_count: 24
+    id: 30
+    rings: 3
+    topology: rings
+    name: F360 RGB Core
+  - fan: true
+    led_count: 24
+    id: 31
+    rings: 3
+    topology: rings
+    name: F420 RGB Core
+poll:
+  interval_ms: 1000

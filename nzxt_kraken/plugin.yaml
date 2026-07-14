@@ -63,3 +63,145 @@ transports:
     report_size: 64
     timeout_ms: 1000
     feature_report: false
+chain:
+  channels:
+  - id: '0'
+    max_leds: 40
+    name: Aer/F Fan
+  accessories:
+  - fan: true
+    id: 19
+    led_count: 8
+    topology: ring
+    name: F120 RGB
+  - fan: true
+    id: 20
+    led_count: 8
+    topology: ring
+    name: F140 RGB
+  - fan: true
+    id: 23
+    led_count: 8
+    topology: ring
+    name: F140 RGB Core
+  - fan: true
+    id: 24
+    led_count: 8
+    topology: ring
+    name: F140 RGB Core
+  - rings: 2
+    fan: true
+    id: 27
+    led_count: 16
+    topology: rings
+    name: F240 RGB Core
+  - rings: 2
+    fan: true
+    id: 28
+    led_count: 16
+    topology: rings
+    name: F240 RGB Core
+  - rings: 3
+    fan: true
+    id: 29
+    led_count: 24
+    topology: rings
+    name: F360 RGB Core
+  - rings: 3
+    fan: true
+    id: 30
+    led_count: 24
+    topology: rings
+    name: F360 RGB Core
+  - rings: 3
+    fan: true
+    id: 31
+    led_count: 24
+    topology: rings
+    name: F420 RGB Core
+lcd:
+  needs_rgb_restore: true
+rgb:
+  zones:
+  - id: ring
+    leds:
+    - id: 0
+      x: 0.5
+      y: 0.04999999999999999
+    - id: 1
+      x: 0.6164685702961343
+      y: 0.06533337816991924
+    - id: 2
+      x: 0.725
+      y: 0.11028856829700256
+    - id: 3
+      x: 0.8181980515339464
+      y: 0.18180194846605358
+    - id: 4
+      x: 0.8897114317029974
+      y: 0.2749999999999999
+    - id: 5
+      x: 0.9346666218300808
+      y: 0.38353142970386567
+    - id: 6
+      x: 0.95
+      y: 0.5
+    - id: 7
+      x: 0.9346666218300808
+      y: 0.6164685702961343
+    - id: 8
+      x: 0.8897114317029975
+      y: 0.7249999999999999
+    - id: 9
+      x: 0.8181980515339464
+      y: 0.8181980515339464
+    - id: 10
+      x: 0.725
+      y: 0.8897114317029975
+    - id: 11
+      x: 0.6164685702961344
+      y: 0.9346666218300808
+    - id: 12
+      x: 0.5
+      y: 0.95
+    - id: 13
+      x: 0.38353142970386583
+      y: 0.9346666218300808
+    - id: 14
+      x: 0.2749999999999999
+      y: 0.8897114317029974
+    - id: 15
+      x: 0.18180194846605363
+      y: 0.8181980515339464
+    - id: 16
+      x: 0.11028856829700273
+      y: 0.7250000000000002
+    - id: 17
+      x: 0.06533337816991924
+      y: 0.6164685702961343
+    - id: 18
+      x: 0.04999999999999999
+      y: 0.5000000000000001
+    - id: 19
+      x: 0.06533337816991919
+      y: 0.3835314297038659
+    - id: 20
+      x: 0.11028856829700262
+      y: 0.2749999999999999
+    - id: 21
+      x: 0.18180194846605352
+      y: 0.1818019484660537
+    - id: 22
+      x: 0.2749999999999998
+      y: 0.11028856829700273
+    - id: 23
+      x: 0.38353142970386567
+      y: 0.06533337816991924
+    topology:
+      type: ring
+    name: Pump Ring
+sensor: {}
+fan:
+  channel: 0
+poll:
+  interval_ms: 500

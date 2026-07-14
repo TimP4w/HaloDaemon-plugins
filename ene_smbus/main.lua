@@ -253,9 +253,6 @@ local NATIVE_EFFECTS = {
 -- ── Plugin ───────────────────────────────────────────────────────────────────
 
 return {
-  rgb = { zones = {}, native_effects = NATIVE_EFFECTS },
-
-  -- Broadcast-remap DRAM sticks onto individual addresses before probing.
   pre_scan = function(dev)
     dev.transport:batch(function(ops)
       remap_dram(ops)

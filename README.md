@@ -5,16 +5,17 @@ seeds a non-removable record for this repository and clones it at startup; a net
 first launch is logged and never blocks boot — the daemon simply has no official plugins until a
 later successful clone.
 
-Every plugin here is a normal directory package (`plugin.yaml` + `main.lua`; see the local
-[manifest reference](docs/manifest-reference.md) and [Lua API reference](docs/lua-api.md), or
-the [daemon's plugin guide](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md)) —
+Every plugin here is a normal directory package (`plugin.yaml` + `main.lua`; see the
+[manifest reference](docs/manifest-reference.md), [Lua API reference](docs/lua-api.md), and the
+[daemon's plugin guide](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md)) —
 this repo carries **no special trust**
-beyond being pre-registered. Installing, enabling, and updating any plugin here goes through the
-same consent/permission flow as a community-repo plugin: nothing is auto-granted.
+beyond being pre-registered. Installing, enabling, and updating any plugin here uses the same gate
+as a community-repo plugin: permissionless packages activate directly; permissioned packages are
+never auto-granted and require current-content acknowledgement.
 
 Each manifest declares a supported HaloDaemon SemVer range and an exact plugin
 API generation. The daemon requires both to match before loading or updating a
-plugin; see [Compatibility](docs/manifest-reference.md#compatibility).
+plugin; see [Compatibility](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#compatibility).
 
 ## Supported devices
 

@@ -8,7 +8,7 @@ DDC/CI (Display Data Channel Command Interface) MCCS control tunnelled over USB 
 
 ## Overview
 
-DDC/CI bytes are tunnelled inside USB vendor control transfers via the [USB control transport](../transports/usb-control.md). The model is **host-initiated request/response**: every frame is a DDC/CI envelope (`6e 51 <len> <opcode> …`) with a trailing XOR checksum; writes are fire-and-forget control-OUTs, reads are a control-OUT request followed ~150 ms later by a control-IN reply.
+DDC/CI bytes are tunnelled inside USB vendor control transfers via the [USB control transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/usb-control.md). The model is **host-initiated request/response**: every frame is a DDC/CI envelope (`6e 51 <len> <opcode> …`) with a trailing XOR checksum; writes are fire-and-forget control-OUTs, reads are a control-OUT request followed ~150 ms later by a control-IN reply.
 
 Control-transfer parameters:
 

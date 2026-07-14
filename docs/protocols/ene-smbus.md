@@ -8,7 +8,7 @@ ENE Technology RGB controller protocol over SMBus/I2C, used by ASUS Aura DRAM mo
 
 ## Overview
 
-At the protocol level this is an ENE embedded RGB controller addressed over an [SMBus](../transports/smbus.md) I2C bus. There is no fixed-size packet; the wire unit is a single SMBus transaction (quick-write, byte read/write, word write, or block write). Every logical register access is **two-stage**: first write the byte-swapped 16-bit register address to SMBus command `0x00`, then read or write the data at a second SMBus command (`0x81` to read, `0x01` to write one byte, `0x03` to write a block). The controller auto-increments its internal register pointer across a block transfer.
+At the protocol level this is an ENE embedded RGB controller addressed over an [SMBus](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md) I2C bus. There is no fixed-size packet; the wire unit is a single SMBus transaction (quick-write, byte read/write, word write, or block write). Every logical register access is **two-stage**: first write the byte-swapped 16-bit register address to SMBus command `0x00`, then read or write the data at a second SMBus command (`0x81` to read, `0x01` to write one byte, `0x03` to write a block). The controller auto-increments its internal register pointer across a block transfer.
 
 The model is **host-initiated request/response**: the host sets a register address then reads or writes. The controller never originates a transaction. Color data uses **R,B,G** wire order. Two register-layout variants (v1 / v2) are selected by the firmware-version string read at init.
 

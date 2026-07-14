@@ -19,3 +19,13 @@ transports:
     port_key: port
     timeout_ms: 5000
     allow_private: true
+config:
+  fields:
+  - default: 127.0.0.1
+    kind: text
+    label: Server host
+    key: host
+  - default: '6742'
+    kind: number
+    label: Server port
+    key: port

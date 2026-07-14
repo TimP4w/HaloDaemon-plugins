@@ -49,23 +49,6 @@ for i = 0, FAN_CHANNELS - 1 do
 end
 
 return {
-  poll = { interval_ms = 1000 },
-
-  chain = {
-    channels = chain_channels,
-    accessories = {
-      { id = 0x13, name = "F120 RGB", led_count = 8, topology = "ring", fan = true },
-      { id = 0x14, name = "F140 RGB", led_count = 8, topology = "ring", fan = true },
-      { id = 0x17, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = true },
-      { id = 0x18, name = "F140 RGB Core", led_count = 8, topology = "ring", fan = true },
-      { id = 0x1B, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = true },
-      { id = 0x1C, name = "F240 RGB Core", led_count = 16, topology = "rings", rings = 2, fan = true },
-      { id = 0x1D, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-      { id = 0x1E, name = "F360 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-      { id = 0x1F, name = "F420 RGB Core", led_count = 24, topology = "rings", rings = 3, fan = true },
-    },
-  },
-
   initialize = function(dev)
     -- Configure the hardware's own status-push interval to ~1000ms (control
     -- byte 3: 488 + (3-1)*256), matching the `poll` cadence above.
