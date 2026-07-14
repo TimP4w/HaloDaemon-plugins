@@ -22,6 +22,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libpipewire-0.3-dev
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
