@@ -48,6 +48,18 @@ for i = 0, FAN_CHANNELS - 1 do
     { id = tostring(i), name = "Channel " .. (i + 1), max_leds = MAX_CHAIN_LEDS }
 end
 
+local accessories = {
+  { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
+  { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
+  { id=23, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=24, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+}
+
 return {
   initialize = function(dev)
     -- Configure the hardware's own status-push interval to ~1000ms (control
@@ -55,7 +67,7 @@ return {
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
     log("NZXT Control Hub initialized")
-    return { ok = true }
+    return { ok = true, chain = chain_channels, accessories = accessories }
   end,
 
   -- RGB, routed by the host through whichever channel a chained accessory occupies.

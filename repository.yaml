@@ -30,7 +30,7 @@ packages:
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0
-    sha256: 5f00cb1f4712c675ff6d01b676afaeb497ecda4f593a5d04facad58f74e87b09
+    sha256: 123f9d13cf800bf12f957a8d27b41aef77f60ed12984d75fbccb94d179b93104
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.1
