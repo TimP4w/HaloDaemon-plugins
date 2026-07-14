@@ -46,7 +46,7 @@ packages:
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: fb9d2f0d9f791b34344d018930d4f12918e89fff8b022d64bf7a05224e9000a1
+    sha256: c030f0b8888a610bc82b35a0716311b5e07359df4001ecad84d99ab11d8e6862
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.0.0
