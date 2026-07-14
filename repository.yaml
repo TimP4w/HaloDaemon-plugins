@@ -14,7 +14,7 @@ packages:
   - id: asus_aura_usb
     path: asus_aura_usb
     version: 1.0.0
-    sha256: 34337ecbdf32632d8014e7296aa5f64398f0b0d3424899ec278308d44af2d9f9
+    sha256: 0485f324f739dd1d06cbd5831bb0d54b45e8e5e0f737b7d3fdc6ebb57d14ec6a
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
