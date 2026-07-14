@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 id: halo_effects
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 type: effect
 name: Halo Effects
 author: HaloDaemon
