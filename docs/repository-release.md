@@ -18,6 +18,11 @@ The private key must never be committed or made available to pull-request workfl
 development repositories may omit `repository.sig`; Halo presents them as unsigned or local
 development provenance and still requires normal enable consent.
 
+When launched with `--dev-plugin-repo <path>`, Halo uses that canonical path
+as the process-local replacement for the managed official repository. It does
+not fetch, check, update, or repair the official checkout during that run;
+restart without the flag to resume normal official repository management.
+
 An update is repository-scoped. Halo fetches objects, validates and materializes the proposed
 revision into a staging directory, then atomically selects it. A failed validation leaves the active
 revision untouched. Official releases retain the previously verified SHA for rollback diagnostics.
