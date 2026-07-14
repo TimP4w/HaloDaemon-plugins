@@ -38,7 +38,7 @@ packages:
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0
-    sha256: 266b43df645a73b5b82c49963bc6ac7e6576c9053a89d0a030a8c5045c29ae20
+    sha256: e02a5ded069157c8f8373cc058091b72229a04997cc54ba35f5e5d4df5b7ba1c
   - id: openrgb
     path: openrgb
     version: 1.0.0
