@@ -7,7 +7,7 @@ compatibility:
   plugin_api: 1
 name: NZXT Kraken Z/Elite
 author: HaloDaemon
-version: 1.0.0
+version: 1.0.1
 license: GPL-3.0-or-later
 description:
   "NZXT Kraken Z/Elite family: RGB, pump fan, liquid-temp sensor, accessory fan child, and
