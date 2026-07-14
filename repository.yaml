@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Generated package index. `repository.sig` is produced by the protected
+# release workflow
+schema: 1
+id: halod-official
+name: Halo Official Plugins
+version: 2026.07.0
+
+compatibility:
+  halod: ">=0.2.0, <0.3.0"
+  plugin_api: 1
+
+packages:
+  - id: asus_aura_usb
+    path: asus_aura_usb
+    version: 1.0.0
+    sha256: 34337ecbdf32632d8014e7296aa5f64398f0b0d3424899ec278308d44af2d9f9
+  - id: corsair_dram
+    path: corsair_dram
+    version: 1.0.0
+    sha256: 5f4ff5103654526375089619b69e08b9559e7850c25710eadab409958af05a5d
+  - id: ene_smbus
+    path: ene_smbus
+    version: 1.0.0
+    sha256: 6bd88d738383b7f92bd6756c1c58b3ec7b86ed43f6fedf37dc719dc8ea5c75ae
+  - id: halo_effects
+    path: halo_effects
+    version: 1.0.0
+    sha256: b1c843a4cd9524902743f7bd49c1416e6d350f6209ece6dfb2df5816e135442f
+  - id: nzxt_control_hub
+    path: nzxt_control_hub
+    version: 1.0.0
+    sha256: 5f00cb1f4712c675ff6d01b676afaeb497ecda4f593a5d04facad58f74e87b09
+  - id: nzxt_kraken
+    path: nzxt_kraken
+    version: 1.0.1
+    sha256: b321e4b233c22e24d3c906f7fd52feb6a177636d3d4199dd3d01f035699ce319
+  - id: nzxt_kraken_x3
+    path: nzxt_kraken_x3
+    version: 1.0.0
+    sha256: 266b43df645a73b5b82c49963bc6ac7e6576c9053a89d0a030a8c5045c29ae20
+  - id: openrgb
+    path: openrgb
+    version: 1.0.0
+    sha256: 0f2247a735d37ec5e8412b6a9c781cc01fb510ff711b937298f5dde8c7652b9e
+  - id: philips_evnia
+    path: philips_evnia
+    version: 1.0.0
+    sha256: fb9d2f0d9f791b34344d018930d4f12918e89fff8b022d64bf7a05224e9000a1
+  - id: steelseries_arctis
+    path: steelseries_arctis
+    version: 1.0.0
+    sha256: bfcededc7b0a73a5b8963d9bcf0754a1e7388ceadbe9bb8132daa832c2b0ceed

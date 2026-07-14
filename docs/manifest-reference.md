@@ -1,9 +1,10 @@
 # Plugin manifest reference
 
-`plugin.yaml` is the only declarative manifest for a HaloDaemon plugin. It contains package
-metadata, compatibility, permissions, device matching, transports, capabilities, controls,
-configuration, and effects. The entry Lua file contains executable callbacks only; HaloDaemon does
-not compile or execute it while loading the manifest.
+`plugin.yaml` is the declarative catalog for a HaloDaemon plugin. It contains package metadata,
+platforms, permissions, device matching, transport scopes, advertised capabilities, configuration,
+and effect metadata. Repository compatibility belongs only in the root `repository.yaml`.
+The entry Lua file contains executable callbacks only; HaloDaemon does not compile or execute it
+while loading the catalog.
 
 See the [Lua API reference](lua-api.md) for callback signatures and runtime APIs.
 
@@ -28,20 +29,21 @@ Device plugin:
 
 ```yaml
 id: example_ring
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 name: Example Ring
 version: 1.0.0
 license: GPL-3.0-or-later
+platforms: [linux, windows]
+permissions: [hid]
+capabilities: [rgb]
 
 devices:
   - vendor: Example
     model: Ring 12
-    device_type: led_strip
-    transport: hid
-    vid: 0x1234
-    pid: 0x5678
+    type: led_strip
+    match:
+      hid:
+        vid: 0x1234
+        pid: 0x5678
 
 transports:
   hid:
@@ -49,22 +51,40 @@ transports:
     timeout_ms: 1000
     feature_report: false
 
-rgb:
-  zones: []                 # initialize() reports the runtime zone
+# initialize() returns device-specific RGB descriptors and initial values.
 ```
+
+An SMBus package declares its complete probe scope inside `match.smbus`:
+
+```yaml
+permissions: [smbus]
+capabilities: [rgb]
+devices:
+  - vendor: Example
+    model: RGB DRAM
+    type: ram
+    match:
+      smbus:
+        bus: chipset
+        addresses: [0x58, 0x59]
+        extra_addresses: [0x77] # optional pre-scan-only addresses
+        pre_scan: true
+        probe: quick
+```
+
+GPU SMBus matches additionally declare explicit `pci_match` entries. Generic
+or implicit family matches are not accepted for privileged hardware scopes.
 
 Integration plugin:
 
 ```yaml
 id: example_bridge
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 type: integration
 name: Example Bridge
 version: 1.0.0
 license: GPL-3.0-or-later
 permissions: [network]
+capabilities: [rgb]
 
 transports:
   tcp:
@@ -89,9 +109,6 @@ Effect plugin:
 
 ```yaml
 id: example_effects
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 type: effect
 name: Example Effects
 version: 1.0.0

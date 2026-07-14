@@ -5,17 +5,21 @@ seeds a non-removable record for this repository and clones it at startup; a net
 first launch is logged and never blocks boot — the daemon simply has no official plugins until a
 later successful clone.
 
-Every plugin here is a normal directory package (`plugin.yaml` + `main.lua`; see the
-[manifest reference](docs/manifest-reference.md), [Lua API reference](docs/lua-api.md), and the
-[daemon's plugin guide](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md)) —
-this repo carries **no special trust**
-beyond being pre-registered. Installing, enabling, and updating any plugin here uses the same gate
-as a community-repo plugin: permissionless packages activate directly; permissioned packages are
-never auto-granted and require current-content acknowledgement.
+Every release is an indexed repository: [`repository.yaml`](repository.yaml) is the sorted,
+authoritative allowlist of package ids, paths, versions, and deterministic package digests. Halo
+fetches Git objects separately from executable files, validates a complete revision, and atomically
+selects that immutable revision only after validation succeeds. It never updates individual package
+subtrees or changes the active revision while merely checking for updates.
 
-Each manifest declares a supported HaloDaemon SemVer range and an exact plugin
-API generation. The daemon requires both to match before loading or updating a
-plugin; see [Compatibility](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#compatibility).
+Official releases also carry a detached `repository.sig` over the exact `repository.yaml` bytes.
+The signing private key is kept outside this repository; see [repository releases](docs/repository-release.md).
+Signing establishes provenance, not blanket execution authority: every disabled-to-enabled plugin
+transition presents the complete normalized authority in Halo and needs a fresh confirmation.
+
+Packages are normal directory packages (`plugin.yaml` + `main.lua`; see the
+[manifest reference](docs/manifest-reference.md) and [Lua API reference](docs/lua-api.md)).
+Repository compatibility belongs to `repository.yaml`; package manifests are inert catalogs for
+their platforms, permissions, transport scopes, supported devices, and advertised capabilities.
 
 ## Supported devices
 
