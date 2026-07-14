@@ -346,6 +346,19 @@ local function upload_gif(dev, resized)
   run_bucket_pipeline(dev, resized, bulk_info)
 end
 
+local chain_channels = { { id="0", name="Aer/F Fan", max_leds=40 } }
+local accessories = {
+  { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
+  { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
+  { id=23, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=24, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+}
+
 return {
   initialize = function(dev)
     -- Drain any stale HID reports from a previous session (e.g. unread LCD
@@ -368,6 +381,9 @@ return {
         latches = true,
         brightness = brightness, rotation = rotation,
       },
+      zones = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
+      chain = chain_channels,
+      accessories = accessories,
     }
   end,
 
