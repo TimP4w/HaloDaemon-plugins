@@ -3,7 +3,7 @@
 #
 id: nzxt_kraken
 compatibility:
-  halod: ">=0.2.0"
+  halod: ">=0.3.0"
   plugin_api: 1
 name: NZXT Kraken Z/Elite
 author: HaloDaemon
