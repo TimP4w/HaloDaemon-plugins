@@ -28,7 +28,7 @@ return {
     for index, gpu in ipairs(gpu_rows()) do
       controllers[#controllers + 1] = {
         index = index - 1, id = stable_id(gpu.uuid), key = gpu.uuid,
-        serial = gpu.uuid, name = gpu.name, sensor = {},
+        serial = gpu.uuid, name = gpu.name, device_type = "gpu", sensor = {},
       }
     end
     return controllers

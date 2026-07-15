@@ -10,8 +10,8 @@ capabilities: [sensors]
 dynamic_children: true
 devices:
   - vendor: NVIDIA
-    model: Any GPU reported by nvidia-smi
-    type: gpu
+    model: any
+    type: sensor
     match:
       command: nvidia-smi
 transports:
