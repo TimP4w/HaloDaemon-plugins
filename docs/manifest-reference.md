@@ -93,7 +93,7 @@ Each device needs `vendor`, `model`, and exactly one nested `match` entry.
 | Match | Main fields |
 |---|---|
 | `hid` | `vid`, `pid` or `pids`; optional `usage_page`, `usage`, `interface`, `max_bytes_per_sec` |
-| `usb` | `vid`, `pid`, and `interface` |
+| `usb` | `vid` and `pid`; optional `interface` (default `0`) |
 | `smbus` | `bus`, `addresses`; optional `extra_addresses`, `pre_scan`, `probe`, `pci_match`, `max_bytes_per_sec` |
 | `hwmon` | `any: true` |
 | `command` | Exact executable name |
@@ -180,6 +180,9 @@ transports:
 There must be one device named `primary`. It uses the matched device's VID and
 PID, so it must not declare its own. Other named devices are companions and
 must declare a VID and PID.
+
+`interface` may be omitted when an endpoint uniquely identifies the interface.
+Set it explicitly when the device has several possible interfaces.
 
 Every endpoint is an allowlist entry. Its address also sets its direction:
 `0x01..0x0f` are OUT and `0x81..0x8f` are IN. The type is `bulk` or

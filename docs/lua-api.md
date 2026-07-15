@@ -281,25 +281,30 @@ Children use the normal callbacks, such as `initialize`, `apply`, and
 
 ## Stream transport: HID and TCP
 
-All byte inputs accept a Lua string or `halod.buffer`; reads return Lua strings.
-For HID devices whose manifest declares a companion collection,
-`has_companion()` reports whether it was opened. `write_companion(bytes)`,
-`read_companion(size)`, and `write_then_read_companion(bytes, size)` access it
-explicitly; protocol code decides which collection to use.
+Byte inputs accept a Lua string or `halod.buffer`. Reads return Lua strings.
 
 | Method | Result |
 |---|---|
-| `dev.transport:write(data)` | Write one packet/payload. |
-| `:read(size)` | Blocking read of up to/requested `size` bytes. |
-| `:read_nonblocking(size)` | Non-blocking read. |
+| `dev.transport:write(data)` | Write bytes. |
+| `:read(size)` | Read bytes. |
+| `:read_nonblocking(size)` | Read without waiting. |
+| `:read_any(size)` | Read from either HID collection. |
+| `:defer_event(data)` | Put a report back into the HID event path. |
 | `:write_then_read(data, size)` | Write, then read a reply. |
 | `:feature_exchange(data, size)` | HID feature-report exchange. |
-| `:write_many({data, ...})` | Write several packets under one backend operation. |
+| `:write_many({data, ...})` | Write several packets. |
+| `:has_companion()` | Whether a companion HID collection is open. |
+| `:write_companion(data)` | Write to the companion collection. |
+| `:read_companion(size)` | Read from the companion collection. |
+| `:write_then_read_companion(data, size)` | Write and read on the companion. |
+| `:write_many_companion({data, ...})` | Write several companion packets. |
 
-TCP has no message framing, but HaloDaemon deliberately implements `read(size)` as read-exact: it
-returns exactly `size` bytes or errors on timeout/EOF. Read a fixed header first, decode its payload
-length, then request exactly that many bytes. HID report sizing/padding is handled by the HID
-backend.
+Companion methods work only when `transports.hid.companion` is declared and the
+collection opens successfully.
+
+TCP has no message framing. Its `read(size)` returns exactly `size` bytes or
+fails on timeout or EOF. Read a fixed header first, then read its stated payload
+length. HID padding is handled by the HID transport.
 
 ## USB endpoint transport
 
@@ -311,10 +316,49 @@ local result = dev.transport:usb_control(
 ```
 
 `device_id` is optional and defaults to `"primary"`. Bulk and interrupt reads
-return a Lua string and may be short; writes complete the full payload or fail.
-For control IN, pass an empty byte string and a non-zero `read_length`; for OUT,
-pass bytes and `read_length = 0`. The return is a string for IN and the transferred
-byte count for OUT. Every operation must fit the manifest allowlist, size, and timeout bounds.
+may return fewer bytes than requested. Writes send all bytes or fail.
+
+For control IN, pass `""` as `bytes` and set `read_length`. The result is a Lua
+string. For control OUT, pass the bytes and set `read_length` to `0`. The result
+is the transferred byte count. The device, endpoint, size, and timeout must all
+fit the manifest rules.
+
+## Command transport
+
+The command transport exposes an allowlisted runner:
+
+```lua
+local output = command.run("nvidia-smi", { "--query-gpu=name" })
+```
+
+The executable must appear in `transports.command.commands`. Arguments are
+passed directly without a shell. Output is returned as a Lua string. The same
+operation is also available as `dev.transport:run(executable, args)`.
+
+## Windows typed transports
+
+AMD SMN provides:
+
+```lua
+local value = dev.transport:amd_smn_read(offset)
+```
+
+LPCIO provides these typed methods:
+
+```text
+lpcio_select_slot(slot)
+lpcio_find_bars()
+lpcio_prepare_hwm(slot, unlock)
+lpcio_read_port(port)
+lpcio_write_port(port, value)
+lpcio_hwm_read(base, register)
+lpcio_hwm_write(base, register, value)
+lpcio_superio_inb(register)
+lpcio_superio_outb(register, value)
+```
+
+These methods are available only on Windows and only with the matching
+permission and transport. They do not expose the raw broker handle.
 
 ## SMBus transport
 
@@ -339,7 +383,8 @@ end)
 | `ops:write_block_data(addr, command, data)` | Success boolean. |
 | `ops:supports_block_write()` | Whether native block writes are supported. |
 
-An operation outside the manifest-declared address scope raises an error.
+An address outside the manifest scope raises an error. The `ops` value is valid
+only inside the `batch` callback. Do not save it for later use.
 
 ## Byte buffers
 
@@ -426,21 +471,29 @@ halod plugin-test .\openrgb
 
 | Harness API | Meaning |
 |---|---|
-| `h:open({ reads = {...} })` | Open a declared HID device over a recording transport. |
+| `h:open({ reads = {...}, pid = ..., companion = ... })` | Open the first declared HID, USB, or TCP device with recording transports. |
 | `h:open_integration({ reads = {...} })` | Open an integration root over mock TCP. |
 | `h:assert(condition, message)` | Record an assertion. |
 | `h:assert_eq(actual, expected, message)` | Record an equality assertion. |
 | `dev:initialize()` | Run the real plugin initialization path. |
 | `dev:apply(state)` | Run RGB state application. |
+| `dev:write_frame(zone, colors)` | Run a software RGB frame. |
+| `dev:write_ext_frame(channel, colors)` | Run a chain RGB frame. |
+| `dev:lcd_stream_frame(bytes, width, height, rotation, raw, brightness)` | Run an LCD frame callback. |
 | `dev:get_batteries()` | Run the declared battery capability and return its readings. |
 | `dev:set_range(key, value)` | Exercise a runtime range-control write. |
+| `dev:set_choice(key, value)` | Exercise a choice control. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
 | `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
 | `dev:rgb_descriptor()` | Return the resolved RGB zones and LED positions. |
 | `dev:writes()` | Recorded byte writes. |
 | `dev:usb_writes()` | Recorded USB endpoint/control writes with device routing metadata. |
+| `dev:queue_read(bytes)` | Add a scripted transport reply. |
+| `dev:queue_event(bytes)` | Add a scripted HID event. |
+| `dev:pump_events()` | Deliver queued HID events. |
 | `dev:clear()` | Clear recorded writes. |
 
-The recording harness covers HID, TCP, and USB endpoint/control traffic. Physical
-control/bulk smoke tests still require hardware.
+The recording harness covers HID, TCP, and USB endpoint/control traffic.
+Physical timing, interface claims, and firmware behavior still need hardware
+tests.
