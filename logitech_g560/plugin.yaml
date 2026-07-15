@@ -13,6 +13,6 @@ devices:
   - vendor: Logitech
     model: G560
     type: speaker
-    match: { hid: { vid: 0x046d, pid: 0x0a78, interface: 2, max_bytes_per_sec: 1500 } }
+    match: { hid: { vid: 0x046d, pid: 0x0a78, interface: 2, usage_page: 0xff43, usage: 0x0202, max_bytes_per_sec: 1500 } }
 transports:
   hid: { report_size: 0, timeout_ms: 50, feature_report: false }

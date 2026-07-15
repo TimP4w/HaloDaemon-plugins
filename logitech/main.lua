@@ -952,7 +952,7 @@ local function button_events(dev, packet_in)
 end
 
 return {
-  route_event = function(event)
+  event_source = function(event)
     local report = event.report
     if #report < 4 then return false end
     local sub = report:byte(3)
@@ -968,7 +968,14 @@ return {
     local devnum = report:byte(2)
     return devnum >= 1 and devnum <= 6 and devnum or 0
   end,
-  enumerate_controllers = receiver_children,
+  enumerate_controllers = function(dev)
+    local children = receiver_children(dev)
+    -- Pairing status is serialized for every GUI state frame. Keep the result
+    -- of the explicit discovery/reconciliation pass so serialization does not
+    -- re-enumerate the receiver over HID on the shared RGB/event worker.
+    dev.pairing_children = children
+    return children
+  end,
   start_pairing = function(dev, timeout_secs)
     if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
     v1_write(dev, DIRECT, 0x00b2, bytes(0x01, 0, math.min(255, timeout_secs)))
@@ -983,10 +990,17 @@ return {
     if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
     v1_write(dev, DIRECT, 0x00b2, bytes(0x03, slot))
     dev.pairing_state = "idle"
+    if dev.pairing_children then
+      local remaining = {}
+      for _, child in ipairs(dev.pairing_children) do
+        if child.index ~= slot then remaining[#remaining + 1] = child end
+      end
+      dev.pairing_children = remaining
+    end
   end,
   pairing_status = function(dev)
     if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
-    local children = receiver_children(dev)
+    local children = dev.pairing_children or {}
     local slots = {}
     for _, child in ipairs(children) do
       slots[#slots + 1] = { slot = child.index, device_id = child.id, name = child.name, connected = true }
@@ -1186,7 +1200,7 @@ return {
     end
     return nil
   end,
-  on_event = function(dev, event)
+  event = function(dev, event)
     if event.transport ~= "hid" then return nil end
     local report_devnum, sub = event.report:byte(2), event.report:byte(3)
     if dev.match.pid == 0xc547 and not dev.match.key then

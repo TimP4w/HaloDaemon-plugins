@@ -103,6 +103,21 @@ return {
   capabilities = { "rgb", "controls" },
   zones = {
     { id = "ring", name = "Ring", topology = "ring", led_count = 12 },
+    -- Optional exact normalized geometry; when present it overrides the
+    -- topology-derived layout and firmware `led_ids` ordering.
+    { id = "panel", name = "Panel", topology = "grid", led_count = 2,
+      leds = { { id = 0, x = 0.0, y = 0.0 }, { id = 1, x = 1.0, y = 1.0 } } },
+  },
+  -- Optional runtime keyboard geometry. Standard keys inherit their cells
+  -- from the named base; device-specific keys provide an explicit cell.
+  keyboard = {
+    ansi = { base = "tkl", keys = {
+      { led_id = 1, key = "a" },
+      { led_id = 150, cell = { col = 5, row = -1.5 } },
+    } },
+    iso = { base = "tkl_iso", keys = {} },
+    detected_language = "u_s",
+    languages = { "u_s", "c_h", "d_e", "f_r", "i_t", "u_k" },
   },
   lcd = {
     shape = "circle", width = 320, height = 320,
@@ -126,13 +141,14 @@ device does not inherit capabilities that only another model supports.
 Optional best-effort cleanup called before the worker exits. Host-managed audio sinks are also
 removed independently, including abnormal worker exits.
 
-### `on_event(dev, event)`
+### `event(dev, event)`
 
 Optional callback for event-driven host transports. HID events contain
 `event.transport == "hid"`, `event.endpoint` (`primary` or `companion`), and the
 raw `event.report` string. Return `{ button_events = { pressed = {...}, released = {...} } }`
-to forward transitions to the host input engine. Receiver reports are offered to
-the root and each routed child table on the single serialized worker.
+to forward transitions to the host input engine. A dynamic controller may define
+`event_source(event) -> index | 0 | false`: a positive index dispatches to that
+child, `0` or `nil` dispatches to the root, and `false` discards the report.
 
 ## Capability callbacks
 
@@ -145,7 +161,7 @@ host values and are commonly zero-based.
 | RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors)` |
 | Fan | `get_duty(dev) -> u8`; `set_duty(dev, duty)`; optional `get_rpm(dev) -> u32 | nil` |
 | Sensor | `get_sensors(dev) -> sensors` |
-| Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `on_event`. |
+| Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
 | Chain | `detect_accessories(dev) -> {{channel, accessory}, ...}`; `write_ext_frame(dev, channel_id, colors)` |
 | Chain fan | `fan_rpm(dev, channel)`, `fan_duty(dev, channel)`, `fan_controllable(dev, channel)`, `set_fan_duty(dev, channel, duty)` |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
@@ -243,6 +259,7 @@ enumerate_controllers = function(dev)
     {
       index = 0,
       name = "Keyboard",
+      device_type = "keyboard", -- optional; defaults to "other"
       serial = "ABC123",       -- optional; used for conflict detection
       location = "HID: ...",   -- optional; used for conflict detection
       zones = {
@@ -421,6 +438,8 @@ halod plugin-test .\openrgb
 | `dev:set_range(key, value)` | Exercise a runtime range-control write. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
+| `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
+| `dev:rgb_descriptor()` | Return the resolved RGB zones and LED positions. |
 | `dev:writes()` | Recorded byte writes. |
 | `dev:clear()` | Clear recorded writes. |
 

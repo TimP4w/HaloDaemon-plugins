@@ -41,7 +41,7 @@ transports:
 ```
 
 Lua implements `discover(host)`, `initialize(device)`, capability operations,
-`children()`, `on_event(event)`, and `close()`. `initialize` returns runtime
+`children()`, `event(event)`, and `close()`. `initialize` returns runtime
 identity, descriptors, and initial values. A package may only return
 capabilities listed in `capabilities`; malformed runtime descriptors are
 discarded individually rather than disabling valid siblings.

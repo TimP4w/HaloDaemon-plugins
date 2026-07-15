@@ -217,19 +217,34 @@ local function ddc_read(dev)
   return dev.transport:control_read("", DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, 32)
 end
 
+-- Reading the startup snapshot is best-effort. Some VCPs are unavailable in
+-- particular picture modes, and this USB bridge can time out individual
+-- control transfers while the monitor is waking. Keep the device usable with
+-- defaults/partial state instead of failing the whole initialize callback.
+-- Writes initiated by the user deliberately do not use this wrapper, so their
+-- transport errors still propagate to the daemon.
+local function ddc_query(dev, payload, parse)
+  local ok, value = pcall(function()
+    ddc_write(dev, payload)
+    return parse(ddc_read(dev))
+  end)
+  if not ok then
+    log("Philips Evnia 49: DDC probe failed: " .. tostring(value))
+    return nil
+  end
+  return value
+end
+
 local function ddc_get_standard(dev, vcp)
-  ddc_write(dev, build_get_standard(vcp))
-  return parse_get_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_standard(vcp), parse_get_reply)
 end
 
 local function ddc_get_extended(dev, sub)
-  ddc_write(dev, build_get_extended(sub))
-  return parse_get_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_extended(sub), parse_get_reply)
 end
 
 local function ddc_get_info(dev, a0, a1, a2, a3)
-  ddc_write(dev, build_get_info(a0, a1, a2, a3))
-  return parse_info_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_info(a0, a1, a2, a3), parse_info_reply)
 end
 
 local function ambiglow_write(dev, address, data)
@@ -401,7 +416,13 @@ return {
       controls = RUNTIME_CONTROLS,
       ranges = ranges,
       choices = choices,
-      zones = { { id = "ambiglow", name = "Ambiglow", topology = "linear", led_count = LED_COUNT } },
+      zones = { {
+        id = "ambiglow",
+        name = "Ambiglow",
+        topology = "grid",
+        led_count = LED_COUNT,
+        leds = ambiglow_positions(),
+      } },
       native_effects = { { id = "monitor", name = "Monitor (firmware control)", params = {} } },
     }
   end,

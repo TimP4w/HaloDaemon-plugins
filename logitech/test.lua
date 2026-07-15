@@ -342,7 +342,7 @@ return function(h)
   -- A packet that arrives interleaved with a request must be handed to the
   -- event path, not dropped: the button notification queued before the ROOT
   -- reply is deferred, the request still completes, and once the device has
-  -- enumerated its remap backend the deferred press is delivered via on_event.
+  -- enumerated its remap backend the deferred press is delivered via event().
   local evt_dev = h:open({ reads = {
     report(0x11, 0xff, 0x01, 0x00, { 0, 0x38 }),          -- interleaved button press (sub 1, deferred)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),                -- ROOT -> FEATURE_SET index 2
@@ -353,13 +353,13 @@ return function(h)
   } })
   h:assert(evt_dev:initialize(), "event fixture initializes past an interleaved packet")
   local pumped = evt_dev:pump_events()
-  h:assert_eq(#pumped, 1, "deferred interleaved packet is delivered through on_event")
-  h:assert_eq(pumped[1].pressed[1], 0x38, "on_event decodes the deferred button press")
+  h:assert_eq(#pumped, 1, "deferred interleaved packet is delivered through event()")
+  h:assert_eq(pumped[1].pressed[1], 0x38, "event() decodes the deferred button press")
 
   -- A queued button release for an already-pressed control produces a release
   -- transition on the next pump.
   evt_dev:queue_event(report(0x11, 0xff, 0x01, 0x00, {}))
   local released = evt_dev:pump_events()
-  h:assert_eq(#released, 1, "release notification produces an on_event outcome")
-  h:assert_eq(released[1].released[1], 0x38, "on_event decodes the button release")
+  h:assert_eq(#released, 1, "release notification produces an event() outcome")
+  h:assert_eq(released[1].released[1], 0x38, "event() decodes the button release")
 end
