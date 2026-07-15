@@ -410,13 +410,15 @@ return function(h)
 
   -- A packet that arrives interleaved with a request must be handed to the
   -- event path, not dropped: the button notification queued before the ROOT
-  -- reply is deferred, the request still completes, and once the device has
-  -- enumerated its remap backend the deferred press is delivered via event().
+  -- feature reply is deferred, the request still completes, and once the
+  -- device has enumerated its remap backend the deferred press is delivered
+  -- via event(). It deliberately shares the requested feature/function and
+  -- differs only by software id, pinning full-byte reply matching.
   local evt_dev = h:open({ reads = {
-    report(0x11, 0xff, 0x01, 0x00, { 0, 0x38 }),          -- interleaved button press (sub 1, deferred)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),                -- ROOT -> FEATURE_SET index 2
     report(0x11, 0xff, 0x02, 0x01, { 1 }),                -- FEATURE_SET count
     report(0x11, 0xff, 0x02, 0x11, { 0x1b, 0x04 }),       -- feature[1] = REPROG_CONTROLS_V4
+    report(0x11, 0xff, 0x01, 0x00, { 0, 0x38 }),          -- interleaved button press (swid 0)
     report(0x11, 0xff, 0x01, 0x01, { 1 }),                -- reprog control count
     report(0x11, 0xff, 0x01, 0x11, { 0, 0x38, 0, 0x38, 0x08, 0, 0 }), -- divertable cid 0x38
   } })

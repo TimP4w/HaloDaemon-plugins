@@ -10,6 +10,17 @@ return function(h)
   h:assert_eq(dev:writes()[3].data, { 0x10, 0x01 }, "enable status stream")
   dev:clear()
 
+  local status = {}
+  for i = 1, 26 do status[i] = 0 end
+  status[1], status[16], status[17] = 0x75, 28, 7
+  dev:queue_read(status)
+  local sensors = dev:poll_sensors()
+  h:assert_eq(sensors[1].value, 28.7, "valid liquid temperature is sampled")
+  status[16], status[17] = 0xFF, 0xFF
+  dev:queue_read(status)
+  sensors = dev:poll_sensors()
+  h:assert_eq(sensors[1].value, 28.7, "FF FF sentinel preserves the last valid temperature")
+
   dev:apply({ mode = "static", color = { r = 10, g = 20, b = 30 } })
   local w = dev:writes()
   h:assert_eq(#w, 4, "static apply: 2 ring data packets + ring commit + logo")

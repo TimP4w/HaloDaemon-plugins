@@ -28,13 +28,13 @@ end
 
 return function(h)
   local reads = {}
-  local function append(parts)
-    for _, part in ipairs(parts) do reads[#reads + 1] = part end
+  local function append(target, parts)
+    for _, part in ipairs(parts) do target[#target + 1] = part end
   end
-  append(reply(40, string.pack("<I4", 3)))
-  append(reply(0, string.pack("<I4", 2)))
-  append(reply(1, controller("Board", "ABC123", "HID: /dev/hidraw6", 12)))
-  append(reply(1, controller("Empty", "", "", 4)))
+  append(reads, reply(40, string.pack("<I4", 3)))
+  append(reads, reply(0, string.pack("<I4", 2)))
+  append(reads, reply(1, controller("Board", "ABC123", "HID: /dev/hidraw6", 12)))
+  append(reads, reply(1, controller("Empty", "", "", 4)))
 
   local dev = h:open_integration({ reads = reads })
   h:assert(dev:initialize(), "OpenRGB handshake succeeds")
@@ -50,4 +50,14 @@ return function(h)
   h:assert_eq(controllers[2].index, 1, "second controller index")
   h:assert_eq(controllers[2].serial, nil, "empty serial is absent")
   h:assert_eq(controllers[2].location, nil, "empty location is absent")
+
+  local oversized = {}
+  append(oversized, reply(40, string.pack("<I4", 3)))
+  append(oversized, reply(0, string.pack("<I4", 257)))
+  local bad = h:open_integration({ reads = oversized })
+  h:assert(bad:initialize(), "oversized-count fixture handshakes")
+  local ok, err = pcall(function() bad:enumerate_controllers() end)
+  h:assert(not ok, "peer controller count above the host limit is rejected")
+  h:assert(tostring(err):find("controller count 257 exceeds limit 256"),
+    "oversized controller error identifies the violated bound")
 end

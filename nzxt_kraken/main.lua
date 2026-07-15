@@ -447,6 +447,9 @@ return {
     if #r < 26 or r:get_u8(0) ~= 0x75 then
       return dev.status -- keep last good reading
     end
+    if r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF then
+      return dev.status -- firmware sentinel: no liquid-temperature reading
+    end
     local frac = r:get_u8(16)
     if frac > 9 then frac = 9 end
     return {

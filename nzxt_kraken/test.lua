@@ -15,6 +15,17 @@ return function(h)
   h:assert_eq(w[4].data, { 0x30, 0x01 }, "LCD state query")
   dev:clear()
 
+  local status = {}
+  for i = 1, 26 do status[i] = 0 end
+  status[1], status[16], status[17] = 0x75, 30, 5
+  dev:queue_read(status)
+  local sensors = dev:poll_sensors()
+  h:assert_eq(sensors[1].value, 30.5, "valid liquid temperature is sampled")
+  status[16], status[17] = 0xFF, 0xFF
+  dev:queue_read(status)
+  sensors = dev:poll_sensors()
+  h:assert_eq(sensors[1].value, 30.5, "FF FF sentinel preserves the last valid temperature")
+
   dev:apply({ mode = "static", color = { r = 5, g = 6, b = 7 } })
   local aw = dev:writes()
   h:assert_eq(#aw, 1, "static apply sends only the ring channel (no accessory yet)")

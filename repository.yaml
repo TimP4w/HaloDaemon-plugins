@@ -37,7 +37,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: fb2f2fe19d8739f6852184b8ea5b4166edcc6d8d76a14611b821968585f1659f
+    sha256: ef3a8824dda8bae2decbbe4f64d6a2a5a4cfbe02c35ee1e9e7c2147e50cc78c1
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
@@ -57,15 +57,15 @@ packages:
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.1
-    sha256: c7efca91de2ec602002d944db254266300b253985d9d653bd053e2acdd1e4b2c
+    sha256: 0156689f6927db90946be6737c8cd267397c23b21dc19827e119f34f9b7e5509
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0
-    sha256: 4bbe1f105451763597f58140661bebcf417b509bd0a96267b78b2913c8514bc7
+    sha256: f3648c8cc75015cec86a4c297d40e5b040f89973ce1316c898d9f2d226c0c2d4
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: ac27f16381443d11fb5e53aa64c260d0df2887a1d74f05872c80d325ca1e6a9b
+    sha256: 6718c8867a3225f801dc5e9b147279a63f515614ff9458b10d2681cef2cf78be
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0

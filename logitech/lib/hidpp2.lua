@@ -85,7 +85,7 @@ local function dispatch(dev, devnum, sub, address, check_func)
           error(string.format("HID++ error response (code 0x%02x)", reply:byte(6) or 0))
         end
         dev.transport:defer_event(reply)
-      elseif rsub == sub and (not check_func or (reply:byte(4) & 0xf0) == (address & 0xf0)) then
+      elseif rsub == sub and (not check_func or reply:byte(4) == address) then
         return reply:sub(5)
       else
         dev.transport:defer_event(reply)
