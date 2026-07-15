@@ -8,11 +8,16 @@ the repository-root `repository.yaml`.
 my_plugin/
 ├── plugin.yaml
 ├── main.lua
+├── lib/
+│   └── protocol.lua
 └── assets/
 ```
 
 The directory name and `id` must match. Package files, including `plugin.yaml`
 and `main.lua`, must be regular files inside the package.
+Package-local Lua modules may be placed below `lib/` and loaded with
+`halod.require("lib.protocol")`. They are indexed before activation and cannot
+resolve outside the package.
 
 ## Device plugin
 

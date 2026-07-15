@@ -18,8 +18,9 @@ return {
     return true
   end,
 
-  write_frame = function(dev, zone_id, colors)
+  write_frame = function(dev, zone_id, colors, led_ids)
     -- colors: {{ r = 0..255, g = 0..255, b = 0..255 }, ...}
+    -- led_ids[i] is the stable descriptor LED id for colors[i]
   end,
 
   close = function(dev)
@@ -46,6 +47,13 @@ Available standard libraries include `string`, `table`, and `math`, plus Lua 5.4
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
 | `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
+| `halod.require(name)` | Load and cache a package-local module indexed from `lib/**/*.lua`. Use a dotted name such as `lib.hidpp.v1`. |
+
+`halod.require` never resolves a runtime filesystem path. Module sources are
+read and validated with the package, stored in memory, and looked up only in
+that package's module index. Absolute paths, `..`, path separators, symlinks,
+and references to another plugin therefore cannot load. Module files are part
+of the plugin content hash.
 
 `os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, `collectgarbage` are removed.
 With the `os` permission, a reduced `os` table exposes only `os.time()` and `os.clock()`.
@@ -158,7 +166,7 @@ host values and are commonly zero-based.
 
 | Capability | Callback signature |
 |---|---|
-| RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors)` |
+| RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors, led_ids)` |
 | Fan | `get_duty(dev) -> u8`; `set_duty(dev, duty)`; optional `get_rpm(dev) -> u32 | nil` |
 | Sensor | `get_sensors(dev) -> sensors` |
 | Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
@@ -278,8 +286,9 @@ table receives the controller index in `dev.match.index` and its opaque key in
 `dev.match.key`.
 
 Routed children use the same capability callbacks as directly matched devices:
-`apply(dev, state)`, `write_frame(dev, zone_id, colors)`, and optional
-`write_frame_batch(dev, frames)`. Plugins route through `dev.match.index` or
+`apply(dev, state)`, `write_frame(dev, zone_id, colors, led_ids)`, and optional
+`write_frame_batch(dev, frames)`. Each batch frame contains `zone_id`, `colors`,
+and the matching `led_ids`. Plugins route through `dev.match.index` or
 `dev.match.key`; no controller-specific callback family exists.
 
 ## Stream transport: HID and TCP

@@ -6,7 +6,7 @@
 -- polled at 250 ms with a persist-after-write commit. Exposes battery, mic
 -- controls, noise-cancelling, wireless/base-station settings, and a 10-band EQ.
 --
--- Protocol reference: docs/protocols/steelseries-arctis.md, ported from the
+-- Protocol reference: steelseries_arctis/docs/protocol.md, ported from the
 -- linux-arctis-manager project (GPL-3.0) and sennheiser-gsx-control (MIT).
 --
 -- ChatMix: the base station streams a game/chat balance on the 0x45 dial. Two

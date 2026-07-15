@@ -26,6 +26,15 @@ return function(h)
   h:assert_eq(#writes[2].data, 20, "long report is padded to 20 bytes")
   h:assert_eq(writes[3].data[4], 0x11, "FEATURE_SET getFeature function with software id")
 
+  local waking_dev = h:open({ pid = 0xc095, reads = {
+    {}, {}, -- first ROOT attempt exhausts its two empty read windows
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 0 }),
+  } })
+  h:assert(waking_dev:initialize(), "cold G502 retries its initial ROOT lookup")
+  h:assert_eq(#waking_dev:writes(), 3,
+    "cold-device retry repeats ROOT once before feature enumeration")
+
   -- The same UNIFIED_BATTERY feature is queried using its enumerated runtime
   -- index.  It reports percentage directly and byte 3 signals charging.
   local battery_dev = h:open({ reads = {
@@ -259,7 +268,12 @@ return function(h)
   h:assert_eq(frame_writes[1].data[6], 8, "per-key range ends at last firmware LED")
   h:assert_eq(frame_writes[2].data[4], 0x71, "per-key frame commits atomically")
   keyboard_dev:clear()
-  breathing[4] = { r = 255, g = 0, b = 0 }
+  local led_4_index
+  for i, led in ipairs(keyboard_rgb.zones[1].leds) do
+    if led.id == 4 then led_4_index = i end
+  end
+  h:assert(led_4_index ~= nil, "keyboard RGB descriptor contains firmware LED 4")
+  breathing[led_4_index] = { r = 255, g = 0, b = 0 }
   keyboard_dev:write_frame("zone_0", breathing)
   local one_led = keyboard_dev:writes()
   h:assert_eq(#one_led, 2, "one changed LED is one range plus commit")
