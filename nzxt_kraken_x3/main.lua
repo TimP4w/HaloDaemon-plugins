@@ -6,7 +6,7 @@
 -- `nzxt_kraken.lua`: an 8-LED ring plus a single logo LED, no LCD, and no
 -- software pump/fan speed control.
 --
--- Protocol references: docs/protocols/ and liquidctl's kraken2 driver.
+-- Protocol reference: nzxt_kraken_x3/docs/protocol.md and liquidctl's kraken2 driver.
 -- Verified offsets: status report 0x75 (shared with Z/Elite); RGB `0x22 0x10`
 -- per-channel data packets (60 bytes/packet, two packets for 8 LEDs) + `0x22
 -- 0xA0` commit; logo `0x2A 0x04`.
@@ -61,6 +61,18 @@ local function write_logo(dev, color)
 end
 
 local RING_LEDS = 8
+local chain_channels = { { id="0", name="Aer/F Fan", max_leds=40 } }
+local accessories = {
+  { id=19, name="F120 RGB", led_count=8, topology="ring" },
+  { id=20, name="F140 RGB", led_count=8, topology="ring" },
+  { id=23, name="F140 RGB Core", led_count=8, topology="ring" },
+  { id=24, name="F140 RGB Core", led_count=8, topology="ring" },
+  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2 },
+  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2 },
+  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3 },
+  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3 },
+  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3 },
+}
 
 -- 8-LED ring starting at ~1:30 (top-right, offset by π/4 like native), plus
 -- the single logo LED at center.
@@ -79,7 +91,15 @@ return {
     dev.transport:write(string.char(0x70, 0x01))                   -- firmware push
     dev.transport:write(string.char(0x10, 0x01))                   -- enable status stream
     log("NZXT Kraken X initialized")
-    return { ok = true }
+    return {
+      ok = true,
+      zones = {
+        { id="ring", name="Ring", topology="ring", led_count=8 },
+        { id="logo", name="Logo", topology="linear", led_count=1 },
+      },
+      chain = chain_channels,
+      accessories = accessories,
+    }
   end,
 
   write_frame = function(dev, zone_id, colors)
@@ -120,6 +140,9 @@ return {
     local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
     if #r < 26 or r:get_u8(0) ~= 0x75 then
       return dev.status
+    end
+    if r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF then
+      return dev.status -- firmware sentinel: no liquid-temperature reading
     end
     local frac = r:get_u8(16)
     if frac > 9 then frac = 9 end

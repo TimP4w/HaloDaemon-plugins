@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+id: nvidia
+name: NVIDIA GPUs
+version: 1.0.0
+license: GPL-3.0-or-later
+description: NVIDIA GPU thermal sensors reported by nvidia-smi.
+platforms: [linux, windows]
+permissions: [command]
+capabilities: [sensors]
+dynamic_children: true
+devices:
+  - vendor: NVIDIA
+    model: any
+    type: sensor
+    match:
+      command: nvidia-smi
+transports:
+  command:
+    commands: [nvidia-smi]

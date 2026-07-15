@@ -5,10 +5,10 @@
 -- bus). Connects to an OpenRGB server (default 127.0.0.1:6742) over TCP and
 -- exposes each of its RGB controllers as a top-level HaloDaemon device.
 --
--- One worker (VM + connection) multiplexes *every* controller: `initialize`
--- and `enumerate_controllers` run once on it, and each controller's frames are
--- routed back to it via `write_controller_frame`/`apply_controller` with the
--- controller's enumeration `index`. Keeping a single connection avoids the
+-- One worker (VM + connection) multiplexes *every* controller: the root
+-- performs the protocol handshake and enumeration, and each controller's frames are
+-- routed through the ordinary capability callbacks; each child's persistent
+-- `dev.match.index` contains its enumeration route. Keeping one connection avoids the
 -- connect-storm that crashes the server when a client opens one socket per
 -- controller, and keeps all protocol reads serialized on one connection.
 --
@@ -35,10 +35,16 @@ local PKT_RGBCONTROLLER_SETCUSTOMMODE = 1100
 -- waiting for its ACK semantics makes a successful connection time out on
 -- older servers after they have already accepted SET_CLIENT_NAME.
 local CLIENT_PROTOCOL_VERSION = 3
+local MAX_CONTROLLERS = 256
+local MAX_MODES = 256
+local MAX_ZONES = 256
+local MAX_ZONE_LEDS = 4096
+local MAX_CONTROLLER_LEDS = 0xFFFF
+local MAX_MODE_COLORS = 4096
 
--- Enumeration index → its zones ({ id = <zone index string>, led_count = n }),
--- cached in the root VM for enumeration. Controller callbacks run in their
--- own VMs and use the descriptor HaloDaemon injects as `dev.zones` instead.
+-- Enumeration index → its zones ({ id = <zone index string>, led_count = n }).
+-- The root and routed controller callbacks share one worker, so child
+-- initialization can publish the topology discovered during enumeration.
 local controller_zones = {}
 -- Enumeration index → whether `SetCustomMode` was already sent this connection.
 local custom_mode_sent = {}
@@ -90,6 +96,13 @@ local function read_u32(data, pos)
   return string.unpack("<I4", data, pos)
 end
 
+local function check_count(what, value, limit)
+  if value > limit then
+    error(string.format("openrgb: %s count %d exceeds limit %d", what, value, limit))
+  end
+  return value
+end
+
 -- Server strings are length-prefixed (u16), the length including a trailing
 -- '\0'; exactly `len` bytes are consumed regardless of contents.
 local function read_str(data, pos)
@@ -112,6 +125,7 @@ local function skip_mode(data, pos)
   p = p + 4 * 12
   local num_colors
   num_colors, p = read_u16(data, p)
+  check_count("mode color", num_colors, MAX_MODE_COLORS)
   return p + num_colors * 4
 end
 
@@ -133,6 +147,7 @@ local function read_zone(data, pos, zero_based_index)
   p = p + 4 -- leds_max
   local leds_count
   leds_count, p = read_u32(data, p)
+  check_count("zone LED", leds_count, MAX_ZONE_LEDS)
   p = skip_matrix(data, p) -- zone matrix (unconditional)
 
   local zone = {
@@ -161,9 +176,7 @@ local function ensure_custom_mode(dev, index)
   end
 end
 
--- The root and every controller have separate Lua VMs. The root fills
--- controller_zones while enumerating; a controller VM instead receives its
--- synthesized RgbZone descriptors through dev.zones. Normalize both shapes:
+-- Normalize enumeration zones and host-provided RgbZone descriptors:
 -- enumeration zones carry led_count, while RgbZone carries a leds array.
 local function zones_for(dev, index)
   local zones = controller_zones[index] or dev.zones or {}
@@ -209,6 +222,13 @@ end
 
 return {
   initialize = function(dev)
+    if dev.match.index ~= nil then
+      return {
+        ok = true,
+        capabilities = { "rgb" },
+        zones = controller_zones[dev.match.index] or {},
+      }
+    end
     -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
     -- one REQUEST_PROTOCOL_VERSION response on released servers.
     send_packet(dev, 0, PKT_SET_CLIENT_NAME, "HaloDaemon\0")
@@ -223,6 +243,7 @@ return {
   enumerate_controllers = function(dev)
     send_packet(dev, 0, PKT_REQUEST_CONTROLLER_COUNT)
     local count = read_u32(recv_payload(dev, PKT_REQUEST_CONTROLLER_COUNT), 1)
+    check_count("controller", count, MAX_CONTROLLERS)
 
     controller_zones = {}
     custom_mode_sent = {}
@@ -250,6 +271,7 @@ return {
 
       local num_modes
       num_modes, pos = read_u16(data, pos)
+      check_count("mode", num_modes, MAX_MODES)
       pos = pos + 4 -- active_mode
       for _ = 1, num_modes do
         pos = skip_mode(data, pos)
@@ -257,9 +279,13 @@ return {
 
       local num_zones
       num_zones, pos = read_u16(data, pos)
+      check_count("zone", num_zones, MAX_ZONES)
       local zones = {}
+      local total_leds = 0
       for z = 1, num_zones do
         zones[z], pos = read_zone(data, pos, z - 1)
+        total_leds = total_leds + zones[z].led_count
+        check_count("controller LED", total_leds, MAX_CONTROLLER_LEDS)
       end
       -- LEDs/colours follow but aren't needed; the
       -- whole message was already consumed via the packet size.
@@ -276,15 +302,17 @@ return {
     return controllers
   end,
 
-  -- One worker multiplexes every controller, so route by the explicit `index`
-  -- (enumeration order) rather than any per-device identity.
-  write_controller_frame = function(dev, index, zone_id, colors)
+  -- One worker owns every controller. Each routed child has a persistent dev
+  -- table whose match index is the enumeration route.
+  write_frame = function(dev, zone_id, colors)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     ensure_custom_mode(dev, index)
     set_zone_colors(dev, index, zone_id, colors)
     send_controller(dev, index)
   end,
 
-  write_controller_frame_batch = function(dev, index, frames)
+  write_frame_batch = function(dev, frames)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     ensure_custom_mode(dev, index)
     for _, frame in ipairs(frames) do
       set_zone_colors(dev, index, frame.zone_id, frame.colors)
@@ -292,7 +320,8 @@ return {
     send_controller(dev, index)
   end,
 
-  apply_controller = function(dev, index, state)
+  apply = function(dev, state)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     local zones = zones_for(dev, index)
     if not zones then
       return

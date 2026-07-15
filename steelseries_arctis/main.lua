@@ -6,7 +6,7 @@
 -- polled at 250 ms with a persist-after-write commit. Exposes battery, mic
 -- controls, noise-cancelling, wireless/base-station settings, and a 10-band EQ.
 --
--- Protocol reference: docs/protocols/steelseries-arctis.md, ported from the
+-- Protocol reference: steelseries_arctis/docs/protocol.md, ported from the
 -- linux-arctis-manager project (GPL-3.0) and sennheiser-gsx-control (MIT).
 --
 -- ChatMix: the base station streams a game/chat balance on the 0x45 dial. Two
@@ -45,6 +45,7 @@ local POWER_CHARGING = 0x02
 local POWER_ONLINE = 0x08
 
 local MAX_POLL_READS = 32 -- packets drained per poll pass (see protocol §5)
+local POLL_REPLY_DELAY_MS = 50 -- let requested status packets reach the HID queue
 local EQ_BASELINE = 20 -- raw 0x14 = 0 dB
 local EQ_CUSTOM_BYTE = 0x04 -- the single editable preset
 
@@ -189,14 +190,14 @@ end
 local function refresh(dev)
   dev.transport:write(string.char(REPORT_CMD, MSG_STATUS))
   dev.transport:write(string.char(REPORT_CMD, MSG_SETTINGS))
+  -- Never occupy the shared command worker for the transport's full 1 s read
+  -- timeout. Replies are requested above; after their short assembly window,
+  -- drain whatever is ready. A late packet remains queued for the next pass.
+  halod.sleep_ms(POLL_REPLY_DELAY_MS)
   local cm_game, cm_chat
-  for i = 1, MAX_POLL_READS do
+  for _ = 1, MAX_POLL_READS do
     local ok, pkt = pcall(function()
-      if i == 1 then
-        return dev.transport:read(PACKET)
-      else
-        return dev.transport:read_nonblocking(PACKET)
-      end
+      return dev.transport:read_nonblocking(PACKET)
     end)
     if not ok or type(pkt) ~= "string" or #pkt == 0 then break end
     local s = strip_report_id(pkt)
@@ -245,6 +246,28 @@ local function booleans(dev)
   end
   return b
 end
+
+local controls = {
+  choices = {
+    { key="gain", label="Microphone Gain", category="Microphone", display="inline", options={{id="0",label="Low"},{id="1",label="High"}} },
+    { key="sidetone", label="Sidetone", category="Microphone", display="inline", options={{id="0",label="Off"},{id="1",label="Low"},{id="2",label="Medium"},{id="3",label="High"}} },
+    { key="nc_mode", label="Mode", category="Noise Cancelling", display="inline", options={{id="0",label="Off"},{id="1",label="Transparent"},{id="2",label="Noise Cancelling"}} },
+    { key="wireless_mode", label="Wireless Mode", category="Base Station", display="inline", options={{id="0",label="Maximum Speed"},{id="1",label="Maximum Range"}} },
+    { key="auto_off", label="Auto-Off Timeout", category="Base Station", display="list", options={{id="0",label="Off"},{id="1",label="1 min"},{id="2",label="5 min"},{id="3",label="10 min"},{id="4",label="15 min"},{id="5",label="30 min"},{id="6",label="60 min"}} },
+    { key="screen_mode", label="Screen Mode", category="Base Station", display="inline", options={{id="0",label="Detailed"},{id="1",label="Simple"}} },
+    { key="sonar_eq", label="Sonar EQ", category="Audio", display="toggle", options={{id="0",label="Off"},{id="1",label="On"}} },
+  },
+  ranges = {
+    { key="mic_volume", label="Microphone Volume", category="Microphone", min=1, max=10, step=1, default=10 },
+    { key="mic_led_brightness", label="LED Brightness", category="Microphone", min=10, max=100, step=10, default=100 },
+    { key="nc_level", label="Transparency Level", category="Noise Cancelling", min=1, max=10, step=1, default=1 },
+  },
+  booleans = {
+    { key="mic_active", label="Microphone", category="Microphone", read_only=true },
+    { key="bt_connection", label="Bluetooth", category="Bluetooth", read_only=true },
+    { key="bt_auto_mute", label="Auto-Mute", category="Bluetooth", read_only=true },
+  },
+}
 
 local function build_equalizer()
   local presets = {}
@@ -309,6 +332,7 @@ return {
         mic_volume = state.mic_volume, mic_led_brightness = state.mic_led_brightness,
         nc_level = state.nc_level,
       },
+      controls = controls,
     }
   end,
 

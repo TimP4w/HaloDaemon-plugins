@@ -1,4 +1,4 @@
-# Philips Ambiglow Protocol
+# Philips Ambiglow protocol
 
 ENE-over-USB-control register protocol for the ENE Technology RGB controller
 (ENE KB7730) that drives the Philips Evnia 49 monitor's Ambiglow rear LEDs.

@@ -1,197 +1,43 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: liquidctl contributors <https://github.com/liquidctl/liquidctl>
-#
 id: nzxt_kraken
-compatibility:
-  halod: ">=0.3.0"
-  plugin_api: 1
 name: NZXT Kraken Z/Elite
 author: HaloDaemon
 version: 1.0.1
 license: GPL-3.0-or-later
-description:
-  "NZXT Kraken Z/Elite family: RGB, pump fan, liquid-temp sensor, accessory fan child, and
-  LCD."
+description: NZXT Kraken Z/Elite family with RGB, pump, telemetry, LCD, and chained fans.
+permissions: [hid, usb]
+capabilities: [rgb, fan, sensors, lcd, chain]
 devices:
   - vendor: NZXT
     model: Kraken
     name: Kraken Z53/63/73
-    device_type: a_i_o
-    transport: hid
-    vid: 0x1E71
-    pid: 0x3008
+    type: a_i_o
+    match: { hid: { vid: 0x1E71, pid: 0x3008 } }
   - vendor: NZXT
     model: Kraken
     name: Kraken Elite 2023
-    device_type: a_i_o
-    transport: hid
-    vid: 0x1E71
-    pid: 0x300C
+    type: a_i_o
+    match: { hid: { vid: 0x1E71, pid: 0x300C } }
   - vendor: NZXT
     model: Kraken
     name: Kraken 2023
-    device_type: a_i_o
-    transport: hid
-    vid: 0x1E71
-    pid: 0x300E
+    type: a_i_o
+    match: { hid: { vid: 0x1E71, pid: 0x300E } }
   - vendor: NZXT
     model: Kraken
     name: Kraken Elite V2
-    device_type: a_i_o
-    transport: hid
-    vid: 0x1E71
-    pid: 0x3012
+    type: a_i_o
+    match: { hid: { vid: 0x1E71, pid: 0x3012 } }
   - vendor: NZXT
     model: Kraken
     name: Kraken Plus 2024
-    device_type: a_i_o
-    transport: hid
-    vid: 0x1E71
-    pid: 0x3014
+    type: a_i_o
+    match: { hid: { vid: 0x1E71, pid: 0x3014 } }
 transports:
-  hid:
-    report_size: 64
-    timeout_ms: 1000
-    feature_report: false
-chain:
-  channels:
-  - id: '0'
-    max_leds: 40
-    name: Aer/F Fan
-  accessories:
-  - fan: true
-    id: 19
-    led_count: 8
-    topology: ring
-    name: F120 RGB
-  - fan: true
-    id: 20
-    led_count: 8
-    topology: ring
-    name: F140 RGB
-  - fan: true
-    id: 23
-    led_count: 8
-    topology: ring
-    name: F140 RGB Core
-  - fan: true
-    id: 24
-    led_count: 8
-    topology: ring
-    name: F140 RGB Core
-  - rings: 2
-    fan: true
-    id: 27
-    led_count: 16
-    topology: rings
-    name: F240 RGB Core
-  - rings: 2
-    fan: true
-    id: 28
-    led_count: 16
-    topology: rings
-    name: F240 RGB Core
-  - rings: 3
-    fan: true
-    id: 29
-    led_count: 24
-    topology: rings
-    name: F360 RGB Core
-  - rings: 3
-    fan: true
-    id: 30
-    led_count: 24
-    topology: rings
-    name: F360 RGB Core
-  - rings: 3
-    fan: true
-    id: 31
-    led_count: 24
-    topology: rings
-    name: F420 RGB Core
-lcd:
-  needs_rgb_restore: true
-rgb:
-  zones:
-  - id: ring
-    leds:
-    - id: 0
-      x: 0.5
-      y: 0.05
-    - id: 1
-      x: 0.62
-      y: 0.065
-    - id: 2
-      x: 0.725
-      y: 0.11
-    - id: 3
-      x: 0.82
-      y: 0.18
-    - id: 4
-      x: 0.89
-      y: 0.27
-    - id: 5
-      x: 0.93
-      y: 0.38
-    - id: 6
-      x: 0.95
-      y: 0.5
-    - id: 7
-      x: 0.93
-      y: 0.62
-    - id: 8
-      x: 0.89
-      y: 0.72
-    - id: 9
-      x: 0.82
-      y: 0.82
-    - id: 10
-      x: 0.725
-      y: 0.89
-    - id: 11
-      x: 0.62
-      y: 0.93
-    - id: 12
-      x: 0.5
-      y: 0.95
-    - id: 13
-      x: 0.38
-      y: 0.93
-    - id: 14
-      x: 0.275
-      y: 0.89
-    - id: 15
-      x: 0.18
-      y: 0.82
-    - id: 16
-      x: 0.11
-      y: 0.725
-    - id: 17
-      x: 0.065
-      y: 0.62
-    - id: 18
-      x: 0.05
-      y: 0.5
-    - id: 19
-      x: 0.065
-      y: 0.38
-    - id: 20
-      x: 0.11
-      y: 0.275
-    - id: 21
-      x: 0.18
-      y: 0.18
-    - id: 22
-      x: 0.275
-      y: 0.11
-    - id: 23
-      x: 0.38
-      y: 0.065
-    topology:
-      type: ring
-    name: Pump Ring
-sensor: {}
-fan:
-  channel: 0
-poll:
-  interval_ms: 500
+  hid: { report_size: 64, timeout_ms: 1000, feature_report: false }
+  usb:
+    devices:
+      - id: primary
+        endpoints:
+          - { address: 0x02, type: bulk, max_transfer_size: 4194304, max_timeout_ms: 10000 }

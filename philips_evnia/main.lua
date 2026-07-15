@@ -5,12 +5,12 @@
 -- DDC/CI control interface (via the USB hub chip, 2109:8884) for picture/OSD
 -- settings, and an ENE KB7730 RGB controller (0cf2:b201) for the rear
 -- Ambiglow LEDs. This plugin matches the DDC chip and opens the Ambiglow
--- chip as a bundled secondary `usb_control` endpoint, presenting both as a
+-- chip as a bundled companion USB device, presenting both as a
 -- single device.
 --
 -- The 44-LED Ambiglow control path (capture-block enable, 0xE100 frame buffer,
 -- baseline-region restore) is adapted from tomasf/evnia (MIT). DDC/CI details:
--- docs/protocols/ddc-ci.md; Ambiglow: docs/protocols/philips-ambiglow.md.
+-- philips_evnia/docs/ddc-ci.md; Ambiglow: philips_evnia/docs/ambiglow.md.
 
 -- ── DDC/CI USB control-transfer parameters ───────────────────────────────────
 local DDC_BMREQ_OUT = 0x40 -- vendor | host-to-device | device recipient
@@ -209,31 +209,46 @@ end
 -- ── Transport helpers ────────────────────────────────────────────────────────
 local function ddc_write(dev, payload)
   halod.sleep_ms(WRITE_GAP_MS)
-  dev.transport:control_write("", DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload)
+  dev.transport:usb_control(DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload, 0, 50)
 end
 
 local function ddc_read(dev)
   halod.sleep_ms(READ_DELAY_MS)
-  return dev.transport:control_read("", DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, 32)
+  return dev.transport:usb_control(DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, "", 32, 50)
+end
+
+-- Reading the startup snapshot is best-effort. Some VCPs are unavailable in
+-- particular picture modes, and this USB bridge can time out individual
+-- control transfers while the monitor is waking. Keep the device usable with
+-- defaults/partial state instead of failing the whole initialize callback.
+-- Writes initiated by the user deliberately do not use this wrapper, so their
+-- transport errors still propagate to the daemon.
+local function ddc_query(dev, payload, parse)
+  local ok, value = pcall(function()
+    ddc_write(dev, payload)
+    return parse(ddc_read(dev))
+  end)
+  if not ok then
+    log("Philips Evnia 49: DDC probe failed: " .. tostring(value))
+    return nil
+  end
+  return value
 end
 
 local function ddc_get_standard(dev, vcp)
-  ddc_write(dev, build_get_standard(vcp))
-  return parse_get_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_standard(vcp), parse_get_reply)
 end
 
 local function ddc_get_extended(dev, sub)
-  ddc_write(dev, build_get_extended(sub))
-  return parse_get_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_extended(sub), parse_get_reply)
 end
 
 local function ddc_get_info(dev, a0, a1, a2, a3)
-  ddc_write(dev, build_get_info(a0, a1, a2, a3))
-  return parse_info_reply(ddc_read(dev))
+  return ddc_query(dev, build_get_info(a0, a1, a2, a3), parse_info_reply)
 end
 
 local function ambiglow_write(dev, address, data)
-  dev.transport:control_write("ambiglow", AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data)
+  dev.transport:usb_control(AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data, 0, 50, "ambiglow")
 end
 
 -- Arm direct frame control once (idempotent until a release).
@@ -277,6 +292,71 @@ end
 local CAT_PICTURE, CAT_COLOR, CAT_AUDIO = "picture", "color", "audio"
 local CAT_OSD, CAT_SETUP, CAT_GAMING = "osd", "setup", "gaming"
 local CAT_SYSTEM_USB, CAT_SMART_IMAGE = "system_usb", "smart_image"
+
+-- The catalog intentionally contains only inert identity and transport data.
+-- These descriptors are runtime data: firmware can expose a different set of
+-- controls, so they travel with initialize instead of plugin.yaml.
+local function table_choice(key, label, category, values, default)
+  local options = {}
+  for index, value in ipairs(values) do
+    options[#options + 1] = { id = tostring(index - 1), label = value.label }
+  end
+  return { key = key, label = label, category = category, options = options, default = default or 0 }
+end
+
+local function numeric_choice(key, label, category, labels, default)
+  local options = {}
+  for index, option in ipairs(labels) do
+    options[#options + 1] = { id = tostring(index - 1), label = option }
+  end
+  return { key = key, label = label, category = category, options = options, default = default or 0 }
+end
+
+local RUNTIME_CONTROLS = {
+  choices = {
+    table_choice("input_source", "Input Source", CAT_SYSTEM_USB, INPUT_PORTS),
+    table_choice("smart_image", "SmartImage", CAT_SMART_IMAGE, SMART_IMAGE_MODES),
+    table_choice("color_temperature", "Color Temperature", CAT_COLOR, COLOR_TEMPERATURES),
+    table_choice("gamma", "Gamma", CAT_PICTURE, GAMMA_VALUES, 2),
+    table_choice("osd_language", "OSD Language", CAT_OSD, OSD_LANGUAGES),
+    numeric_choice("smart_response", "SmartResponse", CAT_GAMING, { "Off", "Fast", "Faster", "Fastest" }),
+    table_choice("power_mode", "Power", CAT_SETUP, POWER_MODES),
+    table_choice("pixel_orbiting", "Pixel Orbiting", CAT_SETUP, PIXEL_ORBITING),
+    table_choice("screen_saver", "Screen Saver", CAT_SETUP, SCREEN_SAVER),
+    numeric_choice("crosshair", "Crosshair", CAT_GAMING, { "Off", "On", "Smart" }),
+    numeric_choice("osd_transparency", "OSD Transparency", CAT_OSD, { "Off", "1", "2", "3", "4" }),
+    numeric_choice("osd_timeout", "OSD Timeout", CAT_OSD, { "10s", "20s", "30s", "40s", "50s" }),
+    numeric_choice("usb_c_setting", "USB-C Setting", CAT_SYSTEM_USB, { "High Resolution", "High Data" }),
+    numeric_choice("kvm", "KVM", CAT_SYSTEM_USB, { "Auto", "USB Up", "USB-C" }),
+  },
+  ranges = {
+    { key = "brightness", label = "Brightness", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
+    { key = "contrast", label = "Contrast", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
+    { key = "volume", label = "Volume", category = CAT_AUDIO, min = 0, max = 100, default = 0 },
+    { key = "sharpness", label = "Sharpness", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
+    { key = "light_enhancement", label = "Light Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0 },
+    { key = "color_enhancement", label = "Color Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0 },
+    { key = "osd_h_position", label = "OSD Horizontal Position", category = CAT_OSD, min = 0, max = 100, default = 50 },
+    { key = "osd_v_position", label = "OSD Vertical Position", category = CAT_OSD, min = 0, max = 100, default = 50 },
+    { key = "power_led", label = "Power LED Brightness", category = CAT_SETUP, min = 0, max = 4, default = 2 },
+    { key = "gain_red", label = "Red Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
+    { key = "gain_green", label = "Green Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
+    { key = "gain_blue", label = "Blue Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
+  },
+  booleans = {
+    { key = "adaptive_sync", label = "Adaptive Sync", category = CAT_GAMING },
+    { key = "low_input_lag", label = "Low Input Lag", category = CAT_GAMING },
+    { key = "audio_mute", label = "Mute Audio", category = CAT_AUDIO },
+    { key = "resolution_notice", label = "Resolution Notice", category = CAT_OSD },
+    { key = "usb_standby", label = "USB Standby Mode", category = CAT_SYSTEM_USB },
+    { key = "smart_power", label = "Smart Power", category = CAT_SETUP },
+    { key = "cec", label = "CEC", category = CAT_SETUP },
+    { key = "auto_warning", label = "Auto Warning", category = CAT_SETUP },
+    { key = "srgb", label = "sRGB", category = CAT_PICTURE },
+    { key = "hdr_active", label = "HDR Active", category = CAT_SMART_IMAGE, read_only = true },
+  },
+  actions = { { key = "pixel_refresh", label = "Pixel Refresh", category = CAT_SETUP } },
+}
 
 return {
   initialize = function(dev)
@@ -330,7 +410,21 @@ return {
     v = ddc_get_extended(dev, 0x20); if v then s.srgb = v ~= 0 end
 
     log("Philips Evnia 49 initialized")
-    return { ok = true, model = model, ranges = ranges, choices = choices }
+    return {
+      ok = true,
+      model = model,
+      controls = RUNTIME_CONTROLS,
+      ranges = ranges,
+      choices = choices,
+      zones = { {
+        id = "ambiglow",
+        name = "Ambiglow",
+        topology = "grid",
+        led_count = LED_COUNT,
+        leds = ambiglow_positions(),
+      } },
+      native_effects = { { id = "monitor", name = "Monitor (firmware control)", params = {} } },
+    }
   end,
 
   close = function(dev)

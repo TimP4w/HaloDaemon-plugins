@@ -3,115 +3,37 @@
 # SPDX-FileCopyrightText: Erik Gilling (konkers) — OpenRGB project
 #
 id: corsair_dram
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 name: Corsair DRAM RGB
 author: HaloDaemon
 version: 1.0.0
 license: GPL-2.0-or-later
 description: Corsair iCUE DRAM RGB (Vengeance / Dominator, DDR4 & DDR5).
-permissions:
-  - smbus
+platforms: [linux, windows]
+permissions: [smbus]
+capabilities: [rgb]
+
 devices:
-- vendor: Corsair
-  model: iCUE DRAM
-  name: Corsair DRAM RGB
-  device_type: ram
-  transport: smbus
-  bus: chipset
-  addresses:
-  - 0x0058
-  - 0x0059
-  - 0x005A
-  - 0x005B
-  - 0x005C
-  - 0x005D
-  - 0x005E
-  - 0x005F
-  - 0x0018
-  - 0x0019
-  - 0x001A
-  - 0x001B
-  - 0x001C
-  - 0x001D
-  - 0x001E
-  - 0x001F
-  pre_scan: false
-  probe: quick
-rgb:
-  zones: []
-  native_effects:
-  - name: Breathing
-    params:
-    - kind:
-        kind: color
-      default:
-        g: 128
-        r: 0
-        b: 255
-      label: Color
-      id: color
-    - kind:
-        kind: enum
-        options:
-        - slow
-        - medium
-        - fast
-      default: medium
-      label: Speed
-      id: speed
-    id: breathing
-  - name: Rainbow Wave
-    params:
-    - kind:
-        kind: enum
-        options:
-        - slow
-        - medium
-        - fast
-      default: medium
-      label: Speed
-      id: speed
-    - kind:
-        kind: enum
-        options:
-        - up
-        - down
-        - left
-        - right
-      default: right
-      label: Direction
-      id: direction
-    id: rainbow_wave
-  - name: Color Shift
-    params:
-    - kind:
-        kind: color
-      default:
-        g: 0
-        r: 255
-        b: 0
-      label: Color 1
-      id: color1
-    - kind:
-        kind: color
-      default:
-        g: 0
-        r: 0
-        b: 255
-      label: Color 2
-      id: color2
-    - kind:
-        kind: enum
-        options:
-        - slow
-        - medium
-        - fast
-      default: medium
-      label: Speed
-      id: speed
-    id: color_shift
-  - name: Off
-    params: []
-    id: off
+  - vendor: Corsair
+    model: iCUE DRAM
+    name: Corsair DRAM RGB
+    type: ram
+    match:
+      smbus:
+        bus: chipset
+        addresses:
+          - 0x0058
+          - 0x0059
+          - 0x005A
+          - 0x005B
+          - 0x005C
+          - 0x005D
+          - 0x005E
+          - 0x005F
+          - 0x0018
+          - 0x0019
+          - 0x001A
+          - 0x001B
+          - 0x001C
+          - 0x001D
+          - 0x001E
+          - 0x001F

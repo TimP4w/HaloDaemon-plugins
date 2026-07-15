@@ -3,7 +3,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 SPDX-FileCopyrightText: linux-arctis-manager contributors <https://github.com/elegos/Linux-Arctis-Manager>
 -->
 
-# SteelSeries Arctis Protocol
+# SteelSeries Arctis protocol
 
 SteelSeries vendor HID protocol for the Arctis Nova Pro Wireless headset family: a 64-byte report-ID-prefixed command/notification format on HID interface 4, polled at 250 ms with a persist-after-write commit. Implemented by the [`steelseries_arctis`](../../steelseries_arctis/) plugin.
 

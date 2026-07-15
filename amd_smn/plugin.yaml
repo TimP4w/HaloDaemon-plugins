@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: LibreHardwareMonitor contributors
+id: amd_smn
+name: AMD SMN
+version: 1.0.0
+license: MPL-2.0
+description: AMD Zen thermal sensors through the typed SMN transport.
+identity:
+  id: amd_cpu_sensor_amd_ryzen_cpu
+platforms: [windows]
+permissions: [amd_smn]
+capabilities: [sensors]
+devices:
+  - vendor: AMD
+    model: AMD Zen CPU
+    type: sensor
+    match:
+      amd_smn: { any: true }
+transports:
+  amd_smn: {}

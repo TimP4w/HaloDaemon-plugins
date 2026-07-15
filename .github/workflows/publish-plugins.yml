@@ -1,0 +1,101 @@
+name: Publish plugins
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Repository version (for example 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  checks: read
+
+concurrency:
+  group: plugin-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: plugin-release
+    steps:
+      - name: Check out trusted publication branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Capture tested develop revision
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin develop
+          sha=$(git rev-parse origin/develop)
+          checks=$(gh api "/repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs")
+          for name in plugin-test reuse; do
+            conclusion=$(jq -r --arg name "$name" \
+              '[.check_runs[] | select(.name == $name)] | last | .conclusion // "missing"' \
+              <<< "$checks")
+            [ "$conclusion" = success ] || {
+              echo "Required check '$name' is '$conclusion' for $sha" >&2
+              exit 1
+            }
+          done
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out HaloDaemon signing source
+        uses: actions/checkout@v4
+        with:
+          repository: TimP4w/HaloDaemon
+          ref: main
+          path: halodaemon
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build canonical signing tool
+        working-directory: halodaemon/src
+        run: cargo build --release -p halod-plugin-signing
+
+      - name: Isolate signing binary from publication tree
+        run: |
+          cp halodaemon/src/target/release/halod-plugin-signing \
+            "$RUNNER_TEMP/halod-plugin-signing"
+          echo "SIGNING_TOOL=$RUNNER_TEMP/halod-plugin-signing" >> "$GITHUB_ENV"
+          rm -rf halodaemon
+
+      - name: Merge tested plugin tree without committing
+        run: git merge --no-commit --no-ff "${{ steps.source.outputs.sha }}"
+
+      - name: Generate, sign, and verify publication index
+        env:
+          HALOD_PLUGIN_SIGNING_KEY_B64: ${{ secrets.HALOD_PLUGIN_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          "$SIGNING_TOOL" index . --version "${{ inputs.version }}"
+          "$SIGNING_TOOL" sign . \
+            --key-id halodaemon-official-2026 \
+            --key-env HALOD_PLUGIN_SIGNING_KEY_B64
+          "$SIGNING_TOOL" verify . \
+            --trusted-key halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=
+
+      - name: Verify REUSE compliance of publication tree
+        uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
+
+      - name: Commit and atomically publish main and develop
+        run: |
+          set -euo pipefail
+          expected="${{ steps.source.outputs.sha }}"
+          remote=$(git ls-remote origin refs/heads/develop | cut -f1)
+          [ "$remote" = "$expected" ] || {
+            echo "develop advanced from $expected to $remote; refusing publication" >&2
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "release: publish plugins ${{ inputs.version }}"
+          git push --atomic origin HEAD:main HEAD:develop

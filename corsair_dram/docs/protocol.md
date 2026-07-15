@@ -1,4 +1,4 @@
-# Corsair DRAM Protocol
+# Corsair DRAM protocol
 
 SMBus RGB control for Corsair Vengeance / Dominator DDR4 and DDR5 memory modules, with a CRC8-protected 32-byte info block, native hardware effects, and two per-LED color paths selected by the firmware's reported protocol version.
 

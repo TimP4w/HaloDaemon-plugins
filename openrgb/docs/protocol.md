@@ -1,4 +1,4 @@
-# OpenRGB SDK Network Protocol
+# OpenRGB SDK network protocol
 
 The network protocol OpenRGB's SDK server exposes (default `127.0.0.1:6742`,
 "ORGB" on a phone keypad), letting a client enumerate the RGB controllers

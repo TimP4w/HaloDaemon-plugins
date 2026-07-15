@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: LibreHardwareMonitor contributors
+id: nuvoton_lpcio
+name: Nuvoton Super I/O
+version: 1.0.0
+license: MPL-2.0
+description: Nuvoton NCT67xx temperature and PWM fan control through LPCIO.
+platforms: [windows]
+permissions: [lpcio]
+capabilities: [sensors, fan]
+dynamic_children: true
+devices:
+  - vendor: Nuvoton
+    model: NCT67xx Super I/O
+    type: sensor
+    match:
+      lpcio:
+        chip_ids: [0xb4, 0xc3, 0xc4, 0xc5, 0xc7, 0xc8, 0xc9, 0xd1, 0xd3, 0xd4, 0xd5, 0xd8]
+transports:
+  lpcio: {}

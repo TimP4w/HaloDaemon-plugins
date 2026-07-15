@@ -5,7 +5,7 @@
 -- accessory-fan-child, and LCD support. See `nzxt_kraken_x3.lua` for the
 -- older X53/X63/X73 wire family (no LCD, no software pump/fan control).
 --
--- Protocol references: docs/protocols/ and liquidctl's nzxt_kraken driver.
+-- Protocol reference: nzxt_kraken/docs/protocol.md and liquidctl's nzxt_kraken driver.
 -- Verified offsets: status report 0x75; Z/Elite lighting 0x26 0x14 (GRB, ring
 -- channel 0x01 / accessory channel 0x02); speed profiles 0x72. LCD control 0x30
 -- config / 0x36 transfer (+0x37 ACK) / 0x32 0x38 buckets, image over USB bulk.
@@ -69,7 +69,7 @@ local function duty_packet(h0, h1, h2, h3, duty, min_duty)
 end
 
 -- ── LCD ──────────────────────────────────────────────────────────────────────
--- Image bytes cross a separate USB bulk-OUT endpoint (transport:write_bulk); the
+-- Image bytes cross the allowlisted USB bulk-OUT endpoint; the
 -- 64-byte HID reports carry only the start/stop/config handshake. Every transfer
 -- start/end MUST consume its 0x37 ACK or the panel firmware desyncs into the
 -- bootloader. Pixel encoding (Q565 / BGR888 / GIF resize) runs in the host via
@@ -155,8 +155,8 @@ local function stream_q565(dev, payload)
   drain_hid(dev)
   dev.transport:write(string.char(0x36, 0x01, 0x00, 0x01, 0x08))
   require_ack(dev, 0x01)
-  dev.transport:write_bulk(bulk_header(#payload, 0x08))
-  dev.transport:write_bulk(payload)
+  dev.transport:usb_write(0x02, bulk_header(#payload, 0x08), 10000)
+  dev.transport:usb_write(0x02, payload, 10000)
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)
 end
@@ -196,8 +196,8 @@ local function stream_raw(dev, bgr888, brightness)
   write_then_read(dev, stream_lut2())
   dev.transport:write(string.char(0x36, 0x01, 0x00, 0x01, 0x09))
   require_ack(dev, 0x01)
-  dev.transport:write_bulk(bulk_header(#bgr888, 0x09))
-  dev.transport:write_bulk(bgr888)
+  dev.transport:usb_write(0x02, bulk_header(#bgr888, 0x09), 10000)
+  dev.transport:usb_write(0x02, bgr888, 10000)
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)
 end
@@ -331,8 +331,8 @@ local function run_bucket_pipeline(dev, data, bulk_info)
   local header = halod.buffer(12 + #bulk_info)
   for i = 1, 12 do header:set_u8(i - 1, LCD_BULK_MAGIC:byte(i)) end
   for i = 1, #bulk_info do header:set_u8(11 + i, bulk_info:byte(i)) end
-  dev.transport:write_bulk(header)
-  dev.transport:write_bulk(data)
+  dev.transport:usb_write(0x02, header, 10000)
+  dev.transport:usb_write(0x02, data, 10000)
 
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)
@@ -345,6 +345,19 @@ local function upload_gif(dev, resized)
     n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF, (n >> 24) & 0xFF)
   run_bucket_pipeline(dev, resized, bulk_info)
 end
+
+local chain_channels = { { id="0", name="Aer/F Fan", max_leds=40 } }
+local accessories = {
+  { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
+  { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
+  { id=23, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=24, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
+  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
+  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
+}
 
 return {
   initialize = function(dev)
@@ -368,6 +381,9 @@ return {
         latches = true,
         brightness = brightness, rotation = rotation,
       },
+      zones = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
+      chain = chain_channels,
+      accessories = accessories,
     }
   end,
 
@@ -430,6 +446,9 @@ return {
     local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
     if #r < 26 or r:get_u8(0) ~= 0x75 then
       return dev.status -- keep last good reading
+    end
+    if r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF then
+      return dev.status -- firmware sentinel: no liquid-temperature reading
     end
     local frac = r:get_u8(16)
     if frac > 9 then frac = 9 end

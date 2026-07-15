@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2021 Smasty <hello@smasty.net>
+id: logitech_g560
+name: Logitech G560
+author: HaloDaemon
+version: 1.0.0
+license: MIT
+description: Logitech G560 speaker lighting and subwoofer volume over its vendor long-report protocol.
+platforms: [linux, windows]
+permissions: [hid]
+capabilities: [rgb, controls]
+devices:
+  - vendor: Logitech
+    model: G560
+    type: speaker
+    match: { hid: { vid: 0x046d, pid: 0x0a78, interface: 2, usage_page: 0xff43, usage: 0x0202, max_bytes_per_sec: 1500 } }
+transports:
+  hid: { report_size: 0, timeout_ms: 50, feature_report: false }

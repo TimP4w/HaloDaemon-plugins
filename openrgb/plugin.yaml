@@ -2,15 +2,13 @@
 # SPDX-FileCopyrightText: Timucin Besken <beskent@gmail.com>
 #
 id: openrgb
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 type: integration
 name: OpenRGB
 author: HaloDaemon
 version: 1.0.0
 license: GPL-3.0-or-later
 description: Connects to an OpenRGB server and exposes its controllers as devices.
+capabilities: [rgb]
 permissions:
   - network
 transports:

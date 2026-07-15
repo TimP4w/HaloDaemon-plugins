@@ -19,34 +19,12 @@
 -- permissions are needed — effects are pure compute and never touch
 -- hardware.
 
--- Plain-Lua hue (0..1, s=1, v=1) to sRGB bytes. Used to build the palette
--- below at load time — top-level script code also runs in the throwaway VM
--- `parse_manifest` uses to read the manifest tables, which has no `halod`
--- global, so this can't call the host-provided `halod.hsv` helper (that one
--- is only safe to call from inside a callback, which only ever runs in a
--- worker VM).
-local function hue_to_rgb(h)
-  local h6 = (h % 1.0) * 6.0
-  local i = math.floor(h6)
-  local f = h6 - i
-  local r, g, b
-  if i == 0 then r, g, b = 1.0, f, 0.0
-  elseif i == 1 then r, g, b = 1.0 - f, 1.0, 0.0
-  elseif i == 2 then r, g, b = 0.0, 1.0, f
-  elseif i == 3 then r, g, b = 0.0, 1.0 - f, 1.0
-  elseif i == 4 then r, g, b = f, 0.0, 1.0
-  else r, g, b = 1.0, 0.0, 1.0 - f
-  end
-  return math.floor(r * 255.0 + 0.5), math.floor(g * 255.0 + 0.5), math.floor(b * 255.0 + 0.5)
-end
-
 -- 256-entry rainbow palette, built once at load time so plasma's render loop
 -- never computes a hue conversion per pixel — 120000 pixels/frame in
 -- interpreted Lua adds up fast otherwise.
 local PALETTE = {}
 for i = 0, 255 do
-  local r, g, b = hue_to_rgb(i / 255.0)
-  PALETTE[i] = { r, g, b }
+  PALETTE[i] = { halod.hsv(i / 255.0, 1.0, 1.0) }
 end
 
 -- Scratch tables shared by every pixmap render below, hoisted so the worker
@@ -125,7 +103,7 @@ return {
     local parts = PARTS
     for x = 0, w - 1 do
       local hue = (x / w) * scale + offset
-      local r, g, b = hue_to_rgb(hue)
+      local r, g, b = halod.hsv(hue, 1.0, 1.0)
       parts[x + 1] = char(r, g, b, 255)
     end
     local row_bytes = concat(parts, "", 1, w)
@@ -178,7 +156,7 @@ return {
     local brightness = exp(-math.max(t - lit_at, 0.0) / decay)
     local r, g, b = color.r, color.g, color.b
     if random_color then
-      r, g, b = hue_to_rgb(hash(epoch_seed(epoch) * 7.0 + 3.1))
+      r, g, b = halod.hsv(hash(epoch_seed(epoch) * 7.0 + 3.1), 1.0, 1.0)
     end
     local lr = floor(r * brightness + 0.5)
     local lg = floor(g * brightness + 0.5)
@@ -339,7 +317,7 @@ return {
       local r, g, b
       if params.hue_shift then
         local hue = 0.66 - 0.66 * bright
-        r, g, b = hue_to_rgb(hue)
+        r, g, b = halod.hsv(hue, 1.0, 1.0)
       else
         local color = params.color or { r = 0, g = 200, b = 120 }
         r, g, b = color.r, color.g, color.b

@@ -2,61 +2,36 @@
 # SPDX-FileCopyrightText: Martin Hartl (inlart) and OpenRGB contributors <https://gitlab.com/CalcProgrammer1/OpenRGB>
 #
 id: asus_aura_usb
-compatibility:
-  halod: ">=0.2.0"
-  plugin_api: 1
 name: ASUS Aura USB
 author: HaloDaemon
 version: 1.0.0
 license: GPL-2.0-or-later
 description: ASUS Aura USB motherboard RGB — per-LED direct control of the on-board zones and ARGB headers, plus the on-board native effects.
+permissions: [hid]
+capabilities: [rgb, chain]
 devices:
   - vendor: ASUS
     model: ASUS Aura Motherboard
     name: ASUS Aura
-    device_type: motherboard
-    transport: hid
-    vid: 0x0B05
-    pids:
-      - 0x1AA6
-      - 0x18A3
-      - 0x1866
-      - 0x18A5
-      - 0x18F3
-      - 0x1867
-      - 0x1872
-      - 0x1939
-      - 0x19AF
-      - 0x1A30
-      - 0x1A6C
-      - 0x1B3B
-      - 0x1BED
+    type: motherboard
+    match:
+      hid:
+        vid: 0x0B05
+        pids:
+          - 0x1AA6
+          - 0x18A3
+          - 0x1866
+          - 0x18A5
+          - 0x18F3
+          - 0x1867
+          - 0x1872
+          - 0x1939
+          - 0x19AF
+          - 0x1A30
+          - 0x1A6C
+          - 0x1B3B
+          - 0x1BED
 transports:
   hid:
     report_size: 0
     timeout_ms: 1000
-chain:
-  channels: []
-rgb:
-  zones: []
-  native_effects:
-  - id: off
-    name: Off
-    params: []
-  - id: breathing
-    name: Breathing
-    params:
-    - id: color
-      default:
-        g: 255
-        r: 255
-        b: 255
-      kind:
-        kind: color
-      label: Color
-  - id: spectrum_cycle
-    name: Spectrum Cycle
-    params: []
-  - id: rainbow_wave
-    name: Rainbow Wave
-    params: []

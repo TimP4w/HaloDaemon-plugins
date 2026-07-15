@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+id: logitech
+name: Logitech HID++
+version: 1.0.0
+license: GPL-3.0-or-later
+description: Logitech HID++ direct devices and receivers.
+platforms: [linux, windows]
+permissions: [hid]
+capabilities: [rgb, battery, connection, dpi, controls, key_remap, keyboard_layout, onboard_profiles, pairing, equalizer]
+dynamic_children: true
+devices:
+  - vendor: Logitech
+    model: G502 X Plus
+    type: mouse
+    match: { hid: { vid: 0x046d, pid: 0xc095, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
+  - vendor: Logitech
+    model: G502 Hero
+    type: mouse
+    match: { hid: { vid: 0x046d, pid: 0xc08b, interface: 1, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
+  - vendor: Logitech
+    model: G PRO X TKL
+    type: keyboard
+    match: { hid: { vid: 0x046d, pid: 0xc352, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
+  - vendor: Logitech
+    model: LIGHTSPEED Receiver
+    type: dongle
+    # Windows exposes the HID++ vendor interface as two collections. Receiver
+    # enumeration uses HID++ 1.0 short reports, which must go to col01
+    # (usage page FF00 / usage 1), never the long-report col02 collection.
+    # Pacing (max_bytes_per_sec) is the aggregate ceiling for the mouse+keyboard
+    # sharing this receiver: unpaced per-key frames stall the receiver.
+    match: { hid: { vid: 0x046d, pid: 0xc547, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
+  - vendor: Logitech
+    model: PRO X Wireless
+    type: headset
+    match: { hid: { vid: 0x046d, pid: 0x0aba } }
+  - vendor: Logitech
+    model: PRO X 2 LIGHTSPEED
+    type: headset
+    match: { hid: { vid: 0x046d, pid: 0x0af7 } }
+  - vendor: Logitech
+    model: G733 LIGHTSPEED
+    type: headset
+    match: { hid: { vid: 0x046d, pids: [0x0ab5, 0x0afe] } }
+  - vendor: Logitech
+    model: G535 LIGHTSPEED
+    type: headset
+    match: { hid: { vid: 0x046d, pid: 0x0ac4 } }
+  - vendor: Logitech
+    model: G935
+    type: headset
+    match: { hid: { vid: 0x046d, pid: 0x0a87 } }
+  - vendor: Logitech
+    model: G533
+    type: headset
+    match: { hid: { vid: 0x046d, pid: 0x0a66 } }
+transports:
+  hid:
+    report_size: 0
+    # Bounds a missed/slow HID++ reply's stall on the synchronous dispatch worker
+    # (~2x this) so it can't back up queued RGB frames and button-input handling.
+    timeout_ms: 150
+    companion: { usage_page: 0xff00, usage: 2 }
