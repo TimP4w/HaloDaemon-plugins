@@ -69,6 +69,19 @@ transport shim.
 
 ## Testing
 
+The repository index is generated; do not edit package hashes manually. From a
+HaloDaemon checkout, refresh or verify it with:
+
+```powershell
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.07.1
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --check
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
+```
+
+Publication recomputes every package SHA-256 before signing the exact generated
+`repository.yaml` bytes. A content change therefore cannot retain an old hash
+or signature.
+
 Run one package against the daemon's recording transports:
 
 ```powershell

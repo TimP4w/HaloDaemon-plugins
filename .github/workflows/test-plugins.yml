@@ -36,6 +36,13 @@ jobs:
         run: cargo build -p halod --features plugin-test
         working-directory: halodaemon/src
 
+      - name: Verify generated package index and every SHA-256
+        run: |
+          cargo run --manifest-path halodaemon/src/Cargo.toml \
+            -p halod-plugin-signing -- validate plugins
+          cargo run --manifest-path halodaemon/src/Cargo.toml \
+            -p halod-plugin-signing -- index plugins --check
+
       - name: Run halod plugin-test on every package with a test.lua
         run: |
           set -euo pipefail
@@ -50,3 +57,9 @@ jobs:
           done
           exit $status
         working-directory: plugins
+
+  reuse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
