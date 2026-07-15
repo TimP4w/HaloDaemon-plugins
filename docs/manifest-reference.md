@@ -63,6 +63,7 @@ transports:
 | `capabilities` | Everything this package may expose at runtime. |
 | `devices` | Hardware entries for a device plugin. |
 | `transports` | Transport settings and access limits. |
+| `requirements` | Explicit command or Linux kernel-module dependencies that cannot be inferred. |
 | `dynamic_children` | Allows `enumerate_controllers()` to create child devices. |
 | `config` | User-editable settings. |
 | `effects` | Effects provided by an effect plugin. |
@@ -127,6 +128,29 @@ keeps identical VID/PID devices separate.
 A hardware match must declare its matching permission. TCP requires `network`.
 The command transport requires `command`. A new permission requires new user
 consent.
+
+## Host requirements
+
+The host automatically checks command-transport executables, PawnIO for its
+Windows hardware transports, Linux I2C access for SMBus matches, and hwmon
+presence and permissions for the hwmon transport. Plugins must not repeat those
+requirements.
+
+An external command used by a non-command integration and a plugin-specific
+Linux kernel module can be declared explicitly:
+
+```yaml
+requirements:
+  - kind: kernel_module
+    name: i2c-dev
+    platforms: [linux]
+  - kind: command
+    name: pactl
+    platforms: [linux]
+```
+
+Supported kinds are `command` and `kernel_module`. Kernel modules must declare
+`platforms: [linux]`. Explicit requirements block activation when missing.
 
 ## Transport settings
 
@@ -214,7 +238,8 @@ transports:
 ```
 
 Commands must be bare executable names. Paths and shell expressions are not
-allowed. A `match.command` value must appear in this list.
+allowed. A `match.command` value must appear in this list. Every listed command
+is checked automatically before activation.
 
 ### hwmon
 
@@ -229,8 +254,9 @@ transports:
 ```
 
 The host enumerates the collection and exposes only typed, path-free attribute
-operations. An integration declares exactly one root transport, so `hwmon` and
-`tcp` cannot appear together.
+operations. It automatically checks for readable sensors and, for fan-capable
+plugins, writable PWM attributes. An integration declares exactly one root
+transport, so `hwmon` and `tcp` cannot appear together.
 
 ### AMD SMN and LPCIO
 
@@ -243,10 +269,12 @@ transports:
   lpcio: {}
 ```
 
-They expose typed operations only. Lua never receives a raw broker handle.
+They expose typed operations only. Lua never receives a raw broker handle. On
+Windows, PawnIO installation is checked automatically for these transports.
 
 SMBus access is fully described by the device match and does not need a
-separate transport block.
+separate transport block. The host automatically checks PawnIO on Windows and
+Linux i2c-dev presence and permissions on Linux.
 
 ## Config fields
 

@@ -21,11 +21,11 @@ packages:
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 14bd4d8f566e301e18207052f99ea592cd5f7e8b8f3c3e8945718e11c2092d1e
+    sha256: 83f2ed018b778606d19c40b44f1965aee4f395eccab94823340147fca747e73f
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
-    sha256: fc82818b479fb9cc5eb1ade5bac4d0a0315d08b34d5496acd2d3fd77dd5bc2da
+    sha256: ee964fcf0002f8fd54412fb6c33fa52c001b78a9fd2fddea2c06eaf0afd161fc
   - id: halo_effects
     path: halo_effects
     version: 1.0.0
@@ -65,7 +65,7 @@ packages:
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: 8832452f967af57128b5b5366e598f0441e3032527b42736c481df62c0fa62a3
+    sha256: 3cd21aa66eb471b7394628195c26ac1c5a529e6796c514f3f9fe0630a0ae17a8
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0

@@ -6,6 +6,7 @@ author: HaloDaemon
 version: 1.0.0
 license: GPL-2.0-or-later
 description: ASUS Aura / ENE SMBus RGB for DRAM sticks and GPUs.
+platforms: [linux, windows]
 permissions: [smbus]
 capabilities: [rgb]
 devices:

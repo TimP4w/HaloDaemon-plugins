@@ -11,6 +11,9 @@ description: Connects to an OpenRGB server and exposes its controllers as device
 capabilities: [rgb]
 permissions:
   - network
+requirements:
+  - kind: command
+    name: openrgb
 transports:
   tcp:
     host_key: host
