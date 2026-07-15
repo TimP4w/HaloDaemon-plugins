@@ -1,4 +1,4 @@
-# DDC/CI Protocol
+# DDC/CI protocol
 
 DDC/CI (Display Data Channel Command Interface) MCCS control tunnelled over USB vendor control transfers — the complete control surface HaloDaemon uses to drive the Philips Evnia 49 monitor (brightness, picture, audio, OSD, system, gaming, and device-info reads).
 

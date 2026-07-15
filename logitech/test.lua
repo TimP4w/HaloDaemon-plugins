@@ -13,10 +13,11 @@ return function(h)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),             -- ROOT -> FEATURE_SET index
     report(0x11, 0xff, 0x02, 0x01, { 1 }),             -- FEATURE_SET count
     report(0x11, 0xff, 0x02, 0x11, { 0x10, 0x04 }),    -- UNIFIED_BATTERY
+    report(0x11, 0xff, 0x01, 0x11, { 73, 0, 0 }),      -- initial battery cache fill
   } })
   h:assert(dev:initialize(), "feature enumeration initializes")
   local writes = dev:writes()
-  h:assert_eq(#writes, 3, "ROOT + FEATURE_SET count/item")
+  h:assert_eq(#writes, 4, "ROOT + FEATURE_SET count/item + capability cache fill")
   h:assert_eq(writes[1].data[1], 0x10, "ROOT lookup uses a short report")
   h:assert_eq(#writes[1].data, 7, "short report is padded to 7 bytes")
   h:assert_eq(writes[1].data[3], 0x00, "ROOT feature index")
@@ -48,6 +49,7 @@ return function(h)
     report(0x11, 0xff, 0x02, 0x11, { 0x22, 0x01 }),
     report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
+    report(0x11, 0xff, 0x01, 0x11, { 73, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x31, {}),
   } })
   h:assert(dpi_dev:initialize(), "DPI fixture initializes")
@@ -55,14 +57,35 @@ return function(h)
   local dpi_writes = dpi_dev:writes()
   h:assert_eq(dpi_writes[5].data[4], 0x11, "DPI list uses function 0x10 with software id")
   h:assert_eq(dpi_writes[6].data[4], 0x21, "DPI current uses function 0x20 with software id")
-  h:assert_eq(dpi_writes[7].data[4], 0x31, "DPI set uses function 0x30 with software id")
-  h:assert_eq(dpi_writes[7].data[5], 0, "DPI set selects sensor zero")
-  h:assert_eq(dpi_writes[7].data[6], 0x03, "DPI set high byte")
-  h:assert_eq(dpi_writes[7].data[7], 0x20, "DPI set low byte")
+  h:assert_eq(dpi_writes[8].data[4], 0x31, "DPI set uses function 0x30 with software id")
+  h:assert_eq(dpi_writes[8].data[5], 0, "DPI set selects sensor zero")
+  h:assert_eq(dpi_writes[8].data[6], 0x03, "DPI set high byte")
+  h:assert_eq(dpi_writes[8].data[7], 0x20, "DPI set low byte")
   local dpi_status = dpi_dev:dpi_status()
   h:assert_eq(#dpi_status.available_dpis, 2, "DPI exposes the exact hardware value list")
   h:assert_eq(dpi_status.available_dpis[1], 400, "DPI list keeps its first exact point")
   h:assert_eq(dpi_status.available_dpis[2], 800, "DPI list keeps its second exact point")
+
+  -- Full daemon state snapshots run every 250 ms. Onboard status must use the
+  -- state populated during initialization instead of re-reading the directory
+  -- and active-profile flash sectors on every serialization pass.
+  local onboard_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
+  } })
+  h:assert(onboard_dev:initialize(), "onboard-profile fixture initializes")
+  onboard_dev:clear()
+  onboard_dev:serialize()
+  onboard_dev:serialize()
+  h:assert_eq(#onboard_dev:writes(), 0,
+    "state serialization serves cached onboard profiles without HID writes")
 
   -- MOUSE_BUTTON_SPY devices use the native sparse physical-button table and
   -- seed the same default DPI actions as the former native profile.

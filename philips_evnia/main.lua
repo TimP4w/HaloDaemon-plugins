@@ -10,7 +10,7 @@
 --
 -- The 44-LED Ambiglow control path (capture-block enable, 0xE100 frame buffer,
 -- baseline-region restore) is adapted from tomasf/evnia (MIT). DDC/CI details:
--- docs/protocols/ddc-ci.md; Ambiglow: docs/protocols/philips-ambiglow.md.
+-- philips_evnia/docs/ddc-ci.md; Ambiglow: philips_evnia/docs/ambiglow.md.
 
 -- ── DDC/CI USB control-transfer parameters ───────────────────────────────────
 local DDC_BMREQ_OUT = 0x40 -- vendor | host-to-device | device recipient

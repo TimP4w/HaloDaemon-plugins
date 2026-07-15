@@ -1,4 +1,4 @@
-# AMD SMN
+# AMD SMN protocol
 
 `amd_smn` is a Windows-only, read-only plugin transport. The daemon detects a
 supported AMD Zen CPUID family/model and exposes only `dev.transport:amd_smn_read(offset)`.

@@ -5,7 +5,7 @@
 -- accessory-fan-child, and LCD support. See `nzxt_kraken_x3.lua` for the
 -- older X53/X63/X73 wire family (no LCD, no software pump/fan control).
 --
--- Protocol references: docs/protocols/ and liquidctl's nzxt_kraken driver.
+-- Protocol reference: nzxt_kraken/docs/protocol.md and liquidctl's nzxt_kraken driver.
 -- Verified offsets: status report 0x75; Z/Elite lighting 0x26 0x14 (GRB, ring
 -- channel 0x01 / accessory channel 0x02); speed profiles 0x72. LCD control 0x30
 -- config / 0x36 transfer (+0x37 ACK) / 0x32 0x38 buckets, image over USB bulk.

@@ -25,20 +25,20 @@ their platforms, permissions, transport scopes, supported devices, and advertise
 
 | Vendor | Model | VID:PID | Plugin | Protocol |
 |--------|-------|---------|--------|----------|
-| NZXT | Kraken Z53/63/73, Elite 2023, 2023, Elite V2, Plus 2024 | 1e71:3008, 300c, 300e, 3012, 3014 | [`nzxt_kraken`](nzxt_kraken/) | [NZXT](docs/protocols/nzxt.md) |
-| NZXT | Kraken X53, X63, X73 | 1e71:2007, 2014 | [`nzxt_kraken_x3`](nzxt_kraken_x3/) | [NZXT](docs/protocols/nzxt.md) |
-| NZXT | Control Hub (+ chained F-series fans) | 1e71:2022 | [`nzxt_control_hub`](nzxt_control_hub/) | [NZXT](docs/protocols/nzxt.md) |
-| ASUS/ENE | SMBus RGB (DRAM, GPU) | — | [`ene_smbus`](ene_smbus/) | [ENE SMBus](docs/protocols/ene-smbus.md) |
-| ASUS | Aura USB motherboard RGB (on-board zones + ARGB headers) | 0b05:1aa6, 18a3, 1866, 18a5, 18f3, 1867, 1872, 1939, 19af, 1a30, 1a6c, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/) | [Aura USB (OpenRGB)](https://gitlab.com/CalcProgrammer1/OpenRGB) |
-| Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](docs/protocols/corsair-dram.md) |
-| Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
-| SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](docs/protocols/steelseries-arctis.md) |
-| OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
-| AMD | Zen-family CPU thermal sensors (Windows) | SMN | [`amd_smn`](amd_smn/) | [AMD SMN](docs/protocols/amd-smn.md) |
-| NVIDIA | Any GPU reported by `nvidia-smi` | — | [`nvidia`](nvidia/) | [NVIDIA SMI](docs/protocols/nvidia-smi.md) |
-| Nuvoton | NCT67xx Super I/O (Windows) | LPCIO | [`nuvoton_lpcio`](nuvoton_lpcio/) | [LPCIO](docs/protocols/lpcio.md) |
-| Logitech | Explicitly listed HID++ devices and receivers | 046d:* | [`logitech`](logitech/) | [HID++](docs/protocols/logitech-hidpp.md) |
-| Logitech | G560 Gaming Speakers | 046d:0a78 | [`logitech_g560`](logitech_g560/) | [G560](docs/protocols/logitech-g560.md) |
+| NZXT | Kraken Z53/63/73, Elite 2023, 2023, Elite V2, Plus 2024 | 1e71:3008, 300c, 300e, 3012, 3014 | [`nzxt_kraken`](nzxt_kraken/) | [NZXT](nzxt_kraken/docs/protocol.md) |
+| NZXT | Kraken X53, X63, X73 | 1e71:2007, 2014 | [`nzxt_kraken_x3`](nzxt_kraken_x3/) | [NZXT](nzxt_kraken_x3/docs/protocol.md) |
+| NZXT | Control Hub (+ chained F-series fans) | 1e71:2022 | [`nzxt_control_hub`](nzxt_control_hub/) | [NZXT](nzxt_control_hub/docs/protocol.md) |
+| ASUS/ENE | SMBus RGB (DRAM, GPU) | — | [`ene_smbus`](ene_smbus/) | [ENE SMBus](ene_smbus/docs/protocol.md) |
+| ASUS | Aura USB motherboard RGB (on-board zones + ARGB headers) | 0b05:1aa6, 18a3, 1866, 18a5, 18f3, 1867, 1872, 1939, 19af, 1a30, 1a6c, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/) | [Aura USB](asus_aura_usb/docs/protocol.md) |
+| Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](corsair_dram/docs/protocol.md) |
+| Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [Protocols](philips_evnia/docs/protocol.md) |
+| SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](steelseries_arctis/docs/protocol.md) |
+| OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](openrgb/docs/protocol.md) |
+| AMD | Zen-family CPU thermal sensors (Windows) | SMN | [`amd_smn`](amd_smn/) | [AMD SMN](amd_smn/docs/protocol.md) |
+| NVIDIA | Any GPU reported by `nvidia-smi` | — | [`nvidia`](nvidia/) | [NVIDIA sensors](nvidia/docs/protocol.md) |
+| Nuvoton | NCT67xx Super I/O (Windows) | LPCIO | [`nuvoton_lpcio`](nuvoton_lpcio/) | [NCT677x Super I/O](nuvoton_lpcio/docs/protocol.md) |
+| Logitech | Explicitly listed HID++ devices and receivers | 046d:* | [`logitech`](logitech/) | [HID++](logitech/docs/protocol.md) |
+| Logitech | G560 Gaming Speakers | 046d:0a78 | [`logitech_g560`](logitech_g560/) | [G560](logitech_g560/docs/protocol.md) |
 Plus [`halo_effects`](halo_effects/) — the stock library of pixmap/direct RGB effects and the
 reference implementation of the effect-plugin API (not tied to any device).
 

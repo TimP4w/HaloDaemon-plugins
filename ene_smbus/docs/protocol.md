@@ -1,4 +1,4 @@
-# ENE SMBus Protocol
+# ENE SMBus protocol
 
 ENE Technology RGB controller protocol over SMBus/I2C, used by ASUS Aura DRAM modules and ASUS GPU RGB controllers.
 

@@ -835,7 +835,12 @@ local function refresh_onboard(dev)
 end
 
 local function onboard_status(dev)
-  local state = refresh_onboard(dev)
+  -- Full daemon snapshots run four times per second.  The onboard directory
+  -- and active profile are whole flash sectors, so re-reading them here turns
+  -- otherwise-idle serialization into a continuous HID++ write stream.  The
+  -- cache is populated during initialize and explicitly refreshed after every
+  -- profile mutation and relevant feature notification.
+  local state = dev.onboard or refresh_onboard(dev)
   local active_slot = state.mode == 2 and 0 or (state.active_sector & 0xff)
   local slots = {}
   for _, entry in ipairs(state.directory) do

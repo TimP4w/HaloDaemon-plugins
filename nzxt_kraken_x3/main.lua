@@ -6,7 +6,7 @@
 -- `nzxt_kraken.lua`: an 8-LED ring plus a single logo LED, no LCD, and no
 -- software pump/fan speed control.
 --
--- Protocol references: docs/protocols/ and liquidctl's kraken2 driver.
+-- Protocol reference: nzxt_kraken_x3/docs/protocol.md and liquidctl's kraken2 driver.
 -- Verified offsets: status report 0x75 (shared with Z/Elite); RGB `0x22 0x10`
 -- per-channel data packets (60 bytes/packet, two packets for 8 LEDs) + `0x22
 -- 0xA0` commit; logo `0x2A 0x04`.

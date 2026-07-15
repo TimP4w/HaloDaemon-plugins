@@ -395,3 +395,5 @@ Sent at the interval configured by `60 02 …`. Per channel i (0…4): fan type 
 - Control Hub ARGB chains are capped at 96 LEDs per channel by firmware.
 - LCD bucket setup has no reliable success byte on firmware 2.x — any reply is treated as accepted.
 - Unread LCD transfer ACKs crash the panel firmware — every `36 01`/`36 02` must consume its `37` ACK.
+
+

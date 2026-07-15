@@ -45,6 +45,7 @@ local POWER_CHARGING = 0x02
 local POWER_ONLINE = 0x08
 
 local MAX_POLL_READS = 32 -- packets drained per poll pass (see protocol §5)
+local POLL_REPLY_DELAY_MS = 50 -- let requested status packets reach the HID queue
 local EQ_BASELINE = 20 -- raw 0x14 = 0 dB
 local EQ_CUSTOM_BYTE = 0x04 -- the single editable preset
 
@@ -189,14 +190,14 @@ end
 local function refresh(dev)
   dev.transport:write(string.char(REPORT_CMD, MSG_STATUS))
   dev.transport:write(string.char(REPORT_CMD, MSG_SETTINGS))
+  -- Never occupy the shared command worker for the transport's full 1 s read
+  -- timeout. Replies are requested above; after their short assembly window,
+  -- drain whatever is ready. A late packet remains queued for the next pass.
+  halod.sleep_ms(POLL_REPLY_DELAY_MS)
   local cm_game, cm_chat
-  for i = 1, MAX_POLL_READS do
+  for _ = 1, MAX_POLL_READS do
     local ok, pkt = pcall(function()
-      if i == 1 then
-        return dev.transport:read(PACKET)
-      else
-        return dev.transport:read_nonblocking(PACKET)
-      end
+      return dev.transport:read_nonblocking(PACKET)
     end)
     if not ok or type(pkt) ~= "string" or #pkt == 0 then break end
     local s = strip_report_id(pkt)

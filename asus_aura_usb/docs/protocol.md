@@ -1,4 +1,4 @@
-# ASUS Aura USB Protocol
+# ASUS Aura USB protocol
 
 ASUS Aura USB HID protocol for motherboard RGB headers, on-board LEDs, and daisy-chained ARGB strips.
 
