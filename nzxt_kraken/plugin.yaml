@@ -6,7 +6,7 @@ author: HaloDaemon
 version: 1.0.1
 license: GPL-3.0-or-later
 description: NZXT Kraken Z/Elite family with RGB, pump, telemetry, LCD, and chained fans.
-permissions: [hid]
+permissions: [hid, usb]
 capabilities: [rgb, fan, sensors, lcd, chain]
 devices:
   - vendor: NZXT
@@ -36,3 +36,8 @@ devices:
     match: { hid: { vid: 0x1E71, pid: 0x3014 } }
 transports:
   hid: { report_size: 64, timeout_ms: 1000, feature_report: false }
+  usb:
+    devices:
+      - id: primary
+        endpoints:
+          - { address: 0x02, type: bulk, max_transfer_size: 4194304, max_timeout_ms: 10000 }

@@ -5,7 +5,7 @@
 -- DDC/CI control interface (via the USB hub chip, 2109:8884) for picture/OSD
 -- settings, and an ENE KB7730 RGB controller (0cf2:b201) for the rear
 -- Ambiglow LEDs. This plugin matches the DDC chip and opens the Ambiglow
--- chip as a bundled secondary `usb_control` endpoint, presenting both as a
+-- chip as a bundled companion USB device, presenting both as a
 -- single device.
 --
 -- The 44-LED Ambiglow control path (capture-block enable, 0xE100 frame buffer,
@@ -209,12 +209,12 @@ end
 -- ── Transport helpers ────────────────────────────────────────────────────────
 local function ddc_write(dev, payload)
   halod.sleep_ms(WRITE_GAP_MS)
-  dev.transport:control_write("", DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload)
+  dev.transport:usb_control(DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload, 0, 50)
 end
 
 local function ddc_read(dev)
   halod.sleep_ms(READ_DELAY_MS)
-  return dev.transport:control_read("", DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, 32)
+  return dev.transport:usb_control(DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, "", 32, 50)
 end
 
 -- Reading the startup snapshot is best-effort. Some VCPs are unavailable in
@@ -248,7 +248,7 @@ local function ddc_get_info(dev, a0, a1, a2, a3)
 end
 
 local function ambiglow_write(dev, address, data)
-  dev.transport:control_write("ambiglow", AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data)
+  dev.transport:usb_control(AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data, 0, 50, "ambiglow")
 end
 
 -- Arm direct frame control once (idempotent until a release).

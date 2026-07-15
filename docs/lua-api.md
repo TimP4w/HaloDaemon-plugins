@@ -1,14 +1,14 @@
 # Lua plugin API reference
 
-HaloDaemon embeds Lua 5.4. `plugin.yaml` contains every declaration: device matching, permissions,
-transports, capabilities, configuration, and effects. The entry script returns only callback
-functions. Each physical root gets one Lua VM and worker. Dynamic receiver and
-integration children route through that root worker using persistent child `dev`
-tables, so module-level protocol state is shared while per-child fields remain isolated.
-Transport calls look synchronous to Lua and are executed on that worker.
+HaloDaemon uses Lua 5.4. `plugin.yaml` declares devices, permissions,
+transports, capabilities, config fields, and effects. The entry script returns
+callback functions.
 
-See the [manifest reference](manifest-reference.md) for `plugin.yaml`, device matching, transports,
-permissions, and capability-section shapes.
+Each physical device gets one Lua VM and one worker. Dynamic children share the
+root VM, but each child keeps its own `dev` table. Transport calls are
+synchronous from Lua's point of view.
+
+See the [manifest reference](manifest-reference.md) for the YAML format.
 
 ## Entry script
 
@@ -28,16 +28,14 @@ return {
 }
 ```
 
-The daemon reads the entry script as inert source while loading the manifest; it does not compile or
-execute Lua to obtain declarations. Normal workers evaluate the source only on activation (after
-consent for a plugin that declares permissions). SMBus `pre_scan` also runs only after activation
-is ready, in a throwaway VM during discovery before address probes. Keep module scope limited to
-constants and helper-function definitions; perform device or service I/O only inside callbacks.
+HaloDaemon does not run Lua while reading the manifest. It runs the entry script
+only after activation and consent. Keep module-level code limited to constants
+and helper functions. Do device or network I/O inside callbacks.
 
 ## Globals and sandbox
 
-Available standard libraries include `string`, `table`, and `math`, plus Lua 5.4 operators and
-`string.pack`/`string.unpack`. In worker VMs, HaloDaemon adds:
+The sandbox includes `string`, `table`, `math`, and Lua 5.4 operators. It also
+includes `string.pack` and `string.unpack`. HaloDaemon adds:
 
 | Global | Meaning |
 |---|---|
@@ -47,21 +45,19 @@ Available standard libraries include `string`, `table`, and `math`, plus Lua 5.4
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
 | `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
-| `halod.require(name)` | Load and cache a package-local module indexed from `lib/**/*.lua`. Use a dotted name such as `lib.hidpp.v1`. |
+| `halod.require(name)` | Load a package-local module, for example `lib.hidpp.v1`. |
 
-`halod.require` never resolves a runtime filesystem path. Module sources are
-read and validated with the package, stored in memory, and looked up only in
-that package's module index. Absolute paths, `..`, path separators, symlinks,
-and references to another plugin therefore cannot load. Module files are part
-of the plugin content hash.
+`halod.require` loads only modules indexed from this package's `lib/` directory.
+It does not read the filesystem at runtime. Absolute paths, `..`, path
+separators, symlinks, and modules from another plugin are rejected.
 
-`os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, `collectgarbage` are removed.
-With the `os` permission, a reduced `os` table exposes only `os.time()` and `os.clock()`.
+`os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, and
+`collectgarbage` are removed. With `os` permission, a small `os` table provides
+only `os.time()` and `os.clock()`.
 
-Each runtime VM has a 64 MiB Lua heap limit and a 50,000,000-instruction budget reset per callback.
-Device callbacks have a 30-second request deadline; effect callbacks have a 2-second deadline.
-These are in-process guardrails, not process isolation. A callback must not busy-wait; use bounded
-work and `halod.sleep_ms` only for hardware-mandated gaps.
+Each VM has a 64 MiB Lua memory limit. Each callback has a 50,000,000 instruction
+budget. Device calls time out after 30 seconds; effect calls after 2 seconds.
+Do not busy-wait. Use `halod.sleep_ms` only for required hardware delays.
 
 ## The `dev` object
 
@@ -70,37 +66,33 @@ Every device callback receives `dev` first.
 | Member | Meaning |
 |---|---|
 | `dev.transport` | Transport userdata documented below. |
-| `dev.match.transport` | `hid`, `smbus`, `lpcio`, `usb_control`, or `tcp`. |
+| `dev.match.transport` | Match kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, or `tcp`. |
 | `dev.match.vid`, `.pid` | Matched USB IDs when available. |
 | `dev.match.bus`, `.addr` | SMBus bus kind and matched address when available. |
 | `dev.match.index` | Remote controller index for an integration child. |
+| `dev.match.key` | Optional stable route key for a dynamic child. |
+| `dev.match.name` | Optional child name returned by discovery. |
 | `dev.zones` | Host-provided static RGB-zone descriptors. |
 | `dev.status` | Latest value returned by `read_status`; set by the polling loop. |
 | `dev.audio` | Audio-routing userdata when `audio_routing` is granted. |
 
-LPCIO packages that manage supported Nuvoton HWM chips may call
-`dev.transport:lpcio_prepare_hwm(slot, unlock)` at the beginning of a poll.
-It atomically selects the broker slot, registers the HWM BAR for that worker,
-and (when requested) clears the chip's HWM I/O lock. Raw Super-I/O
-configuration mode is deliberately not exposed to Lua.
-
-Do not retain `dev.transport:batch`'s scoped `ops` value after its callback returns.
+Extra transport-specific numeric fields may also appear in `dev.match` for a
+dynamic child.
 
 ## Lifecycle and dynamic identity
 
 ### `pre_scan(dev)`
 
-Runs once per matching SMBus bus before address probes when the YAML device sets `pre_scan: true`.
-Only declared `addresses` and `extra_addresses` are in scope; plugin config is unavailable. The VM
-has the normal 64 MiB/instruction limits plus a 5-second wall-clock timeout. The scanner contributes
-the declaration only when the plugin is enabled, fully consented, and pinned to its acknowledged
-content hash. Transport injection independently requires the effective `smbus` grant. PCI gates,
-address scope, rate limits, VM limits, and the timeout remain additional constraints.
+Runs once on each matching SMBus bus before probing addresses. The device match
+must set `pre_scan: true`. The callback can access only `addresses` and
+`extra_addresses` from the manifest. Plugin config is not available. The call
+has a 5-second timeout and requires the `smbus` permission.
 
 ### `initialize(dev) -> boolean | table | nil`
 
-Called after the transport opens. `false` or `{ ok = false }` rejects the match; `true` and `nil`
-accept it. A table can report runtime information:
+Called after the transport opens. Return `false` or `{ ok = false }` to reject
+the device. Return `true`, `nil`, or a table to accept it. A table can report
+model-specific information:
 
 ```lua
 return {
@@ -140,21 +132,20 @@ return {
 }
 ```
 
-When `capabilities` is omitted, the host keeps the manifest's advertised set for
-compatibility. Product-family and dynamic-child plugins should return it so one
-device does not inherit capabilities that only another model supports.
+If `capabilities` is omitted, HaloDaemon uses the full list from the manifest.
+Plugins that support several models should return the correct subset.
 
 ### `close(dev)`
 
-Optional best-effort cleanup called before the worker exits. Host-managed audio sinks are also
-removed independently, including abnormal worker exits.
+Optional cleanup before the worker exits. HaloDaemon also removes managed audio
+sinks if the worker exits unexpectedly.
 
 ### `event(dev, event)`
 
-Optional callback for event-driven host transports. HID events contain
+Optional callback for transport events. HID events contain
 `event.transport == "hid"`, `event.endpoint` (`primary` or `companion`), and the
 raw `event.report` string. Return `{ button_events = { pressed = {...}, released = {...} } }`
-to forward transitions to the host input engine. A dynamic controller may define
+to forward transitions to the host input engine. A dynamic root may define
 `event_source(event) -> index | 0 | false`: a positive index dispatches to that
 child, `0` or `nil` dispatches to the root, and `false` discards the report.
 
@@ -278,18 +269,15 @@ enumerate_controllers = function(dev)
 end
 ```
 
-Each record may use `zones` as RGB shorthand or declare any normal capability section (`rgb`,
-`fan`, `sensor`, `lcd`, `dpi`, `choice`, `range`, `boolean`, `action`, `battery`, `connection`,
-`equalizer`, `pairing`, `onboard_profiles`, `key_remap`, or `chain`). Each becomes an independent
-top-level device routed through the physical root's worker. Its persistent child
-table receives the controller index in `dev.match.index` and its opaque key in
-`dev.match.key`.
+Each record describes identity and routing. It may include `id`, `key`, `serial`,
+`location`, numeric `extra` fields, and simple `zones` data used by tests. Each
+record becomes a separate device. The child receives its index in
+`dev.match.index` and its optional key in `dev.match.key`.
 
-Routed children use the same capability callbacks as directly matched devices:
-`apply(dev, state)`, `write_frame(dev, zone_id, colors, led_ids)`, and optional
-`write_frame_batch(dev, frames)`. Each batch frame contains `zone_id`, `colors`,
-and the matching `led_ids`. Plugins route through `dev.match.index` or
-`dev.match.key`; no controller-specific callback family exists.
+Children use the normal callbacks, such as `initialize`, `apply`, and
+`write_frame`. Use `dev.match.index` or `dev.match.key` to route the call.
+`write_frame_batch(dev, frames)` is optional; each frame contains `zone_id`,
+`colors`, and `led_ids`.
 
 ## Stream transport: HID and TCP
 
@@ -307,25 +295,26 @@ explicitly; protocol code decides which collection to use.
 | `:write_then_read(data, size)` | Write, then read a reply. |
 | `:feature_exchange(data, size)` | HID feature-report exchange. |
 | `:write_many({data, ...})` | Write several packets under one backend operation. |
-| `:write_bulk(data)` | USB bulk-OUT payload used by LCD-capable devices. |
 
 TCP has no message framing, but HaloDaemon deliberately implements `read(size)` as read-exact: it
 returns exactly `size` bytes or errors on timeout/EOF. Read a fixed header first, decode its payload
 length, then request exactly that many bytes. HID report sizing/padding is handled by the HID
 backend.
 
-## USB vendor-control transport
+## USB endpoint transport
 
 ```lua
-dev.transport:control_write(
-  endpoint, bm_request_type, b_request, w_value, w_index, data)
-
-local reply = dev.transport:control_read(
-  endpoint, bm_request_type, b_request, w_value, w_index, length)
+local written = dev.transport:usb_write(endpoint, bytes, timeout_ms, device_id)
+local bytes = dev.transport:usb_read(endpoint, length, timeout_ms, device_id)
+local result = dev.transport:usb_control(
+  request_type, request, value, index, bytes, read_length, timeout_ms, device_id)
 ```
 
-Use endpoint `""` for the matched primary device or a named endpoint from YAML. Reads return a Lua
-string and may be shorter than the requested length.
+`device_id` is optional and defaults to `"primary"`. Bulk and interrupt reads
+return a Lua string and may be short; writes complete the full payload or fail.
+For control IN, pass an empty byte string and a non-zero `read_length`; for OUT,
+pass bytes and `read_length = 0`. The return is a string for IN and the transferred
+byte count for OUT. Every operation must fit the manifest allowlist, size, and timeout bounds.
 
 ## SMBus transport
 
@@ -450,8 +439,8 @@ halod plugin-test .\openrgb
 | `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
 | `dev:rgb_descriptor()` | Return the resolved RGB zones and LED positions. |
 | `dev:writes()` | Recorded byte writes. |
+| `dev:usb_writes()` | Recorded USB endpoint/control writes with device routing metadata. |
 | `dev:clear()` | Clear recorded writes. |
 
-The current recording harness covers HID and TCP. SMBus and USB-control packages are still parsed
-and validated by the daemon, but need unit/integration coverage in the main repository for mocked
-transport behavior.
+The recording harness covers HID, TCP, and USB endpoint/control traffic. Physical
+control/bulk smoke tests still require hardware.

@@ -69,7 +69,7 @@ local function duty_packet(h0, h1, h2, h3, duty, min_duty)
 end
 
 -- ── LCD ──────────────────────────────────────────────────────────────────────
--- Image bytes cross a separate USB bulk-OUT endpoint (transport:write_bulk); the
+-- Image bytes cross the allowlisted USB bulk-OUT endpoint; the
 -- 64-byte HID reports carry only the start/stop/config handshake. Every transfer
 -- start/end MUST consume its 0x37 ACK or the panel firmware desyncs into the
 -- bootloader. Pixel encoding (Q565 / BGR888 / GIF resize) runs in the host via
@@ -155,8 +155,8 @@ local function stream_q565(dev, payload)
   drain_hid(dev)
   dev.transport:write(string.char(0x36, 0x01, 0x00, 0x01, 0x08))
   require_ack(dev, 0x01)
-  dev.transport:write_bulk(bulk_header(#payload, 0x08))
-  dev.transport:write_bulk(payload)
+  dev.transport:usb_write(0x02, bulk_header(#payload, 0x08), 10000)
+  dev.transport:usb_write(0x02, payload, 10000)
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)
 end
@@ -196,8 +196,8 @@ local function stream_raw(dev, bgr888, brightness)
   write_then_read(dev, stream_lut2())
   dev.transport:write(string.char(0x36, 0x01, 0x00, 0x01, 0x09))
   require_ack(dev, 0x01)
-  dev.transport:write_bulk(bulk_header(#bgr888, 0x09))
-  dev.transport:write_bulk(bgr888)
+  dev.transport:usb_write(0x02, bulk_header(#bgr888, 0x09), 10000)
+  dev.transport:usb_write(0x02, bgr888, 10000)
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)
 end
@@ -331,8 +331,8 @@ local function run_bucket_pipeline(dev, data, bulk_info)
   local header = halod.buffer(12 + #bulk_info)
   for i = 1, 12 do header:set_u8(i - 1, LCD_BULK_MAGIC:byte(i)) end
   for i = 1, #bulk_info do header:set_u8(11 + i, bulk_info:byte(i)) end
-  dev.transport:write_bulk(header)
-  dev.transport:write_bulk(data)
+  dev.transport:usb_write(0x02, header, 10000)
+  dev.transport:usb_write(0x02, data, 10000)
 
   dev.transport:write(string.char(0x36, 0x02))
   require_ack(dev, 0x02)

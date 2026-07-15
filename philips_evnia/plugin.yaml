@@ -7,18 +7,22 @@ version: 1.0.0
 license: GPL-3.0-or-later
 description: Philips Evnia 49M2C8900 — DDC/CI picture/OSD controls + Ambiglow RGB.
 capabilities: [rgb, controls]
+permissions: [usb]
 devices:
   - vendor: Philips
     model: 49M2C8900
     name: Philips Evnia 49
     type: monitor
     match:
-      usb_control: { vid: 0x2109, pid: 0x8884 }
+      usb: { vid: 0x2109, pid: 0x8884, interface: 0 }
 transports:
-  usb_control:
-    interface: 0
-    endpoints:
+  usb:
+    devices:
+      - id: primary
+        interface: 0
+        control: { max_transfer_size: 64, max_timeout_ms: 1000 }
       - id: ambiglow
         vid: 0x0cf2
         pid: 0xb201
         interface: 0
+        control: { max_transfer_size: 256, max_timeout_ms: 1000 }

@@ -50,15 +50,15 @@ packages:
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0
-    sha256: 123f9d13cf800bf12f957a8d27b41aef77f60ed12984d75fbccb94d179b93104
+    sha256: 0c5481c2e69716867c95169813598a53fde12dac63f391192f9f14fe175cc577
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.1
-    sha256: 4270e4a9a965996db146c44eb05058c3032495251fed02de0cb4e062d5f28470
+    sha256: bd8b7ae8e40a4940f282c73823ac816a1cb8c054250868a5a544246a7395053a
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0
-    sha256: e02a5ded069157c8f8373cc058091b72229a04997cc54ba35f5e5d4df5b7ba1c
+    sha256: 1189c64ba2d8d87c00bda4d3b4b176dbbba0c77958f75fafdc11a4322defc73a
   - id: openrgb
     path: openrgb
     version: 1.0.0
@@ -66,7 +66,7 @@ packages:
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: c030f0b8888a610bc82b35a0716311b5e07359df4001ecad84d99ab11d8e6862
+    sha256: 5303c914802875da935f0a8f51a9e8ce69f3c6de296276bfee485e70e3731946
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.0.0

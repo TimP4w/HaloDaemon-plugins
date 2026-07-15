@@ -1,66 +1,93 @@
-# HaloDaemon Plugins (official)
+# HaloDaemon official plugins
 
-The official plugin repository for [HaloDaemon](https://github.com/TimP4w/HaloDaemon). The daemon
-seeds a non-removable record for this repository and clones it at startup; a network failure on
-first launch is logged and never blocks boot — the daemon simply has no official plugins until a
-later successful clone.
-
-Every release is an indexed repository: [`repository.yaml`](repository.yaml) is the sorted,
-authoritative allowlist of package ids, paths, versions, and deterministic package digests. Halo
-fetches Git objects separately from executable files, validates a complete revision, and atomically
-selects that immutable revision only after validation succeeds. It never updates individual package
-subtrees or changes the active revision while merely checking for updates.
-
-Official releases also carry a detached `repository.sig` over the exact `repository.yaml` bytes.
-The signing private key is kept outside this repository; see [repository releases](docs/repository-release.md).
-Signing establishes provenance, not blanket execution authority: every disabled-to-enabled plugin
-transition presents the complete normalized authority in Halo and needs a fresh confirmation.
-
-Packages are normal directory packages (`plugin.yaml` + `main.lua`; see the
-[manifest reference](docs/manifest-reference.md) and [Lua API reference](docs/lua-api.md)).
-Repository compatibility belongs to `repository.yaml`; package manifests are inert catalogs for
-their platforms, permissions, transport scopes, supported devices, and advertised capabilities.
-
-## Supported devices
-
-| Vendor | Model | VID:PID | Plugin | Protocol |
-|--------|-------|---------|--------|----------|
-| NZXT | Kraken Z53/63/73, Elite 2023, 2023, Elite V2, Plus 2024 | 1e71:3008, 300c, 300e, 3012, 3014 | [`nzxt_kraken`](nzxt_kraken/) | [NZXT](nzxt_kraken/docs/protocol.md) |
-| NZXT | Kraken X53, X63, X73 | 1e71:2007, 2014 | [`nzxt_kraken_x3`](nzxt_kraken_x3/) | [NZXT](nzxt_kraken_x3/docs/protocol.md) |
-| NZXT | Control Hub (+ chained F-series fans) | 1e71:2022 | [`nzxt_control_hub`](nzxt_control_hub/) | [NZXT](nzxt_control_hub/docs/protocol.md) |
-| ASUS/ENE | SMBus RGB (DRAM, GPU) | — | [`ene_smbus`](ene_smbus/) | [ENE SMBus](ene_smbus/docs/protocol.md) |
-| ASUS | Aura USB motherboard RGB (on-board zones + ARGB headers) | 0b05:1aa6, 18a3, 1866, 18a5, 18f3, 1867, 1872, 1939, 19af, 1a30, 1a6c, 1b3b, 1bed | [`asus_aura_usb`](asus_aura_usb/) | [Aura USB](asus_aura_usb/docs/protocol.md) |
-| Corsair | Vengeance / Dominator DDR4/DDR5 DRAM RGB | — | [`corsair_dram`](corsair_dram/) | [Corsair DRAM](corsair_dram/docs/protocol.md) |
-| Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [Protocols](philips_evnia/docs/protocol.md) |
-| SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](steelseries_arctis/docs/protocol.md) |
-| OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](openrgb/docs/protocol.md) |
-| AMD | Zen-family CPU thermal sensors (Windows) | SMN | [`amd_smn`](amd_smn/) | [AMD SMN](amd_smn/docs/protocol.md) |
-| NVIDIA | Any GPU reported by `nvidia-smi` | — | [`nvidia`](nvidia/) | [NVIDIA sensors](nvidia/docs/protocol.md) |
-| Nuvoton | NCT67xx Super I/O (Windows) | LPCIO | [`nuvoton_lpcio`](nuvoton_lpcio/) | [NCT677x Super I/O](nuvoton_lpcio/docs/protocol.md) |
-| Logitech | Explicitly listed HID++ devices and receivers | 046d:* | [`logitech`](logitech/) | [HID++](logitech/docs/protocol.md) |
-| Logitech | G560 Gaming Speakers | 046d:0a78 | [`logitech_g560`](logitech_g560/) | [G560](logitech_g560/docs/protocol.md) |
-Plus [`halo_effects`](halo_effects/) — the stock library of pixmap/direct RGB effects and the
-reference implementation of the effect-plugin API (not tied to any device).
-
-## Testing
+This repository contains the official device, integration, and effect packages
+for [HaloDaemon](https://github.com/TimP4w/HaloDaemon). Plugins are data and Lua
+packages loaded by the daemon; they are released independently from the core
+source tree but are validated against one repository index.
 
 [![Test plugins](https://github.com/TimP4w/HaloDaemon-plugins/actions/workflows/test-plugins.yml/badge.svg)](https://github.com/TimP4w/HaloDaemon-plugins/actions/workflows/test-plugins.yml)
 
-Every package with a `test.lua` is run in CI, without hardware, via `halod
-plugin-test <package-dir>` (see
-[.github/workflows/test-plugins.yml](.github/workflows/test-plugins.yml)).
-Covered today: [`nzxt_kraken`](nzxt_kraken/), [`nzxt_kraken_x3`](nzxt_kraken_x3/),
-[`nzxt_control_hub`](nzxt_control_hub/), [`asus_aura_usb`](asus_aura_usb/),
-[`steelseries_arctis`](steelseries_arctis/), and [`openrgb`](openrgb/) — the
-harness currently only drives `hid`/`tcp`-transport device plugins; see
-the [test harness section](docs/lua-api.md#testlua-harness) for its API and limitations.
+## Plugin catalog
+
+Each hardware protocol is documented by the package that implements it. The
+manifest remains the authoritative device, platform, permission, and transport
+catalog.
+
+| Package | Hardware or service | Transport | Documentation |
+|---|---|---|---|
+| [`amd_smn`](amd_smn/) | AMD Zen-family CPU thermal sensors on Windows | AMD SMN | [Protocol](amd_smn/docs/protocol.md) |
+| [`asus_aura_usb`](asus_aura_usb/) | ASUS Aura motherboard and addressable RGB zones | HID | [Protocol](asus_aura_usb/docs/protocol.md) |
+| [`corsair_dram`](corsair_dram/) | Corsair Vengeance and Dominator DDR4/DDR5 RGB | SMBus | [Protocol](corsair_dram/docs/protocol.md) |
+| [`ene_smbus`](ene_smbus/) | ENE-backed DRAM and GPU RGB controllers | SMBus | [Protocol](ene_smbus/docs/protocol.md) |
+| [`halo_effects`](halo_effects/) | Stock pixmap and direct RGB effects | Effect API | [Callback contract](halo_effects/docs/protocol.md) |
+| [`logitech`](logitech/) | Declared Logitech HID++ devices and receivers | HID | [Overview](logitech/docs/protocol.md), [HID++ 1.0](logitech/docs/hidpp1.md), [HID++ 2.0](logitech/docs/hidpp2.md) |
+| [`logitech_g560`](logitech_g560/) | Logitech G560 speakers | HID | [Protocol](logitech_g560/docs/protocol.md) |
+| [`nvidia`](nvidia/) | GPUs reported by `nvidia-smi` | Command | [Protocol](nvidia/docs/protocol.md) |
+| [`nuvoton_lpcio`](nuvoton_lpcio/) | Nuvoton NCT67xx Super I/O on Windows | LPCIO | [Protocol](nuvoton_lpcio/docs/protocol.md) |
+| [`nzxt_control_hub`](nzxt_control_hub/) | NZXT RGB & Fan Control Hub | HID | [Hub protocol](nzxt_control_hub/docs/protocol.md) |
+| [`nzxt_kraken`](nzxt_kraken/) | NZXT Kraken Z/Elite LCD coolers | HID + USB | [Z/Elite protocol](nzxt_kraken/docs/protocol.md) |
+| [`nzxt_kraken_x3`](nzxt_kraken_x3/) | NZXT Kraken X53/X63/X73 | HID | [X3 protocol](nzxt_kraken_x3/docs/protocol.md) |
+| [`openrgb`](openrgb/) | Devices exposed by an OpenRGB SDK server | TCP | [SDK protocol](openrgb/docs/protocol.md) |
+| [`philips_evnia`](philips_evnia/) | Philips Evnia 49M2C8900 controls and Ambiglow | USB | [Overview](philips_evnia/docs/protocol.md), [DDC/CI](philips_evnia/docs/ddc-ci.md), [Ambiglow](philips_evnia/docs/ambiglow.md) |
+| [`steelseries_arctis`](steelseries_arctis/) | Arctis Nova Pro Wireless variants | HID | [Protocol](steelseries_arctis/docs/protocol.md) |
+
+## Package layout
+
+A device package normally looks like this:
+
+```text
+plugin-id/
+├── plugin.yaml       manifest, authority, devices, and transports
+├── main.lua          runtime implementation
+├── test.lua          optional recording-based regression tests
+├── docs/
+│   └── protocol.md   protocol owned by this package
+└── assets/            optional logos and effect thumbnails
+```
+
+Shared authoring contracts live at repository level:
+
+- [Manifest reference](docs/manifest-reference.md)
+- [Lua API and test harness](docs/lua-api.md)
+
+Hardware wire details do not belong in the shared references. Put them under
+the implementing package's `docs/` directory and link to the exact Lua code.
+When related packages share a vendor, each package documents only the commands
+it sends and parses; cross-link another package instead of copying its protocol.
+
+## Authority and activation
+
+Plugins are disabled until the user approves their normalized authority. The
+manifest declares permissions and the narrow transport scope the daemon will
+enforce: HID identities, USB devices and endpoints, SMBus addresses, commands,
+or network access. Adding authority to an installed plugin requires renewed
+consent.
+
+Repository compatibility belongs only to [`repository.yaml`](repository.yaml).
+Package manifests intentionally contain no compatibility override or legacy
+transport shim.
+
+## Testing
+
+Run one package against the daemon's recording transports:
+
+```powershell
+halod plugin-test .\nzxt_kraken
+```
+
+`test.lua` drives the real Lua worker without host hardware and can inspect HID,
+TCP, and scoped USB traffic. CI discovers and runs every package that includes a
+test. Protocol changes should add or update byte-level assertions in the owning
+package; physical smoke tests remain necessary for hardware timing, interface
+claims, and firmware-specific behavior.
 
 ## Licensing
 
-Each package's `plugin.yaml`/`main.lua` carries its own SPDX header — several device protocols
-here were reverse-engineered against prior open-source work ([liquidctl](https://github.com/liquidctl/liquidctl),
-[OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), the Linux [`nzxt-smart2`](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c)
-driver, [tomasf/evnia](https://github.com/tomasf/evnia),
-[linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager)) and are licensed accordingly
-(GPL-2.0-or-later or GPL-3.0-or-later); everything else defaults to GPL-3.0-or-later. See
-[REUSE.toml](REUSE.toml) and [LICENSES/](LICENSES/).
+Package files carry SPDX headers. Several protocols build on GPL-licensed
+reverse-engineering work, including
+[liquidctl](https://github.com/liquidctl/liquidctl),
+[OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), the Linux
+[`nzxt-smart2`](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c)
+driver, [tomasf/evnia](https://github.com/tomasf/evnia), and
+[linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager).
+See [REUSE.toml](REUSE.toml) and [LICENSES](LICENSES/).
