@@ -495,8 +495,13 @@ return {
     end
     local buttons = remap_buttons(dev)
     if #buttons > 0 then
+      local exposed, defaults = {}, {}
+      for _, button in ipairs(buttons) do exposed[button.cid] = true end
+      for _, mapping in ipairs(profile.defaults or {}) do
+        if exposed[mapping.cid] then defaults[#defaults + 1] = mapping end
+      end
       result.key_remap = { buttons = buttons, requires_host_mode = false,
-        default_mappings = profile.defaults or {} }
+        default_mappings = defaults }
       capability("key_remap")
     end
     local rates = report_rates(dev)

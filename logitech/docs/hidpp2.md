@@ -245,6 +245,10 @@ For a **native firmware effect** the block is the effect's 15-byte `base` (byte 
 
 **Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. (Delta-compressed funcs 0x30/0x40 are gated off — the wire layout is unverified against hardware.)
 
+The G502 mouse strip uses diffed `setIndividual` batches instead. Its eight LEDs
+fit in two reports, and explicit IDs avoid a firmware quirk where optimized
+pixmap frames can leave one strip LED at its previous colour.
+
 **Explicit per-key writes** (`encode_individual_pairs`) batch up to four `(key, r, g, b)` per `setIndividual`, padding a short final batch with its last pair (so key 0 is never zero-keyed), then `commit`.
 
 ### COLOR_LED_EFFECTS (`0x8070`) — `rgb/color_led.rs`

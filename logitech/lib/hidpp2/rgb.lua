@@ -125,6 +125,34 @@ local function write_per_key_frame(dev, colors, led_ids)
   local any = false; for _, state in ipairs(states) do if state.dirty then any = true; break end end
   if not any then return end
 
+  -- The G502's short mouse strip is most reliable with explicit LED writes.
+  -- Eight LEDs still fit in two reports, so SET_CONSECUTIVE saves nothing over
+  -- two SET_INDIVIDUAL packets and has been observed leaving one strip LED at
+  -- its previous colour during pixmap streaming.
+  if dev.profile and dev.profile.device_type == "mouse" then
+    local dirty, packets = {}, {}
+    for _, state in ipairs(states) do if state.dirty then dirty[#dirty + 1] = state end end
+    for start = 1, #dirty, 4 do
+      local finish = math.min(start + 3, #dirty)
+      local last, payload = dirty[finish], {}
+      for offset = 0, 3 do
+        local entry = dirty[math.min(start + offset, finish)] or last
+        payload[#payload + 1] = entry.id
+        payload[#payload + 1] = entry.r
+        payload[#payload + 1] = entry.g
+        payload[#payload + 1] = entry.b
+      end
+      packets[#packets + 1] = packet(dev.hidpp.devnum,
+        dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x10 | SW_ID,
+        bytes(table.unpack(payload)), true)
+    end
+    packets[#packets + 1] = packet(dev.hidpp.devnum,
+      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
+    send_feature_packets(dev, packets)
+    for _, state in ipairs(states) do cache[state.id] = { state.r, state.g, state.b } end
+    return
+  end
+
   -- Same encoder strategy as the native driver: equal-colour blocks become
   -- SET_RANGE, consecutive varying runs become SET_CONSECUTIVE, and only
   -- changed blocks are sent. A breathing frame is therefore two reports

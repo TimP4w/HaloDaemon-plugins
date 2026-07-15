@@ -222,6 +222,38 @@ return function(h)
   h:assert_eq(native_writes[9].data[10], 127, "native effect scales saturation")
   h:assert_eq(native_writes[9].data[14], 25, "native effect overlays rate")
 
+  local mouse_rgb_dev = h:open({ pid = 0xc095, reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x80, 0x71 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x80, 0x81 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 1 }),
+    report(0x11, 0xff, 0x03, 0x01, { 0, 0, 0xfe, 0x01 }),
+    report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
+    report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x01, { 0, 0, 0xfe, 0x01 }), -- firmware LEDs 1..8
+    report(0x11, 0xff, 0x02, 0x01, { 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x01, { 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x51, {}),
+  } })
+  h:assert(mouse_rgb_dev:initialize(), "G502 per-LED fixture initializes")
+  mouse_rgb_dev:clear()
+  local mouse_frame = {}
+  for i = 1, 8 do mouse_frame[i] = { r = i, g = i + 10, b = i + 20 } end
+  mouse_rgb_dev:write_frame("zone_0", mouse_frame)
+  local mouse_writes = mouse_rgb_dev:writes()
+  h:assert_eq(#mouse_writes, 3, "G502 frame uses two explicit batches plus commit")
+  h:assert_eq(mouse_writes[1].data[4], 0x11, "G502 pixmap uses SET_INDIVIDUAL")
+  h:assert_eq(mouse_writes[2].data[4], 0x11, "G502 second half uses SET_INDIVIDUAL")
+  local addressed = {}
+  for packet_index = 1, 2 do
+    for offset = 5, 17, 4 do addressed[mouse_writes[packet_index].data[offset]] = true end
+  end
+  for id = 1, 8 do h:assert(addressed[id], "G502 pixmap explicitly addresses LED " .. id) end
+  h:assert_eq(mouse_writes[3].data[4], 0x71, "G502 explicit frame commits atomically")
+
   -- A real per-key keyboard fixture exercises the runtime keyboard topology
   -- (including the acronym's serde spelling) and the streaming frame encoder.
   local keyboard_dev = h:open({ pid = 0xc352, reads = {
