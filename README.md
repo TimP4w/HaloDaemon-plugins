@@ -34,6 +34,11 @@ their platforms, permissions, transport scopes, supported devices, and advertise
 | Philips | Evnia 49M2C8900 (DDC/CI + Ambiglow) | 2109:8884, 0cf2:b201 | [`philips_evnia`](philips_evnia/) | [DDC/CI](docs/protocols/ddc-ci.md), [Philips Ambiglow](docs/protocols/philips-ambiglow.md) |
 | SteelSeries | Arctis Nova Pro Wireless / Wireless X | 1038:12e0, 12e5, 225d | [`steelseries_arctis`](steelseries_arctis/) | [SteelSeries Arctis](docs/protocols/steelseries-arctis.md) |
 | OpenRGB | Any device OpenRGB itself supports, via its SDK server | — | [`openrgb`](openrgb/) | [OpenRGB SDK](docs/protocols/openrgb.md) |
+| AMD | Zen-family CPU thermal sensors (Windows) | SMN | [`amd_smn`](amd_smn/) | [AMD SMN](docs/protocols/amd-smn.md) |
+| NVIDIA | Any GPU reported by `nvidia-smi` | — | [`nvidia`](nvidia/) | [NVIDIA SMI](docs/protocols/nvidia-smi.md) |
+| Nuvoton | NCT67xx Super I/O (Windows) | LPCIO | [`nuvoton_lpcio`](nuvoton_lpcio/) | [LPCIO](docs/protocols/lpcio.md) |
+| Logitech | Explicitly listed HID++ devices and receivers | 046d:* | [`logitech`](logitech/) | [HID++](docs/protocols/logitech-hidpp.md) |
+| Logitech | G560 Gaming Speakers | 046d:0a78 | [`logitech_g560`](logitech_g560/) | [G560](docs/protocols/logitech-g560.md) |
 Plus [`halo_effects`](halo_effects/) — the stock library of pixmap/direct RGB effects and the
 reference implementation of the effect-plugin API (not tied to any device).
 

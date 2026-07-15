@@ -1,0 +1,27 @@
+-- G560 protocol fixture: assert exact long-report framing and every zone map.
+return function(h)
+  local dev = h:open()
+  h:assert(dev:initialize(), "initialize succeeds")
+  dev:clear()
+
+  dev:apply({ mode = "static", color = { r = 255, g = 0, b = 128 } })
+  local writes = dev:writes()
+  h:assert_eq(#writes, 4, "static color writes all four speaker zones")
+  h:assert_eq(writes[1].data[1], 0x11, "long report id")
+  h:assert_eq(writes[1].data[2], 0xff, "G560 device number")
+  h:assert_eq(writes[1].data[3], 0x04, "lighting feature")
+  h:assert_eq(writes[1].data[4], 0x3a, "lighting function")
+  h:assert_eq(writes[3].data[5], 0x02, "third zone is left primary")
+  h:assert_eq(writes[3].data[7], 255, "red payload byte")
+  h:assert_eq(writes[3].data[9], 128, "blue payload byte")
+  h:assert_eq(#writes[3].data, 20, "long report is exactly 20 bytes")
+  dev:clear()
+
+  dev:set_range("subwoofer_volume", 101)
+  writes = dev:writes()
+  h:assert_eq(#writes, 1, "one volume command")
+  h:assert_eq(writes[1].data[1], 0x11, "volume long report id")
+  h:assert_eq(writes[1].data[3], 0x09, "volume feature")
+  h:assert_eq(writes[1].data[4], 0x1c, "volume function")
+  h:assert_eq(writes[1].data[5], 100, "volume clamps to 100")
+end

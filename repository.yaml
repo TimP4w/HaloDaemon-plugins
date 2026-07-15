@@ -11,6 +11,10 @@ compatibility:
   plugin_api: 1
 
 packages:
+  - id: amd_smn
+    path: amd_smn
+    version: 1.0.0
+    sha256: a631671c0b2e789643f4346e55750b29cab0d1f25b49f2710e8bbe8d4afaf1ee
   - id: asus_aura_usb
     path: asus_aura_usb
     version: 1.0.0
@@ -27,6 +31,22 @@ packages:
     path: halo_effects
     version: 1.0.0
     sha256: 8147e16f762c8ef71ed847d66fc5d76b7ee9770b97d3b511d328b3bc7d61e0f2
+  - id: logitech
+    path: logitech
+    version: 1.0.0
+    sha256: 82ca96790c6e2b1ea504adee04c0bfe918fcfaf896b3a639dbce8d55dc3cfe9f
+  - id: logitech_g560
+    path: logitech_g560
+    version: 1.0.0
+    sha256: 5956a56dda142d43173bfeebb23fe82c7a0a6c3e3f96c8d566f3a5c92d5bbe4c
+  - id: nvidia
+    path: nvidia
+    version: 1.0.0
+    sha256: 5813536ef73479f45bb16e4150efea66dd49bff99bf6dfa75c6258715277a30a
+  - id: nuvoton_lpcio
+    path: nuvoton_lpcio
+    version: 1.0.0
+    sha256: 3d536d9c8e4e100b6aab49c932162b4ba18e6c6d4ad79a8c0b96b9bb779ac217
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0

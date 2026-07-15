@@ -2,8 +2,10 @@
 
 HaloDaemon embeds Lua 5.4. `plugin.yaml` contains every declaration: device matching, permissions,
 transports, capabilities, configuration, and effects. The entry script returns only callback
-functions. Each physical device gets its own Lua VM and worker, so module-level state is
-device-local. Transport calls look synchronous to Lua and are executed on that worker.
+functions. Each physical root gets one Lua VM and worker. Dynamic receiver and
+integration children route through that root worker using persistent child `dev`
+tables, so module-level protocol state is shared while per-child fields remain isolated.
+Transport calls look synchronous to Lua and are executed on that worker.
 
 See the [manifest reference](manifest-reference.md) for `plugin.yaml`, device matching, transports,
 permissions, and capability-section shapes.
@@ -40,7 +42,9 @@ Available standard libraries include `string`, `table`, and `math`, plus Lua 5.4
 |---|---|
 | `log(message)` | Write a plugin log message. Pass a string. |
 | `halod.config` | This plugin's resolved config values, all represented as strings. |
+| `halod.platform` | Target platform name such as `windows` or `linux`. |
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
+| `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
 
 `os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, `collectgarbage` are removed.
@@ -58,13 +62,19 @@ Every device callback receives `dev` first.
 | Member | Meaning |
 |---|---|
 | `dev.transport` | Transport userdata documented below. |
-| `dev.match.transport` | `hid`, `smbus`, `usb_control`, or `tcp`. |
+| `dev.match.transport` | `hid`, `smbus`, `lpcio`, `usb_control`, or `tcp`. |
 | `dev.match.vid`, `.pid` | Matched USB IDs when available. |
 | `dev.match.bus`, `.addr` | SMBus bus kind and matched address when available. |
 | `dev.match.index` | Remote controller index for an integration child. |
 | `dev.zones` | Host-provided static RGB-zone descriptors. |
 | `dev.status` | Latest value returned by `read_status`; set by the polling loop. |
 | `dev.audio` | Audio-routing userdata when `audio_routing` is granted. |
+
+LPCIO packages that manage supported Nuvoton HWM chips may call
+`dev.transport:lpcio_prepare_hwm(slot, unlock)` at the beginning of a poll.
+It atomically selects the broker slot, registers the HWM BAR for that worker,
+and (when requested) clears the chip's HWM I/O lock. Raw Super-I/O
+configuration mode is deliberately not exposed to Lua.
 
 Do not retain `dev.transport:batch`'s scoped `ops` value after its callback returns.
 
@@ -88,6 +98,9 @@ accept it. A table can report runtime information:
 return {
   ok = true,
   model = "Firmware " .. version,
+  -- Optional device-specific subset of plugin.yaml's advertised union.
+  -- Undeclared names are ignored and reported as manifest mismatches.
+  capabilities = { "rgb", "controls" },
   zones = {
     { id = "ring", name = "Ring", topology = "ring", led_count = 12 },
   },
@@ -104,10 +117,22 @@ return {
 }
 ```
 
+When `capabilities` is omitted, the host keeps the manifest's advertised set for
+compatibility. Product-family and dynamic-child plugins should return it so one
+device does not inherit capabilities that only another model supports.
+
 ### `close(dev)`
 
 Optional best-effort cleanup called before the worker exits. Host-managed audio sinks are also
 removed independently, including abnormal worker exits.
+
+### `on_event(dev, event)`
+
+Optional callback for event-driven host transports. HID events contain
+`event.transport == "hid"`, `event.endpoint` (`primary` or `companion`), and the
+raw `event.report` string. Return `{ button_events = { pressed = {...}, released = {...} } }`
+to forward transitions to the host input engine. Receiver reports are offered to
+the root and each routed child table on the single serialized worker.
 
 ## Capability callbacks
 
@@ -120,7 +145,7 @@ host values and are commonly zero-based.
 | RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors)` |
 | Fan | `get_duty(dev) -> u8`; `set_duty(dev, duty)`; optional `get_rpm(dev) -> u32 | nil` |
 | Sensor | `get_sensors(dev) -> sensors` |
-| Poll | `read_status(dev) -> any` |
+| Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `on_event`. |
 | Chain | `detect_accessories(dev) -> {{channel, accessory}, ...}`; `write_ext_frame(dev, channel_id, colors)` |
 | Chain fan | `fan_rpm(dev, channel)`, `fan_duty(dev, channel)`, `fan_controllable(dev, channel)`, `set_fan_duty(dev, channel, duty)` |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
@@ -231,17 +256,22 @@ end
 Each record may use `zones` as RGB shorthand or declare any normal capability section (`rgb`,
 `fan`, `sensor`, `lcd`, `dpi`, `choice`, `range`, `boolean`, `action`, `battery`, `connection`,
 `equalizer`, `pairing`, `onboard_profiles`, `key_remap`, or `chain`). Each becomes an independent
-top-level device. Its worker receives the controller index in `dev.match.index`.
+top-level device routed through the physical root's worker. Its persistent child
+table receives the controller index in `dev.match.index` and its opaque key in
+`dev.match.key`.
 
-For integration children, the worker dispatches RGB through
-`apply_controller(dev, index, state)` and
-`write_controller_frame(dev, index, zone_id, colors)`. These controller-specific
-names are required; ordinary device-plugin `apply`/`write_frame` callbacks are
-not used for integration-child RGB.
+Routed children use the same capability callbacks as directly matched devices:
+`apply(dev, state)`, `write_frame(dev, zone_id, colors)`, and optional
+`write_frame_batch(dev, frames)`. Plugins route through `dev.match.index` or
+`dev.match.key`; no controller-specific callback family exists.
 
 ## Stream transport: HID and TCP
 
 All byte inputs accept a Lua string or `halod.buffer`; reads return Lua strings.
+For HID devices whose manifest declares a companion collection,
+`has_companion()` reports whether it was opened. `write_companion(bytes)`,
+`read_companion(size)`, and `write_then_read_companion(bytes, size)` access it
+explicitly; protocol code decides which collection to use.
 
 | Method | Result |
 |---|---|
@@ -387,6 +417,9 @@ halod plugin-test .\openrgb
 | `h:assert_eq(actual, expected, message)` | Record an equality assertion. |
 | `dev:initialize()` | Run the real plugin initialization path. |
 | `dev:apply(state)` | Run RGB state application. |
+| `dev:get_batteries()` | Run the declared battery capability and return its readings. |
+| `dev:set_range(key, value)` | Exercise a runtime range-control write. |
+| `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
 | `dev:writes()` | Recorded byte writes. |
 | `dev:clear()` | Clear recorded writes. |

@@ -5,10 +5,10 @@
 -- bus). Connects to an OpenRGB server (default 127.0.0.1:6742) over TCP and
 -- exposes each of its RGB controllers as a top-level HaloDaemon device.
 --
--- One worker (VM + connection) multiplexes *every* controller: `initialize`
--- and `enumerate_controllers` run once on it, and each controller's frames are
--- routed back to it via `write_controller_frame`/`apply_controller` with the
--- controller's enumeration `index`. Keeping a single connection avoids the
+-- One worker (VM + connection) multiplexes *every* controller: the root
+-- performs the protocol handshake and enumeration, and each controller's frames are
+-- routed through the ordinary capability callbacks; each child's persistent
+-- `dev.match.index` contains its enumeration route. Keeping one connection avoids the
 -- connect-storm that crashes the server when a client opens one socket per
 -- controller, and keeps all protocol reads serialized on one connection.
 --
@@ -209,6 +209,9 @@ end
 
 return {
   initialize = function(dev)
+    if dev.match.index ~= nil then
+      return { ok = true, capabilities = { "rgb" } }
+    end
     -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
     -- one REQUEST_PROTOCOL_VERSION response on released servers.
     send_packet(dev, 0, PKT_SET_CLIENT_NAME, "HaloDaemon\0")
@@ -276,15 +279,17 @@ return {
     return controllers
   end,
 
-  -- One worker multiplexes every controller, so route by the explicit `index`
-  -- (enumeration order) rather than any per-device identity.
-  write_controller_frame = function(dev, index, zone_id, colors)
+  -- One worker owns every controller. Each routed child has a persistent dev
+  -- table whose match index is the enumeration route.
+  write_frame = function(dev, zone_id, colors)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     ensure_custom_mode(dev, index)
     set_zone_colors(dev, index, zone_id, colors)
     send_controller(dev, index)
   end,
 
-  write_controller_frame_batch = function(dev, index, frames)
+  write_frame_batch = function(dev, frames)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     ensure_custom_mode(dev, index)
     for _, frame in ipairs(frames) do
       set_zone_colors(dev, index, frame.zone_id, frame.colors)
@@ -292,7 +297,8 @@ return {
     send_controller(dev, index)
   end,
 
-  apply_controller = function(dev, index, state)
+  apply = function(dev, state)
+    local index = assert(dev.match.index, "OpenRGB controller route missing")
     local zones = zones_for(dev, index)
     if not zones then
       return

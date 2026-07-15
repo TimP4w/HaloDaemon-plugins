@@ -93,8 +93,10 @@ devices:
 
 Supported match kinds are:
 
-- `hid`: `vid`, `pid` or `pids`, plus optional `usage_page`, `usage`, and
-  `interface`. Use `hid: { any: true }` only for intentional generic support.
+- `hid`: `vid`, `pid` or `pids`, plus optional `usage_page`, `usage`,
+  `interface`, and `max_bytes_per_sec`. Use `hid: { any: true }` only for
+  intentional generic support. A rate ceiling is enforced by the daemon before
+  every write and is appropriate for devices with strict report pacing.
 - `usb_control`: concrete `vid` and `pid`, plus an optional interface number.
 - `smbus`: `bus`, concrete `addresses`, and optional scan limits. GPU matches
   additionally use explicit `pci_match` entries.
@@ -132,9 +134,23 @@ HID, TCP, and USB-control use the existing scoped configuration:
 
 ```yaml
 transports:
-  hid: { report_size: 64, timeout_ms: 1000 }
+  hid:
+    report_size: 64
+    timeout_ms: 1000
+    # Optional second collection of the same VID/PID/interface.
+    companion: { usage_page: 0xff00, usage: 2 }
   # tcp: { host_key: host, port_key: port, timeout_ms: 5000 }
 ```
+
+The HID backend does not interpret report IDs or vendor protocols. When a
+companion collection is declared, Lua checks `dev.transport:has_companion()`
+and explicitly selects the primary or companion I/O methods.
+
+AMD SMN and LPCIO are Windows-only typed transports. They require their
+matching permission and an explicit empty transport declaration (`amd_smn: {}`
+or `lpcio: {}`). Lua receives only read-only SMN reads and typed LPCIO runtime
+HWM operations. A package may request the narrow Nuvoton HWM-unlock operation,
+but never receives raw Super-I/O configuration-mode access or a broker handle.
 
 ## Consent and updates
 
@@ -158,3 +174,9 @@ secret store.
 
 Use `halod plugin-test <package-directory>` to validate a package and run its
 optional hardware-free test script.
+
+`dynamic_children: true` is reserved for a physical root that returns
+`enumerate_controllers()`. Each returned child must provide a stable `id`; its
+optional opaque `key` is passed back to every child callback as `dev.match.key`.
+Use this for receiver slots and command-backed multi-device discovery, not for
+ordinary capability subcomponents.
