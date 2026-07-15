@@ -95,7 +95,6 @@ Each device needs `vendor`, `model`, and exactly one nested `match` entry.
 | `hid` | `vid`, `pid` or `pids`; optional `usage_page`, `usage`, `interface`, `max_bytes_per_sec` |
 | `usb` | `vid` and `pid`; optional `interface` (default `0`) |
 | `smbus` | `bus`, `addresses`; optional `extra_addresses`, `pre_scan`, `probe`, `pci_match`, `max_bytes_per_sec` |
-| `hwmon` | `any: true` |
 | `command` | Exact executable name |
 | `amd_smn` | `any: true` |
 | `lpcio` | `chip_ids`, or `any: true` |
@@ -116,7 +115,7 @@ keeps identical VID/PID devices separate.
 | `hid` | Access to the matched HID device and its input reports. |
 | `usb` | Access to declared USB devices, interfaces, and endpoints. |
 | `smbus` | SMBus scanning and scoped register access. |
-| `hwmon` | Access to the selected Linux hwmon device. |
+| `hwmon` | Access to the scoped Linux hwmon collection. |
 | `lpcio` | Typed LPC/Super I/O operations on Windows. |
 | `amd_smn` | Read-only AMD SMN access on Windows. |
 | `command` | Running declared executable names without a shell. |
@@ -217,6 +216,22 @@ transports:
 Commands must be bare executable names. Paths and shell expressions are not
 allowed. A `match.command` value must appear in this list.
 
+### hwmon
+
+Linux hwmon is an integration transport rather than a device match:
+
+```yaml
+type: integration
+platforms: [linux]
+permissions: [hwmon]
+transports:
+  hwmon: {}
+```
+
+The host enumerates the collection and exposes only typed, path-free attribute
+operations. An integration declares exactly one root transport, so `hwmon` and
+`tcp` cannot appear together.
+
 ### AMD SMN and LPCIO
 
 These Windows transports use explicit empty settings:
@@ -230,8 +245,8 @@ transports:
 
 They expose typed operations only. Lua never receives a raw broker handle.
 
-SMBus and hwmon access is fully described by the device match and does not need
-a separate transport block.
+SMBus access is fully described by the device match and does not need a
+separate transport block.
 
 ## Config fields
 

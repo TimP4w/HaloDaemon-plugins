@@ -66,7 +66,7 @@ Every device callback receives `dev` first.
 | Member | Meaning |
 |---|---|
 | `dev.transport` | Transport userdata documented below. |
-| `dev.match.transport` | Match kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, or `tcp`. |
+| `dev.match.transport` | Transport kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, or `tcp`. |
 | `dev.match.vid`, `.pid` | Matched USB IDs when available. |
 | `dev.match.bus`, `.addr` | SMBus bus kind and matched address when available. |
 | `dev.match.index` | Remote controller index for an integration child. |
@@ -360,6 +360,23 @@ lpcio_superio_outb(register, value)
 These methods are available only on Windows and only with the matching
 permission and transport. They do not expose the raw broker handle.
 
+## Linux hwmon transport
+
+An hwmon integration root can enumerate the scoped collection:
+
+```lua
+for _, chip in ipairs(dev.transport:hwmon_list()) do
+  local value = dev.transport:hwmon_read(chip.key, "temp1_input")
+  dev.transport:hwmon_write(chip.key, "pwm1", "128")
+end
+```
+
+Each record contains `key`, `stable_id`, `name`, and an `attributes` array.
+Keys are opaque and paths are never exposed. Reads return a string or `nil` for
+an unavailable supported attribute. Writes accept unsigned-integer strings and
+are restricted to available `pwmN` and `pwmN_enable` attributes. The host
+meters writes and restores original PWM-enable values during teardown.
+
 ## SMBus transport
 
 All register I/O occurs in one scoped bus-lock batch:
@@ -473,6 +490,7 @@ halod plugin-test .\openrgb
 |---|---|
 | `h:open({ reads = {...}, pid = ..., companion = ... })` | Open the first declared HID, USB, or TCP device with recording transports. |
 | `h:open_integration({ reads = {...} })` | Open an integration root over mock TCP. |
+| `h:open_integration({ hwmon = {...} })` | Open an hwmon integration over fixture chips. |
 | `h:assert(condition, message)` | Record an assertion. |
 | `h:assert_eq(actual, expected, message)` | Record an equality assertion. |
 | `dev:initialize()` | Run the real plugin initialization path. |
@@ -485,6 +503,8 @@ halod plugin-test .\openrgb
 | `dev:set_choice(key, value)` | Exercise a choice control. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
+| `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |
+| `dev:hwmon_read(key, attribute)` | Inspect a fixture attribute after plugin writes. |
 | `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
 | `dev:rgb_descriptor()` | Return the resolved RGB zones and LED positions. |
 | `dev:writes()` | Recorded byte writes. |
@@ -494,6 +514,8 @@ halod plugin-test .\openrgb
 | `dev:pump_events()` | Deliver queued HID events. |
 | `dev:clear()` | Clear recorded writes. |
 
-The recording harness covers HID, TCP, and USB endpoint/control traffic.
+An hwmon fixture record contains `stable_id`, `name`, and an `attributes` string
+map. The recording harness covers HID, TCP, USB endpoint/control, and scoped
+hwmon traffic.
 Physical timing, interface claims, and firmware behavior still need hardware
 tests.

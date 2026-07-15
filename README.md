@@ -20,6 +20,7 @@ catalog.
 | [`corsair_dram`](corsair_dram/) | Corsair Vengeance and Dominator DDR4/DDR5 RGB | SMBus | [Protocol](corsair_dram/docs/protocol.md) |
 | [`ene_smbus`](ene_smbus/) | ENE-backed DRAM and GPU RGB controllers | SMBus | [Protocol](ene_smbus/docs/protocol.md) |
 | [`halo_effects`](halo_effects/) | Stock pixmap and direct RGB effects | Effect API | [Callback contract](halo_effects/docs/protocol.md) |
+| [`hwmon`](hwmon/) | Linux temperature sensors and motherboard fan headers | hwmon | [Integration behavior](hwmon/docs/protocol.md) |
 | [`logitech`](logitech/) | Declared Logitech HID++ devices and receivers | HID | [Overview](logitech/docs/protocol.md), [HID++ 1.0](logitech/docs/hidpp1.md), [HID++ 2.0](logitech/docs/hidpp2.md) |
 | [`logitech_g560`](logitech_g560/) | Logitech G560 speakers | HID | [Protocol](logitech_g560/docs/protocol.md) |
 | [`nvidia`](nvidia/) | GPUs reported by `nvidia-smi` | Command | [Protocol](nvidia/docs/protocol.md) |
