@@ -42,9 +42,9 @@ local MAX_ZONE_LEDS = 4096
 local MAX_CONTROLLER_LEDS = 0xFFFF
 local MAX_MODE_COLORS = 4096
 
--- Enumeration index → its zones ({ id = <zone index string>, led_count = n }),
--- cached in the root VM for enumeration. Controller callbacks run in their
--- own VMs and use the descriptor HaloDaemon injects as `dev.zones` instead.
+-- Enumeration index → its zones ({ id = <zone index string>, led_count = n }).
+-- The root and routed controller callbacks share one worker, so child
+-- initialization can publish the topology discovered during enumeration.
 local controller_zones = {}
 -- Enumeration index → whether `SetCustomMode` was already sent this connection.
 local custom_mode_sent = {}
@@ -176,9 +176,7 @@ local function ensure_custom_mode(dev, index)
   end
 end
 
--- The root and every controller have separate Lua VMs. The root fills
--- controller_zones while enumerating; a controller VM instead receives its
--- synthesized RgbZone descriptors through dev.zones. Normalize both shapes:
+-- Normalize enumeration zones and host-provided RgbZone descriptors:
 -- enumeration zones carry led_count, while RgbZone carries a leds array.
 local function zones_for(dev, index)
   local zones = controller_zones[index] or dev.zones or {}
@@ -225,7 +223,11 @@ end
 return {
   initialize = function(dev)
     if dev.match.index ~= nil then
-      return { ok = true, capabilities = { "rgb" } }
+      return {
+        ok = true,
+        capabilities = { "rgb" },
+        zones = controller_zones[dev.match.index] or {},
+      }
     end
     -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
     -- one REQUEST_PROTOCOL_VERSION response on released servers.

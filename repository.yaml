@@ -65,7 +65,7 @@ packages:
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: 6718c8867a3225f801dc5e9b147279a63f515614ff9458b10d2681cef2cf78be
+    sha256: 8832452f967af57128b5b5366e598f0441e3032527b42736c481df62c0fa62a3
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
