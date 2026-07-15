@@ -33,7 +33,7 @@ packages:
   - id: hwmon
     path: hwmon
     version: 1.0.0
-    sha256: a195d68b43f6990db82bcde896b995c5a5d5b54131ddc523c4502b2aa71de0e5
+    sha256: 52c27ad0ab6d783e67160429c4108f3482377017525ad5f1b8bb3116ecc87081
   - id: logitech
     path: logitech
     version: 1.0.0
