@@ -3,10 +3,10 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.0.1
+version: 1.0.0
 
 compatibility:
-  halod: '>=0.2.0, <0.3.0'
+  halod: '>=0.3.0'
   plugin_api: 1
 
 packages:

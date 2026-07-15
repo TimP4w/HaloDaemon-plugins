@@ -67,6 +67,11 @@ jobs:
           echo "SIGNING_TOOL=$RUNNER_TEMP/halod-plugin-signing" >> "$GITHUB_ENV"
           rm -rf halodaemon
 
+      - name: Configure publication identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Merge tested plugin tree without committing
         run: git merge --no-commit --no-ff "${{ steps.source.outputs.sha }}"
 
@@ -94,8 +99,6 @@ jobs:
             echo "develop advanced from $expected to $remote; refusing publication" >&2
             exit 1
           }
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add --all
           git commit -m "release: publish plugins ${{ inputs.version }}"
           git push --atomic origin HEAD:main HEAD:develop

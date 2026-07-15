@@ -25,7 +25,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libpipewire-0.3-dev
+          sudo apt-get install --yes --no-install-recommends \
+            libpipewire-0.3-dev libudev-dev
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
