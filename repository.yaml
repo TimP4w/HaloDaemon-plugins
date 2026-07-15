@@ -6,7 +6,7 @@ name: Halo Official Plugins
 version: 1.0.1
 
 compatibility:
-  halod: '>=0.2.0, <0.3.0'
+  halod: '>=0.3.0'
   plugin_api: 1
 
 packages:
