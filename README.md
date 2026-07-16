@@ -110,4 +110,4 @@ reverse-engineering work, including
 | [evnia](https://github.com/tomasf/evnia) | MIT | Philips Evnia Ambiglow protocol |
 | [g560-led](https://github.com/mijoe/g560-led) | MIT | Logitech G560 protocol |
 | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | MPL-2.0 | NCT677x SuperIO register map, AMD Ryzen (Zen) SMN thermal decode |
-| [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM, Corsair NXP peripheral, Zotac GPU protocols |
+| [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM |

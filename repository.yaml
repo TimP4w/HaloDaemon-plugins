@@ -6,7 +6,7 @@ name: Halo Official Plugins
 version: 1.0.1
 
 compatibility:
-  halod: '>=0.3.0'
+  halod: ">=0.3.0"
   plugin_api: 1
 
 packages:
@@ -37,7 +37,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: ef3a8824dda8bae2decbbe4f64d6a2a5a4cfbe02c35ee1e9e7c2147e50cc78c1
+    sha256: e4381159b67928263ca9d9df299d6e43b54574859e09c2ae4a38b8cb1e81727d
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
