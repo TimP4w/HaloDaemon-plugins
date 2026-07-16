@@ -21,7 +21,7 @@ packages:
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 83f2ed018b778606d19c40b44f1965aee4f395eccab94823340147fca747e73f
+    sha256: 2798e3da982081411d47e88336b277e42329f3efd9e7ee5ad87cf49793936b42
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
