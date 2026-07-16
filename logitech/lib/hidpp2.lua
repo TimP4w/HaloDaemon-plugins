@@ -500,7 +500,9 @@ return {
       for _, mapping in ipairs(profile.defaults or {}) do
         if exposed[mapping.cid] then defaults[#defaults + 1] = mapping end
       end
-      result.key_remap = { buttons = buttons, requires_host_mode = false,
+      -- Firmware ignores per-control divert while a mouse is in onboard mode;
+      -- remap only takes effect in host mode. See docs/hidpp2.md.
+      result.key_remap = { buttons = buttons, requires_host_mode = dev.onboard ~= nil,
         default_mappings = defaults }
       capability("key_remap")
     end
@@ -737,7 +739,7 @@ return {
   end,
   read_status = function(_dev) return {} end,
   key_remap_host_mode = function(dev)
-    return true
+    return not dev.onboard or dev.onboard.mode == 2
   end,
   onboard_profiles_status = onboard_status,
   switch_profile = function(dev, slot)

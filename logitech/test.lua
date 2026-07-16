@@ -113,6 +113,32 @@ return function(h)
   for _, mapping in ipairs(remap.mappings) do if mapping.cid == 2 then g8 = mapping end end
   h:assert(g8 and g8.base.type == "dpi_cycle", "G502 X G8 defaults to DPI cycle")
 
+  -- Firmware ignores button divert while a mouse is in onboard mode, so remap
+  -- only works in host mode. A mouse with ONBOARD_PROFILES must advertise that
+  -- requirement and report the live mode so the UI can prompt the user.
+  local function onboard_remap_dev(mode)
+    return h:open({ pid = 0xc095, reads = {
+      report(0x10, 0xff, 0x00, 0x01, { 2 }),
+      report(0x11, 0xff, 0x02, 0x01, { 2 }),
+      report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }), -- ONBOARD_PROFILES
+      report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x10 }), -- MOUSE_BUTTON_SPY
+      report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+      report(0x11, 0xff, 0x01, 0x21, { mode }),
+      report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+      report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+      report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    } })
+  end
+  local onboard_mode_dev = onboard_remap_dev(1)
+  h:assert(onboard_mode_dev:initialize(), "onboard-mode mouse remap fixture initializes")
+  local onboard_remap = onboard_mode_dev:key_remap_status()
+  h:assert(onboard_remap.requires_host_mode, "onboard mouse requires host mode for remap")
+  h:assert(not onboard_remap.host_mode_active, "onboard-mode mouse reports host mode inactive")
+  local host_mode_dev = onboard_remap_dev(2)
+  h:assert(host_mode_dev:initialize(), "host-mode mouse remap fixture initializes")
+  h:assert(host_mode_dev:key_remap_status().host_mode_active,
+    "host-mode mouse reports host mode active")
+
   -- A LIGHTSPEED receiver uses HID++ 1.0 register reads at devnum 0xff to
   -- enumerate paired slots. The child receives slot 1 as its opaque key.
   local receiver = h:open({ pid = 0xc547, reads = {
