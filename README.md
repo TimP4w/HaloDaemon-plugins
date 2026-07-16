@@ -99,9 +99,15 @@ claims, and firmware-specific behavior.
 
 Package files carry SPDX headers. Several protocols build on GPL-licensed
 reverse-engineering work, including
-[liquidctl](https://github.com/liquidctl/liquidctl),
-[OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB), the Linux
-[`nzxt-smart2`](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c)
-driver, [tomasf/evnia](https://github.com/tomasf/evnia), and
-[linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager).
-See [REUSE.toml](REUSE.toml) and [LICENSES](LICENSES/).
+
+| Project | License | Used for |
+|---------|---------|----------|
+| [Solaar](https://github.com/pwr-Solaar/Solaar) | GPL-2.0-or-later | Logitech HID++ protocol |
+| [liquidctl](https://github.com/liquidctl/liquidctl) | GPL-3.0 | NZXT Kraken protocol |
+| [Linux kernel nzxt-smart2](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c) | GPL-2.0-or-later | NZXT Control Hub protocol |
+| [OpenRazer](https://github.com/openrazer/openrazer) | GPL-2.0-or-later | Razer protocol |
+| [linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager) | GPL-3.0 | SteelSeries Arctis protocol |
+| [evnia](https://github.com/tomasf/evnia) | MIT | Philips Evnia Ambiglow protocol |
+| [g560-led](https://github.com/mijoe/g560-led) | MIT | Logitech G560 protocol |
+| [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | MPL-2.0 | NCT677x SuperIO register map, AMD Ryzen (Zen) SMN thermal decode |
+| [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM, Corsair NXP peripheral, Zotac GPU protocols |
