@@ -310,4 +310,4 @@ None — all access is host-initiated request/response. There is no interrupt or
 - DDR4/DDR5 behavior is keyed on firmware `protocol_version`, not the physical memory generation — a DDR4 stick on newer firmware uses the direct path.
 - CRC mismatches are non-fatal for the info-block read (logged) but **abort the apply** for streamed writes — a corrupted stream silently leaves LEDs unchanged.
 - Native effects only ever send brightness `0xFF` and `random = false`; modes beyond breathing/rainbow_wave/color_shift exist in the enum but are not issued by the device layer.
-- Requires SMBus access: the `i2c` group on Linux; on Windows, PawnIO through HaloDaemon's elevated broker while the daemon and Lua worker remain non-elevated (see [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md)).
+- Requires SMBus access: plugin-derived udev rules and the `halod` group on Linux; on Windows, PawnIO through HaloDaemon's elevated broker while the daemon and Lua worker remain non-elevated (see [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md)).
