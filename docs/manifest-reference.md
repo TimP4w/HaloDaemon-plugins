@@ -73,6 +73,23 @@ transports:
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
 
+## Linux device access
+
+Plugins do not carry raw udev text. HaloDaemon derives safe `uaccess` rules
+from the manifest's existing hardware authority: HID matches produce `hidraw`
+rules, USB matches produce USB-device rules, and a declared USB transport also
+produces USB-device rules for its primary HID match and companion devices.
+SMBus matches produce no rule by default: `bus: chipset` scopes access to the
+Intel/AMD chipset SMBus drivers, while `bus: gpu` produces PCI-vendor-scoped
+rules from `pci_match`. This keeps discovery, runtime authority, and Linux
+access in one declaration.
+
+Print the daemon baseline plus all currently installed plugin rules at runtime:
+
+```sh
+halod udev-rules
+```
+
 ## Capabilities
 
 Supported names are:
