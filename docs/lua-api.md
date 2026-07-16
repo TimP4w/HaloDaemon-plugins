@@ -1,8 +1,8 @@
 # Lua plugin API reference
 
 HaloDaemon uses Lua 5.4. `plugin.yaml` declares devices, permissions,
-transports, capabilities, config fields, and effects. The entry script returns
-callback functions.
+transports, capabilities, config fields, effects, and widgets. The entry script
+returns callback functions.
 
 Each physical device gets one Lua VM and one worker. Dynamic children share the
 root VM, but each child keeps its own `dev` table. Transport calls are
@@ -446,6 +446,56 @@ if sink then
   sink:remove() -- idempotent host cleanup also runs on device teardown
 end
 ```
+
+## Widget callbacks
+
+Widget callbacks are returned from `main.lua` alongside the other callbacks.
+Every widget declared in `plugin.yaml` implements both functions below.
+
+| Callback | Meaning |
+|---|---|
+| `render_widget_<id>(buffer, width, height, time, dt, params, ctx)` | Render the current frame. `time` is elapsed engine time and `dt` is the frame interval. |
+| `preview_widget_<id>(buffer, width, height, params, ctx)` | Render a deterministic, non-transparent still frame without live data. This callback is mandatory. |
+
+`buffer` is bounded RGBA data, `width` and `height` are its canvas dimensions,
+and `params` contains the editor values declared by the widget manifest.
+HaloDaemon uses the preview when a declared sensor, audio, or media source is
+unavailable. `halod plugin-test` verifies that its 128×128 output is visible.
+
+### Widget context
+
+All context methods are bounded to the widget canvas.
+
+| Method | Meaning |
+|---|---|
+| `ctx:is_preview()` | Whether the callback is producing a preview. |
+| `ctx:color()` | Selected widget color. |
+| `ctx:local_time()` | Host-local date and time. |
+| `ctx:sensor(id)` | Selected sensor value, or `nil`. |
+| `ctx:sensor_label(id)` | Host-provided sensor name. |
+| `ctx:sensor_text(id)` | Host-formatted sensor value. |
+| `ctx:sensor_unit(id)` | Standard sensor unit suffix. |
+| `ctx:audio_level()` | Current normalized audio level. |
+| `ctx:audio_band(index)` | Current normalized audio band value. |
+| `ctx:audio_band_count()` | Number of available audio bands. |
+| `ctx:media_title()`, `ctx:media_artist()`, `ctx:media_status()` | Current media metadata. |
+| `ctx:fill_rect(...)`, `ctx:fill_rounded_rect(...)` | Draw a filled rectangle. |
+| `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives. |
+| `ctx:draw_image(...)` | Draw host-provided declared image data. |
+| `ctx:draw_asset(...)` | Draw the widget's mandatory SVG icon as a host-rasterized image. |
+| `ctx:draw_media_art(...)` | Draw current album art. |
+| `ctx:measure_text(text, size)` | Measure text in the selected system font. |
+| `ctx:ellipsize_text(text, size, max_width)` | Truncate text at Unicode character boundaries. |
+| `ctx:draw_text(buffer, text, x, y, size, color?)` | Draw styled text. |
+
+`fill_rounded_rect(buffer, x, y, width, height, radius, color?)` rasterizes the
+complete rounded rectangle on one pixel grid. `draw_arc(buffer, cx, cy, radius,
+thickness, start_degrees, sweep_degrees, cap_radius, color?)` draws clockwise
+from the top; `cap_radius` is clamped to half the stroke thickness.
+
+Text uses the host-selected system font. Widgets declaring `uses_font`
+automatically receive the editor's weight, italic, underline, and
+strikethrough settings. Lua never loads or rasterizes font files.
 
 ## Effect API
 

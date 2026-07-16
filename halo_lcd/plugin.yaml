@@ -1,0 +1,269 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+id: halo_lcd
+type: lcd
+name: Halo LCD Widgets
+author: HaloDaemon
+version: 1.0.0
+license: GPL-3.0-or-later
+description: The stock LCD widget library and reference implementation of the LCD widget API.
+widgets:
+  - id: clock
+    name: Clock
+    icon: clock.svg
+    resize: box
+    default_scale: 1.5
+    default_aspect: 0.5
+    uses_color: true
+    uses_font: true
+    updates: { interval_ms: 1000 }
+    params:
+      - id: variant
+        label: Style
+        default: 24h
+        kind: { kind: enum, options: [24h, 24h_seconds, 12h] }
+  - id: date
+    name: Date
+    icon: date.svg
+    resize: box
+    default_scale: 1.6
+    default_aspect: 0.42
+    uses_color: true
+    uses_font: true
+    updates: { interval_ms: 60000 }
+  - id: sensor
+    name: Sensor
+    icon: sensor.svg
+    uses_font: true
+    updates: { sensors: true }
+    params:
+      - id: sensor
+        label: Sensor
+        default: ''
+        kind: { kind: sensor }
+      - id: label
+        label: Label text
+        default: ''
+        kind: { kind: text }
+      - id: show_value
+        label: Show value
+        default: true
+        kind: { kind: boolean }
+      - id: show_unit
+        label: Show unit
+        default: true
+        kind: { kind: boolean }
+      - id: value_color
+        label: Number color
+        default: { r: 255, g: 255, b: 255 }
+        kind: { kind: color }
+      - id: label_color
+        label: Label color
+        default: { r: 148, g: 163, b: 184 }
+        kind: { kind: color }
+  - id: text
+    name: Text
+    icon: text.svg
+    resize: box
+    min_scale: 0.1
+    default_scale: 1.2
+    default_aspect: 0.5
+    auto_width_param: text
+    uses_color: true
+    uses_font: true
+    updates: { interval_ms: 60000 }
+    params:
+      - id: text
+        label: Text
+        default: TEXT
+        kind: { kind: text }
+  - id: image
+    name: Image
+    icon: image.svg
+    resize: box
+    updates: { interval_ms: 100 }
+    params:
+      - id: filename
+        label: Image
+        default: ''
+        kind: { kind: image }
+      - id: fit
+        label: Scaling
+        default: fit
+        kind: { kind: enum, options: [fit, cover, contain] }
+      - id: shape
+        label: Shape
+        default: rect
+        kind: { kind: enum, options: [rect, rounded, circle] }
+  - id: logo
+    name: Logo
+    icon: logo.svg
+    uses_font: true
+    font_controls: false
+    default_font: Inter Tight
+    fixed_text_weight: bold
+    updates: { interval_ms: 60000 }
+    params:
+      - id: show_img
+        label: Show logo
+        default: true
+        kind: { kind: boolean }
+      - id: show_text
+        label: Show text
+        default: true
+        kind: { kind: boolean }
+  - id: debug
+    name: Debug
+    icon: debug.svg
+    resize: box
+    default_scale: 1.2
+    default_aspect: 0.5
+    uses_color: true
+    uses_font: true
+    updates: { interval_ms: 50 }
+  - id: audio_spectrum
+    name: Audio Spectrum
+    icon: audio_spectrum.svg
+    resize: box
+    updates: { audio: true, interval_ms: 33 }
+    params:
+      - id: bands
+        label: Bands
+        default: 32.0
+        kind: { kind: range, min: 8.0, max: 64.0, step: 8.0 }
+      - id: fill
+        label: Bar color
+        default: { r: 0, g: 200, b: 220 }
+        kind: { kind: color }
+      - id: flip_h
+        label: Flip horizontally
+        default: false
+        kind: { kind: boolean }
+      - id: flip_v
+        label: Flip vertically
+        default: false
+        kind: { kind: boolean }
+      - id: mirror
+        label: Mirror from center
+        default: false
+        kind: { kind: boolean }
+  - id: gauge
+    name: Gauge
+    icon: gauge.svg
+    resize: box
+    updates:
+      sensors: true
+      sensors_when: { param: input, equals: sensor }
+      audio: true
+      audio_when: { param: input, equals: audio }
+    params:
+      - id: input
+        label: Input
+        default: audio
+        kind: { kind: enum, options: [audio, sensor] }
+      - id: sensor
+        label: Sensor
+        default: ''
+        kind: { kind: sensor }
+      - id: style
+        label: Style
+        default: ring
+        kind: { kind: enum, options: [ring, arc, bar] }
+      - id: fill
+        label: Filled color
+        default: { r: 0, g: 200, b: 220 }
+        kind: { kind: color }
+      - id: track
+        label: Unfilled color
+        default: { r: 30, g: 41, b: 59 }
+        kind: { kind: color }
+      - id: background
+        label: Background color
+        default: { r: 15, g: 18, b: 28 }
+        kind: { kind: color }
+      - id: transparent_background
+        label: Transparent background
+        default: false
+        kind: { kind: boolean }
+      - id: min
+        label: Min value
+        default: 0.0
+        kind: { kind: number, min: -1000000.0, max: 1000000.0 }
+      - id: max
+        label: Max value
+        default: 100.0
+        kind: { kind: number, min: -1000000.0, max: 1000000.0 }
+      - id: radius
+        label: Corner radius
+        default: 8.0
+        kind: { kind: range, min: 0.0, max: 50.0, step: 1.0 }
+      - id: arc_rotation
+        label: Rotation
+        default: '0'
+        kind: { kind: enum, options: ['0', '90', '180', '270'] }
+      - id: border_radius
+        label: Border radius
+        default: 100.0
+        kind: { kind: range, min: 0.0, max: 100.0, step: 5.0 }
+    param_visibility:
+      sensor: { param: input, equals: sensor }
+      min: { param: input, equals: sensor }
+      max: { param: input, equals: sensor }
+      radius: { param: style, equals: bar }
+      background: { param: style, equals: ring }
+      transparent_background: { param: style, equals: ring }
+      arc_rotation: { param: style, equals: arc }
+      border_radius: { param: style, equals: arc }
+  - id: now_playing
+    name: Now Playing
+    icon: now_playing.svg
+    resize: box
+    default_scale: 2.4
+    default_aspect: 0.45
+    uses_font: true
+    updates: { media: true }
+    params:
+      - id: show_art
+        label: Show album art
+        default: true
+        kind: { kind: boolean }
+      - id: show_title
+        label: Show title
+        default: true
+        kind: { kind: boolean }
+      - id: show_artist
+        label: Show artist
+        default: true
+        kind: { kind: boolean }
+      - id: title_color
+        label: Title color
+        default: { r: 255, g: 255, b: 255 }
+        kind: { kind: color }
+      - id: artist_color
+        label: Artist color
+        default: { r: 148, g: 163, b: 184 }
+        kind: { kind: color }
+  - id: shape
+    name: Shape
+    icon: shape.svg
+    resize: box
+    updates: { interval_ms: 60000 }
+    params:
+      - id: shape
+        label: Shape
+        default: circle
+        kind: { kind: enum, options: [circle, rectangle, triangle, line] }
+      - id: filled
+        label: Filled
+        default: true
+        kind: { kind: boolean }
+      - id: fill
+        label: Color
+        default: { r: 0, g: 200, b: 220 }
+        kind: { kind: color }
+presets:
+  - id: clock
+    name: Clock
+    file: preset-clock.json
+  - id: stats
+    name: Stats
+    file: preset-stats.json
