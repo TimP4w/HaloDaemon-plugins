@@ -80,6 +80,7 @@ jobs:
           HALOD_PLUGIN_SIGNING_KEY_B64: ${{ secrets.HALOD_PLUGIN_SIGNING_KEY_B64 }}
         run: |
           set -euo pipefail
+          python3 scripts/generate-licenses.py
           "$SIGNING_TOOL" index . --version "${{ inputs.version }}"
           "$SIGNING_TOOL" sign . \
             --key-id halodaemon-official-2026 \

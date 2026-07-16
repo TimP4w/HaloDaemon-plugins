@@ -43,6 +43,8 @@ jobs:
             -p halod-plugin-signing -- validate plugins
           cargo run --manifest-path halodaemon/src/Cargo.toml \
             -p halod-plugin-signing -- index plugins --check
+          python3 plugins/scripts/generate-licenses.py \
+            --output "$RUNNER_TEMP/plugin-licenses.txt"
 
       - name: Run halod plugin-test on every package with a test.lua
         run: |

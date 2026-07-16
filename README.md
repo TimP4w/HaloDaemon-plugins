@@ -77,12 +77,13 @@ HaloDaemon checkout, refresh or verify it with:
 ```powershell
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.07.1
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --check
+python scripts/generate-licenses.py
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
 ```
 
-Publication recomputes every package SHA-256 before signing the exact generated
-`repository.yaml` bytes. A content change therefore cannot retain an old hash
-or signature.
+Publication recomputes every package SHA-256 and the generated `licenses.txt`
+SHA-256 before signing the exact `repository.yaml` bytes. A package or license
+notice change therefore cannot retain an old hash or signature.
 
 Run one package against the daemon's recording transports:
 
@@ -112,3 +113,9 @@ reverse-engineering work, including
 | [g560-led](https://github.com/mijoe/g560-led) | MIT | Logitech G560 protocol |
 | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | MPL-2.0 | NCT677x SuperIO register map, AMD Ryzen (Zen) SMN thermal decode |
 | [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM |
+
+Publication generates `licenses.txt` from each `plugin.yaml` license and the
+SPDX license/copyright declarations in that package. This deliberately shows
+both when they differ, such as the GPL-3.0-or-later Logitech plugin and its
+GPL-2.0-or-later Solaar-derived source. Development CI generates a temporary
+copy to validate the source data without committing the release artifact.
