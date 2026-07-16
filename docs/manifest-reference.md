@@ -144,7 +144,7 @@ smaller set for a specific model.
 ## Device entries and matches
 
 Each device needs `vendor`, `model`, and exactly one nested `match` entry.
-`name` and `type` are optional.
+`name`, `type`, and `control_layout` are optional.
 
 | Match | Main fields |
 |---|---|
@@ -163,6 +163,33 @@ A GPU match also needs at least one `pci_match` entry.
 
 USB discovery keeps the bus, port path, address, interface, and serial. This
 keeps identical VID/PID devices separate.
+
+### Control layout
+
+`control_layout` places the Controls tab's category cards on a grid. Omit it and
+every category gets its own full-width row, alphabetically.
+
+```yaml
+devices:
+  - vendor: SteelSeries
+    model: Arctis Nova Pro Wireless
+    control_layout:
+      - { category: Microphone, order: 0, column: 0 }
+      - { category: Noise Cancelling, order: 1, column: 1 }
+```
+
+| Field | Meaning |
+|---|---|
+| `category` | Matches a control's `category` (`""` ⇒ `Settings`). |
+| `order` | Placement order across categories. Default: `0`. |
+| `column` | 0-based start column. Default: `0`. |
+| `span` | Width in columns. Default: `1`. |
+
+The grid is as wide as the furthest `column + span`. Entries are placed in
+`order`; one that would overlap or overflow the current row starts a new one. A
+category with no entry — or one whose controls the device does not report — is
+appended as its own full-width row, so a layout may name fewer categories than
+the plugin declares.
 
 ## Permissions
 
