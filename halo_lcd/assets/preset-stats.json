@@ -1,0 +1,8 @@
+{
+  "widgets": [
+    {"id":"w1","widget":"halo_lcd:sensor","x":0.3,"y":0.36,"scale":1.0,"rotation":0.0,"color":null,"font":null,"params":{"sensor":"","label":"CPU","show_value":true}},
+    {"id":"w2","widget":"halo_lcd:sensor","x":0.7,"y":0.36,"scale":1.0,"rotation":0.0,"color":null,"font":null,"params":{"sensor":"","label":"GPU","show_value":true}},
+    {"id":"w3","widget":"halo_lcd:audio_spectrum","x":0.5,"y":0.72,"scale":1.2,"rotation":0.0,"color":null,"font":null,"params":{"bands":32.0}}
+  ],
+  "style": {"accent":{"r":0,"g":200,"b":220},"background":{"kind":"grid"},"font":"halod-core:sans"}
+}

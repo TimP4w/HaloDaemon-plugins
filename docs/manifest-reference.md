@@ -51,7 +51,7 @@ transports:
 | Field | Meaning |
 |---|---|
 | `id` | Required package ID. It must match the directory name. |
-| `type` | `device`, `integration`, or `effect`. Default: `device`. |
+| `type` | `device`, `integration`, `effect`, or `lcd`. Default: `device`. |
 | `name` | Display name. |
 | `author` | Plugin author. |
 | `version` | Plugin version text. |
@@ -68,10 +68,48 @@ transports:
 | `config` | User-editable settings. |
 | `effects` | Effects provided by an effect plugin. |
 | `effect_assets` | Optional effect thumbnails. |
+| `widgets` | LCD widget declarations for an `lcd` package. |
+| `presets` | Declarative LCD template JSON files for an `lcd` package. |
 | `logo` | Optional filename under `assets/`. |
 
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
+
+### Widget fields
+
+`widgets` is valid for `type: lcd`. Widget IDs become `<plugin-id>:<id>` in the
+daemon catalog.
+
+| Field | Meaning |
+|---|---|
+| `id` | Widget ID within the package. |
+| `name` | Display name shown in the widget library. |
+| `icon` | Required SVG filename under `assets/`; also available to `draw_asset`. |
+| `params` | Editor parameters passed to the widget callbacks. |
+| `resize` | `uniform` or `box`. |
+| `default_scale` | Initial editor scale. |
+| `min_scale` | Smallest editor scale. |
+| `default_aspect` | Initial height-to-width ratio for a `box` widget. |
+| `auto_width_param` | Text parameter that grows the widget horizontally. |
+| `param_visibility` | Conditional visibility rules for editor parameters. |
+| `uses_color` | Adds the shared widget color control. |
+| `uses_font` | Enables host-rendered text and its style parameters. |
+| `font_controls` | Whether the shared font and style controls are editable. Default: `true`. |
+| `default_font` | Initial installed system font family. Requires `uses_font`. |
+| `fixed_text_weight` | Host-enforced `normal`, `semibold`, or `bold` weight. Requires `font_controls: false`. |
+| `updates` | Update interval and live-data dependencies. |
+
+An `updates` map accepts `interval_ms`, `sensors`, `audio`, and `media`.
+`sensors_when` and `audio_when` can gate those dependencies with the same enum
+condition syntax as parameter visibility. A visibility rule maps a target
+parameter to an enum source and required value, for example
+`fill: { param: variant, equals: bar }`.
+
+### Preset fields
+
+`presets` is valid for `type: lcd`. Each entry declares `id`, `name`, and a JSON
+`file` under `assets/`. Preset IDs become `<plugin-id>:<id>` in the daemon
+catalog, and every referenced layout is validated before it is offered.
 
 ## Linux device access
 

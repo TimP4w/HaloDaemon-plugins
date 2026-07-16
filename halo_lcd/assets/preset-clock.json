@@ -1,0 +1,7 @@
+{
+  "widgets": [
+    {"id":"w1","widget":"halo_lcd:clock","x":0.5,"y":0.4,"scale":2.0,"rotation":0.0,"color":{"r":255,"g":255,"b":255},"font":null,"params":{"variant":"24h","scale_y":0.9}},
+    {"id":"w2","widget":"halo_lcd:date","x":0.5,"y":0.66,"scale":1.6,"rotation":0.0,"color":{"r":255,"g":255,"b":255},"font":null,"params":{"scale_y":0.672}}
+  ],
+  "style": {"accent":{"r":0,"g":200,"b":220},"background":{"kind":"flow"},"font":"halod-core:sans"}
+}
