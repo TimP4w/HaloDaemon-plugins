@@ -63,8 +63,13 @@ return {
       }
       index = index + 1
       for fan = 1, 16 do
+        local pwm = "pwm" .. fan
+        local enable = pwm .. "_enable"
         if has(chip.attributes, "fan" .. fan .. "_input")
-            and has(chip.attributes, "pwm" .. fan) then
+            and has(chip.attributes, pwm)
+            and has(chip.writable_attributes or {}, pwm)
+            and (not has(chip.attributes, enable)
+              or has(chip.writable_attributes or {}, enable)) then
           local label = dev.transport:hwmon_read(chip.key, "fan" .. fan .. "_label")
           label = label and label:match("^%s*(.-)%s*$") or ""
           controllers[#controllers + 1] = {

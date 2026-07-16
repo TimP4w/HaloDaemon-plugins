@@ -41,4 +41,23 @@ return function(h)
   fan:set_duty(75)
   h:assert_eq(root:hwmon_read("0", "pwm1_enable"), "1", "fan switched to manual mode")
   h:assert_eq(root:hwmon_read("0", "pwm1"), "191", "percent converted to raw PWM")
+
+  local read_only = h:open_integration({
+    hwmon = {
+      {
+        stable_id = "read_only_chip",
+        name = "read-only hwmon",
+        attributes = {
+          temp1_input = "39000\n",
+          fan1_input = "900\n",
+          pwm1 = "128\n",
+          pwm1_enable = "2\n",
+        },
+        writable_attributes = {},
+      },
+    },
+  })
+  h:assert(read_only:initialize(), "read-only integration initializes")
+  local read_only_controllers = read_only:enumerate_controllers()
+  h:assert_eq(#read_only_controllers, 1, "read-only hwmon exposes only its sensor controller")
 end
