@@ -3,7 +3,7 @@
 id: steelseries_arctis
 name: SteelSeries Arctis Nova Pro Wireless
 author: HaloDaemon
-version: 1.0.0
+version: 1.1.0
 license: GPL-3.0-or-later
 description: SteelSeries Arctis Nova Pro Wireless / Wireless X base station controls and equalizer.
 permissions: [hid, audio_routing]
@@ -15,11 +15,17 @@ devices:
     type: headset
     match:
       hid: { vid: 0x1038, pid: 0x12e0, interface: 4 }
+    control_layout:
+      - { category: Microphone, order: 0, column: 0 }
+      - { category: Noise Cancelling, order: 1, column: 1 }
   - vendor: SteelSeries
     model: Arctis Nova Pro Wireless X
     name: Arctis Nova Pro Wireless X
     type: headset
     match:
       hid: { vid: 0x1038, pids: [0x12e5, 0x225d], interface: 4 }
+    control_layout:
+      - { category: Microphone, order: 0, column: 0 }
+      - { category: Noise Cancelling, order: 1, column: 1 }
 transports:
   hid: { report_size: 64, timeout_ms: 1000, feature_report: false }

@@ -76,5 +76,5 @@ packages:
     sha256: 9c9d70f68deeb6c661f7a182ef24724950a62a636a4ed5758fef3de92af349b8
   - id: steelseries_arctis
     path: steelseries_arctis
-    version: 1.0.0
-    sha256: 92dcce597ed2b005cdf2b08af773cc8cd801f7e77618a20be9ab90b1927e6e8c
+    version: 1.1.0
+    sha256: b064b3b75ce08a217a7aa141c3c443bf19046b910b2fe35ae7804b68805cd4a4
