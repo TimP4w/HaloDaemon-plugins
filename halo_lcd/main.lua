@@ -152,22 +152,27 @@ local function render_shape(canvas, w, h, params, ctx)
   local shape = params.shape or "circle"
   local col = color(params.fill, PRIMARY)
   local filled = params.filled ~= false
+  local stroke = params.stroke_width or 3
+  ctx:push_clip(0, 0, w, h)
+  ctx:push_opacity(params.opacity or 1)
+  ctx:push_rotation(params.rotation or 0, w / 2, h / 2)
   if shape == "circle" then
-    ctx:draw_circle(canvas, w / 2, h / 2, math.min(w, h) * 0.42, filled, col)
+    ctx:draw_circle(canvas, w / 2, h / 2, math.min(w, h) * 0.42, filled, col, stroke)
   elseif shape == "line" then
-    ctx:draw_line(canvas, w * 0.08, h / 2, w * 0.92, h / 2, col)
+    ctx:draw_polyline(canvas, { { w * 0.08, h / 2 }, { w * 0.92, h / 2 } }, col, stroke)
   elseif shape == "triangle" then
-    ctx:draw_triangle(canvas, w / 2, h * 0.08, w * 0.92, h * 0.90, w * 0.08, h * 0.90, filled, col)
+    ctx:draw_polygon(canvas, {
+      { w / 2, h * 0.08 }, { w * 0.92, h * 0.90 }, { w * 0.08, h * 0.90 },
+    }, filled, col, stroke)
   else
-    if filled then
-      ctx:fill_rect(canvas, w * 0.08, h * 0.08, w * 0.84, h * 0.84, col)
-    else
-      ctx:draw_line(canvas, w * 0.08, h * 0.08, w * 0.92, h * 0.08, col)
-      ctx:draw_line(canvas, w * 0.92, h * 0.08, w * 0.92, h * 0.92, col)
-      ctx:draw_line(canvas, w * 0.92, h * 0.92, w * 0.08, h * 0.92, col)
-      ctx:draw_line(canvas, w * 0.08, h * 0.92, w * 0.08, h * 0.08, col)
-    end
+    ctx:draw_polygon(canvas, {
+      { w * 0.08, h * 0.08 }, { w * 0.92, h * 0.08 },
+      { w * 0.92, h * 0.92 }, { w * 0.08, h * 0.92 },
+    }, filled, col, stroke)
   end
+  ctx:pop_rotation()
+  ctx:pop_opacity()
+  ctx:pop_clip()
 end
 
 local function render_logo(canvas, w, h, params, ctx)

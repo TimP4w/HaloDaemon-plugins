@@ -484,8 +484,13 @@ All context methods are bounded to the widget canvas.
 | `ctx:audio()` | `{ level, flux, beat, seq, bands }`, or `nil`. |
 | `ctx:media()` | `{ title, artist, status, art_available }`, or `nil`. |
 | `ctx:environment()` | `{ locale, timezone, temperature_unit, screen_shape, screen_width, screen_height }`. |
+| `ctx:push_clip(x, y, width, height)`, `ctx:pop_clip()` | Intersect drawing with a canvas-space clip rectangle. |
+| `ctx:push_opacity(value)`, `ctx:pop_opacity()` | Multiply image and primitive opacity by a value from 0 to 1. |
+| `ctx:push_rotation(degrees, center_x, center_y)`, `ctx:pop_rotation()` | Rotate subsequent drawing around a canvas point. |
 | `ctx:fill_rect(...)`, `ctx:fill_rounded_rect(...)` | Draw a filled rectangle. |
-| `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives. |
+| `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives; lines and hollow shapes accept an optional final stroke width. |
+| `ctx:draw_polyline(buffer, points, color?, stroke_width?)` | Draw 2–64 points as connected line segments. |
+| `ctx:draw_polygon(buffer, points, filled, color?, stroke_width?)` | Draw 3–64 points as a filled or stroked closed polygon. |
 | `ctx:draw_image(...)` | Draw host-provided declared image data. |
 | `ctx:draw_asset(...)` | Draw the widget icon or an SVG listed in its manifest `assets`; undeclared names return `false`. |
 | `ctx:draw_media_art(...)` | Draw current album art. |
@@ -513,6 +518,14 @@ Text-box `style` requires `size` and accepts `horizontal` (`left`, `center`, or
 `character`), `max_lines` (1–64), and `overflow` (`clip` or `ellipsis`). The
 host owns shaping, Unicode boundaries, font selection, measurement, and bounds
 checking; unknown fields and invalid sizes are rejected.
+
+Polyline and polygon points use `{x = 10, y = 20}` or `{10, 20}` entries.
+Clip, opacity, and rotation calls are nested independently and must be balanced;
+each stack has a maximum depth of eight. Coordinates, opacity, stroke widths,
+and rotations must be finite. Stroke widths are limited to 0.25–32 pixels, and
+the host enforces a per-frame drawing-work budget so valid callbacks remain
+inside the widget timeout. These APIs do not expose paths, shaders, font files,
+or filesystem-backed image access.
 
 ## Effect API
 

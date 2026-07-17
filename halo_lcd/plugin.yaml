@@ -3,7 +3,7 @@ id: halo_lcd
 type: lcd
 name: Halo LCD Widgets
 author: HaloDaemon
-version: 1.0.3
+version: 1.0.4
 license: GPL-3.0-or-later
 description: The stock LCD widget library and reference implementation of the LCD widget API.
 widgets:
@@ -261,6 +261,18 @@ widgets:
         label: Color
         default: { r: 0, g: 200, b: 220 }
         kind: { kind: color }
+      - id: stroke_width
+        label: Stroke width
+        default: 3.0
+        kind: { kind: range, min: 0.25, max: 16.0, step: 0.25 }
+      - id: opacity
+        label: Opacity
+        default: 1.0
+        kind: { kind: range, min: 0.0, max: 1.0, step: 0.05 }
+      - id: rotation
+        label: Rotation
+        default: 0.0
+        kind: { kind: range, min: -180.0, max: 180.0, step: 1.0 }
 presets:
   - id: clock
     name: Clock
