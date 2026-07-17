@@ -33,8 +33,8 @@ packages:
     sha256: 4c7abd56e9cfb3979ac908a7e0674915b4311661de4b969bdb720de6285b6e7c
   - id: halo_lcd
     path: halo_lcd
-    version: 1.0.1
-    sha256: 557e656ee994f04b83df9559ef4124e3e4f5b07c0c83a1bdf8590f069b7a0035
+    version: 1.0.2
+    sha256: 1dac10720d884388848459187333cbb9c44322655991a7f536e686ca1d047a26
   - id: hwmon
     path: hwmon
     version: 1.0.0

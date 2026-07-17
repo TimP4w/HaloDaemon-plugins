@@ -85,6 +85,7 @@ daemon catalog.
 | `id` | Widget ID within the package. |
 | `name` | Display name shown in the widget library. |
 | `icon` | Required SVG filename under `assets/`; also available to `draw_asset`. |
+| `assets` | Additional SVG filenames under `assets/` available only to this widget through `draw_asset`. |
 | `params` | Editor parameters passed to the widget callbacks. |
 | `resize` | `uniform` or `box`. |
 | `default_scale` | Initial editor scale. |
@@ -104,6 +105,11 @@ An `updates` map accepts `interval_ms`, `sensors`, `audio`, and `media`.
 condition syntax as parameter visibility. A visibility rule maps a target
 parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.
+
+Widget asset names must be bare `.svg` filenames. Every file is parsed during
+manifest validation and subject to per-file, per-widget, and package limits.
+The renderer rasterizes declared assets into bounded resize buckets; an
+undeclared name passed to `draw_asset` returns `false`.
 
 ### Preset fields
 

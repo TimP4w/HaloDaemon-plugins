@@ -169,7 +169,8 @@ end
 local function render_logo(canvas, w, h, params, ctx)
   if params.show_img ~= false then
     local side = math.min(w, h) * (params.show_text == false and 0.82 or 0.52)
-    ctx:draw_asset(canvas, "logo.svg", (w - side) / 2, h * 0.08, side, side, "contain")
+    assert(ctx:draw_asset(canvas, "logo-mark.svg", (w - side) / 2, h * 0.08, side, side, "contain"))
+    assert(ctx:draw_asset(canvas, "logo-spark.svg", w * 0.68, h * 0.08, side * 0.22, side * 0.22, "contain"))
   end
   if params.show_text ~= false then
     local size = h * 0.15

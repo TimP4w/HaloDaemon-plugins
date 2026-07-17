@@ -3,7 +3,7 @@ id: halo_lcd
 type: lcd
 name: Halo LCD Widgets
 author: HaloDaemon
-version: 1.0.1
+version: 1.0.2
 license: GPL-3.0-or-later
 description: The stock LCD widget library and reference implementation of the LCD widget API.
 widgets:
@@ -97,6 +97,7 @@ widgets:
   - id: logo
     name: Logo
     icon: logo.svg
+    assets: [logo-mark.svg, logo-spark.svg]
     uses_font: true
     font_controls: false
     default_font: Inter Tight

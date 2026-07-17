@@ -487,7 +487,7 @@ All context methods are bounded to the widget canvas.
 | `ctx:fill_rect(...)`, `ctx:fill_rounded_rect(...)` | Draw a filled rectangle. |
 | `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives. |
 | `ctx:draw_image(...)` | Draw host-provided declared image data. |
-| `ctx:draw_asset(...)` | Draw the widget's mandatory SVG icon as a host-rasterized image. |
+| `ctx:draw_asset(...)` | Draw the widget icon or an SVG listed in its manifest `assets`; undeclared names return `false`. |
 | `ctx:draw_media_art(...)` | Draw current album art. |
 | `ctx:measure_text(text, size)` | Measure text in the selected system font. |
 | `ctx:ellipsize_text(text, size, max_width)` | Truncate text at Unicode character boundaries. |
