@@ -133,13 +133,18 @@ halod udev-rules
 Supported names are:
 
 ```text
-rgb, fan, sensors, battery, connection, dpi, report_rate,
+rgb, fan, sensors, battery, connection, dpi,
 key_remap, keyboard_layout, onboard_profiles, lcd, equalizer,
 pairing, controls, chain
 ```
 
 This list is the package's maximum capability set. `initialize()` may return a
 smaller set for a specific model.
+
+Device settings such as report rate, sleep timeout, debounce, sidetone, and
+similar controls use the generic `controls` capability. Model them as choice,
+range, boolean, or action descriptors instead of adding standalone capability
+names.
 
 ## Device entries and matches
 
