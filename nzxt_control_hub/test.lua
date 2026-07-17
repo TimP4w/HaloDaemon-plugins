@@ -1,6 +1,6 @@
--- Exercised via `halod plugin-test <package-dir>`. This hub has no RGB zones
+-- Exercised via `halod plugin-test <package-dir>`. This hub has no RGB channels
 -- or `apply` of its own (every zone lives on a chained accessory routed via
--- `write_ext_frame`, which the harness doesn't drive yet) — only
+-- `write_frame`, which the harness doesn't drive yet) — only
 -- `initialize()` is covered here.
 
 return function(h)

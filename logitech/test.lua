@@ -267,7 +267,11 @@ return function(h)
   h:assert(mouse_rgb_dev:initialize(), "G502 per-LED fixture initializes")
   mouse_rgb_dev:clear()
   local mouse_frame = {}
-  for i = 1, 8 do mouse_frame[i] = { r = i, g = i + 10, b = i + 20 } end
+  for i = 1, 8 do
+    mouse_frame[#mouse_frame + 1] = i
+    mouse_frame[#mouse_frame + 1] = i + 10
+    mouse_frame[#mouse_frame + 1] = i + 20
+  end
   mouse_rgb_dev:write_frame("zone_0", mouse_frame)
   local mouse_writes = mouse_rgb_dev:writes()
   h:assert_eq(#mouse_writes, 3, "G502 frame uses two explicit batches plus commit")
@@ -307,9 +311,9 @@ return function(h)
   end
   h:assert(key_a and key_a.cell.id == "a", "firmware LED 1 maps to the A key")
   h:assert(media_brightness ~= nil, "keyboard layout includes Logitech media keys")
-  local keyboard_rgb = keyboard_dev:rgb_descriptor()
+  local keyboard_lighting = keyboard_dev:lighting_descriptor()
   local led_a
-  for _, led in ipairs(keyboard_rgb.zones[1].leds) do if led.id == 1 then led_a = led end end
+  for _, led in ipairs(keyboard_lighting.channels[1].leds) do if led.id == 1 then led_a = led end end
   h:assert(led_a ~= nil, "keyboard RGB descriptor contains firmware LED 1")
   h:assert(math.abs(led_a.x - ((key_a.cell.col + key_a.cell.w / 2) / 18)) < 0.0001,
     "keyboard RGB uses the native key x position")
@@ -317,7 +321,11 @@ return function(h)
     "keyboard RGB uses the native key y position")
   keyboard_dev:clear()
   local breathing = {}
-  for _ = 1, 8 do breathing[#breathing + 1] = { r = 10, g = 20, b = 30 } end
+  for _ = 1, 8 do
+    breathing[#breathing + 1] = 10
+    breathing[#breathing + 1] = 20
+    breathing[#breathing + 1] = 30
+  end
   keyboard_dev:write_frame("zone_0", breathing)
   local frame_writes = keyboard_dev:writes()
   h:assert_eq(#frame_writes, 2, "uniform per-key frame is one range plus commit")
@@ -327,18 +335,23 @@ return function(h)
   h:assert_eq(frame_writes[2].data[4], 0x71, "per-key frame commits atomically")
   keyboard_dev:clear()
   local led_4_index
-  for i, led in ipairs(keyboard_rgb.zones[1].leds) do
+  for i, led in ipairs(keyboard_lighting.channels[1].leds) do
     if led.id == 4 then led_4_index = i end
   end
   h:assert(led_4_index ~= nil, "keyboard RGB descriptor contains firmware LED 4")
-  breathing[led_4_index] = { r = 255, g = 0, b = 0 }
+  -- The descriptor is zero-based at the protocol boundary; frame bytes remain
+  -- a flat, one-based Lua sequence, so LED id 4 starts after four RGB triples.
+  local led_4_offset = led_4_index * 3
+  breathing[led_4_offset + 1] = 255
+  breathing[led_4_offset + 2] = 0
+  breathing[led_4_offset + 3] = 0
   keyboard_dev:write_frame("zone_0", breathing)
   local one_led = keyboard_dev:writes()
   h:assert_eq(#one_led, 2, "one changed LED is one range plus commit")
   h:assert_eq(one_led[1].data[5], 4, "single-LED update addresses its firmware LED")
   h:assert_eq(one_led[1].data[6], 4, "single-LED range contains only that LED")
   keyboard_dev:clear()
-  keyboard_dev:apply({ mode = "per_led", zones = {
+  keyboard_dev:apply({ mode = "per_led", channels = {
     zone_0 = { ["6"] = { r = 0x44, g = 0x55, b = 0x66 } },
   } })
   local paint = keyboard_dev:writes()

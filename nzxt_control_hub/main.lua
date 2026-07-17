@@ -45,7 +45,11 @@ end
 local chain_channels = {}
 for i = 0, FAN_CHANNELS - 1 do
   chain_channels[#chain_channels + 1] =
-    { id = tostring(i), name = "Channel " .. (i + 1), max_leds = MAX_CHAIN_LEDS }
+    {
+      id = tostring(i), name = "Channel " .. (i + 1),
+      led_count = 0, max_leds = MAX_CHAIN_LEDS,
+      topology = "linear", color_order = "rgb",
+    }
 end
 
 local accessories = {
@@ -67,11 +71,19 @@ return {
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
     log("NZXT Control Hub initialized")
-    return { ok = true, chain = chain_channels, accessories = accessories }
+    -- `channels` establishes the physical lighting endpoints; `division`
+    -- marks those same endpoints as attachable segment buses. The daemon merges
+    -- them by id into divisible LightingChannels when it serializes the hub.
+    return {
+      ok = true, channels = chain_channels, division = chain_channels,
+      accessories = accessories,
+    }
   end,
 
   -- RGB, routed by the host through whichever channel a chained accessory occupies.
-  write_ext_frame = function(dev, channel, colors)
+  write_frame = function(dev, channel, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     write_channel(dev, tonumber(channel), colors)
   end,
 

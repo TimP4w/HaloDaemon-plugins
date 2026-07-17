@@ -23,15 +23,15 @@ packages:
   - id: asus_aura_usb
     path: asus_aura_usb
     version: 1.0.0
-    sha256: dbe1f8901ff1e4fd52f8bc60688a90c1005422c51ad37be8d148f5fc8f859c9e
+    sha256: 897de799a5e4f860f4b41e65f93d8c35244a4a1c2418177df59042a05418cdb7
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 2798e3da982081411d47e88336b277e42329f3efd9e7ee5ad87cf49793936b42
+    sha256: 497a7d71434a9f93bdf86270b5dc6d2cf47f6b4ceb5375567c31dedc63288737
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
-    sha256: ee964fcf0002f8fd54412fb6c33fa52c001b78a9fd2fddea2c06eaf0afd161fc
+    sha256: 2a092d8427f1e158d0fb6d798ff1db156912c9dd2690ffa47a5f88fd6e320b11
   - id: halo_effects
     path: halo_effects
     version: 1.1.0
@@ -47,11 +47,11 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: 3021ac5fdbed54d04b952b07131d329cedc3d0ced439240a7cc83a83ce469b11
+    sha256: b952de7c681188412ed8020dab993748f56d4fb7e0664c022b262392cefa1465
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
-    sha256: 12ad1fccb01f04e036ee1d0ef8403ff87d43bf699f63e83fbcaf59ba5fb1db93
+    sha256: d5adf4f32a722b623dec1768bdb0a3cc3e4207b35514ae507bf3b156e95a98f9
   - id: nuvoton_lpcio
     path: nuvoton_lpcio
     version: 1.0.0
@@ -63,23 +63,23 @@ packages:
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0
-    sha256: 15f5e1a8171a9e21e97b423c7044d717e54084917a43fb5b0452db335f0b909c
+    sha256: 089a6ba0c01195a325359342d142c309b0063a503beccb440ff0103ffb26d89e
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.2
-    sha256: 9ddf5f495d574a01b9f44523a14ac7f021f09027ad4173eb9912380e127c88bd
+    sha256: f25cbf81fd7e6d7ced3367b8e46b1136dff8b0bc576cd76f7d99c0a661985ead
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0
-    sha256: f3648c8cc75015cec86a4c297d40e5b040f89973ce1316c898d9f2d226c0c2d4
+    sha256: 856cac564b474afb7c87f2e635300e7365fa6cb559a06750aeb69bd0cbd89308
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: 560a94623659d06b6c29463d3d4a0c9e53feaaf29e21e787fb8bb7ee43effe66
+    sha256: b2115b38bf74496d20eb43c75cb62d50946fa530fe554b37a336dca2db28e288
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: 9c9d70f68deeb6c661f7a182ef24724950a62a636a4ed5758fef3de92af349b8
+    sha256: e3e286f02446dd80d7991d7f56896a43100eaaf42131149410a95fe45ca35224
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.1.0

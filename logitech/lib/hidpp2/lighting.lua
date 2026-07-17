@@ -90,7 +90,7 @@ local COLOR_ZONE_NAMES = {
 }
 
 local function color_led_zones(dev, index, count)
-  local zones, slots = {}, {}
+  local channels, slots = {}, {}
   for zone = 0, count - 1 do
     local info = request(dev, dev.hidpp.devnum, index, 0x10, bytes(zone, 0xff, 0))
     local actual = info:byte(1) or zone
@@ -101,19 +101,19 @@ local function color_led_zones(dev, index, count)
       local id = ((effect:byte(3) or 0) << 8) | (effect:byte(4) or 0)
       if id == 0x0001 then static = slot end
     end
-    zones[#zones + 1] = { id = "zone_" .. actual,
+    channels[#channels + 1] = { id = "zone_" .. actual,
       name = COLOR_ZONE_NAMES[location] or "Unknown", topology = "linear", led_count = 1 }
     slots[#slots + 1] = static
   end
-  return zones, slots
+  return channels, slots
 end
 
 local function write_per_key_frame(dev, colors, led_ids)
   -- Streaming colours are ordered like the host descriptor, which for
   -- keyboards is physical key order rather than numeric firmware-ID order.
-  local ids = led_ids or dev.rgb.led_ids or {}
-  local cache, states = dev.rgb.frame_cache or {}, {}
-  dev.rgb.frame_cache = cache
+  local ids = led_ids or dev.lighting.led_ids or {}
+  local cache, states = dev.lighting.frame_cache or {}, {}
+  dev.lighting.frame_cache = cache
   for i = 1, math.min(#ids, #colors) do
     local color, id = colors[i], ids[i]
     local r, g, b = color.r or 0, color.g or 0, color.b or 0
@@ -223,10 +223,10 @@ end
 -- Paint mode supplies a sparse map keyed by firmware LED id. Preserve that
 -- addressing and use the protocol's explicit setIndividual operation; a
 -- streaming frame is positional and cannot represent a one-key sparse edit.
-local function write_per_key_pairs(dev, zones)
+local function write_per_key_pairs(dev, channels)
   local supported, entries = {}, {}
-  for _, id in ipairs(dev.rgb.led_ids or {}) do supported[id] = true end
-  for _, led_colors in pairs(zones or {}) do
+  for _, id in ipairs(dev.lighting.led_ids or {}) do supported[id] = true end
+  for _, led_colors in pairs(channels or {}) do
     for led_id, color in pairs(led_colors) do
       local id = tonumber(led_id)
       if id and supported[id] then
@@ -258,18 +258,18 @@ local function write_per_key_pairs(dev, zones)
     dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
   send_feature_packets(dev, packets)
 
-  local cache = dev.rgb.frame_cache or {}
-  dev.rgb.frame_cache = cache
+  local cache = dev.lighting.frame_cache or {}
+  dev.lighting.frame_cache = cache
   for _, entry in ipairs(entries) do cache[entry.id] = { entry.r, entry.g, entry.b } end
 end
 
 local function write_rgb_zone(dev, zone_id, colors, led_ids)
-  if not dev.rgb then return end
-  if dev.rgb.wire == "per_key" then write_per_key_frame(dev, colors, led_ids); return end
+  if not dev.lighting then return end
+  if dev.lighting.wire == "per_key" then write_per_key_frame(dev, colors, led_ids); return end
   local zone = tonumber(zone_id:match("^zone_(%d+)$")) or 0
   local color = colors[1] or { r = 0, g = 0, b = 0 }
-  local slot = dev.rgb.static_slots[zone + 1] or 0
-  if dev.rgb.wire == "color_led" then
+  local slot = dev.lighting.static_slots[zone + 1] or 0
+  if dev.lighting.wire == "color_led" then
     feature(dev, COLOR_LED_EFFECTS, 0x30,
       bytes(zone, slot, color.r or 0, color.g or 0, color.b or 0, 0, 0, 0, 0, 0, 0, 0))
   else
@@ -280,10 +280,10 @@ local function write_rgb_zone(dev, zone_id, colors, led_ids)
 end
 
 local function restore_rgb_control(dev)
-  if not dev.rgb then return end
-  if dev.rgb.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
+  if not dev.lighting then return end
+  if dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
     feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
-  elseif dev.rgb.wire == "color_led" then
+  elseif dev.lighting.wire == "color_led" then
     feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
   end
 end

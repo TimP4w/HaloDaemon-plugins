@@ -7,7 +7,7 @@ version: 1.0.0
 license: GPL-3.0-or-later
 description: NZXT Kraken X-series with ring/logo RGB, telemetry, and chained accessories.
 permissions: [hid]
-capabilities: [rgb, sensors, chain]
+capabilities: [lighting, sensors, lighting_division]
 devices:
   - vendor: NZXT
     model: Kraken X

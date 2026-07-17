@@ -52,9 +52,9 @@ return function(h)
   dev:clear()
 
   -- Chain: a composed frame for header argb_0 routes to direct channel 0.
-  dev:write_ext_frame("argb_1", { { r = 4, g = 5, b = 6 }, { r = 7, g = 8, b = 9 } })
+  dev:write_frame("argb_1", { 4, 5, 6, 7, 8, 9 })
   local cw = dev:writes()
-  h:assert_eq(#cw, 1, "write_ext_frame → one direct packet")
+  h:assert_eq(#cw, 1, "write_frame → one direct packet")
   h:assert_eq(cw[1].data[2], 0x40, "CMD_DIRECT")
   h:assert_eq(cw[1].data[3], 0x81, "argb_1 → direct channel 1 + apply bit")
   h:assert_eq(cw[1].data[5], 2, "two composed LEDs")

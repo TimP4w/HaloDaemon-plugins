@@ -381,12 +381,12 @@ return {
         latches = true,
         brightness = brightness, rotation = rotation,
       },
-      zones = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
+      channels = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
       cooling = { channels = {
         { id="pump", name="Pump", kind="pump", controllable=true },
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
-      chain = chain_channels,
+      division = chain_channels,
       accessories = accessories,
     }
   end,
@@ -402,11 +402,6 @@ return {
     pcall(function() dev.transport:read(REPORT) end)
   end,
 
-  -- Pump ring RGB.
-  write_frame = function(dev, zone_id, colors)
-    ring_grb = grb_from_colors(colors, RING_SLOTS)
-    send_channels(dev)
-  end,
   apply = function(dev, state)
     if state.mode == "static" then
       local fill = {}
@@ -414,7 +409,7 @@ return {
       ring_grb = grb_from_colors(fill, RING_SLOTS)
       send_channels(dev)
     elseif state.mode == "per_led" then
-      local ring_map = (state.zones or {}).ring or {}
+      local ring_map = (state.channels or {}).ring or {}
       local fill = {}
       for i = 0, RING_LEDS - 1 do
         fill[i + 1] = ring_map[tostring(i)] or {r = 0, g = 0, b = 0}
@@ -424,9 +419,15 @@ return {
     end
   end,
 
-  -- Accessory (F-fan) RGB, composited into the accessory channel by the host.
-  write_ext_frame = function(dev, channel, colors)
-    ext_grb = grb_from_colors(colors, #colors)
+  -- Direct ring and divided accessory frames share one encoded-byte callback.
+  write_frame = function(dev, channel, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    if channel == "ring" then
+      ring_grb = grb_from_colors(colors, RING_SLOTS)
+    else
+      ext_grb = grb_from_colors(colors, #colors)
+    end
     send_channels(dev)
   end,
 
