@@ -36,9 +36,10 @@ return function(h)
 
   local fan = root:open_controller(controllers[2].index)
   h:assert(fan:initialize(), "fan child initializes")
-  h:assert_eq(fan:get_rpm(), 1200, "fan RPM")
-  h:assert_eq(fan:get_duty(), 50, "raw PWM rounds to percent")
-  fan:set_duty(75)
+  local cooling = fan:get_cooling_status("fan")
+  h:assert_eq(cooling.rpm, 1200, "fan RPM")
+  h:assert_eq(cooling.duty, 50, "raw PWM rounds to percent")
+  fan:set_cooling_duty("fan", 75)
   h:assert_eq(root:hwmon_read("0", "pwm1_enable"), "1", "fan switched to manual mode")
   h:assert_eq(root:hwmon_read("0", "pwm1"), "191", "percent converted to raw PWM")
 

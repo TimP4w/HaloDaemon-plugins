@@ -430,8 +430,8 @@ return {
     send_channels(dev)
   end,
 
-  -- Unified cooling channels. The legacy fan callbacks below are retained for
-  -- old daemon releases, but new hosts route both outputs through these.
+  -- Unified cooling channels, including numeric parent channels for chained
+  -- accessories.
   get_cooling_status = function(dev, id)
     if id == "pump" then
       return { id=id, name="Pump", kind="pump", controllable=true,
@@ -441,31 +441,19 @@ return {
       return { id=id, name="Radiator fan", kind="fan", controllable=((dev.status or {}).fan_rpm or 0) > 0,
         duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
     end
+    if tonumber(id) then
+      return { id=id, name="Radiator fan", kind="fan", controllable=true,
+        duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
+    end
     error("unknown cooling channel: " .. tostring(id))
   end,
   set_cooling_duty = function(dev, id, duty)
     if id == "pump" then
       dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
-    elseif id == "fan1" then
+    elseif id == "fan1" or tonumber(id) then
       dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
     else error("unknown cooling channel: " .. tostring(id)) end
   end,
-
-  -- Pump duty (min 20%).
-  set_duty = function(dev, duty)
-    dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
-  end,
-  get_duty = function(dev) return (dev.status or {}).pump_duty or 0 end,
-  get_rpm = function(dev) return (dev.status or {}).pump_rpm end,
-
-  -- Accessory fan (routed from the child via the parent's fan hub).
-  set_fan_duty = function(dev, ch, duty)
-    dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
-  end,
-  fan_duty = function(dev, ch) return (dev.status or {}).fan_duty or 0 end,
-  fan_rpm = function(dev, ch) return (dev.status or {}).fan_rpm or 0 end,
-  fan_controllable = function(dev, ch) return ((dev.status or {}).fan_rpm or 0) > 0 end,
-
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
   read_status = function(dev)
     local r = halod.buffer(dev.transport:read_nonblocking(REPORT))

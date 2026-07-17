@@ -98,22 +98,21 @@ return {
     return prev
   end,
 
-  -- Per-channel fan telemetry/control, routed from the chained accessory's
-  -- fan capability via the parent hub.
-  fan_rpm = function(dev, ch)
-    local s = dev.status or {}
-    return (s.rpm and s.rpm[ch]) or 0
-  end,
-  fan_duty = function(dev, ch)
-    local s = dev.status or {}
-    return (s.duty and s.duty[ch]) or 0
-  end,
-  fan_controllable = function(dev, ch)
+  -- Per-channel cooling telemetry/control, routed from chained accessories.
+  get_cooling_status = function(dev, channel_id)
+    local ch = assert(tonumber(channel_id), "invalid cooling channel")
+    if ch < 0 or ch >= FAN_CHANNELS then error("unknown cooling channel: " .. tostring(channel_id)) end
     local s = dev.status or {}
     local t = s.fan_type and s.fan_type[ch]
-    return t ~= nil and t ~= 0
+    return {
+      id = tostring(ch), name = "Channel " .. (ch + 1), kind = "fan",
+      controllable = t ~= nil and t ~= 0,
+      rpm = (s.rpm and s.rpm[ch]) or 0,
+      duty = (s.duty and s.duty[ch]) or 0,
+    }
   end,
-  set_fan_duty = function(dev, ch, duty)
+  set_cooling_duty = function(dev, channel_id, duty)
+    local ch = assert(tonumber(channel_id), "invalid cooling channel")
     if ch >= FAN_CHANNELS then
       error(string.format("Control Hub: fan channel %d out of range (max %d)", ch, FAN_CHANNELS - 1))
     end

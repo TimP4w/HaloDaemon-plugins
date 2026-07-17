@@ -3,7 +3,7 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.3.1
+version: 2026.7.1
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 signing_key:
@@ -43,7 +43,7 @@ packages:
   - id: hwmon
     path: hwmon
     version: 1.0.0
-    sha256: 52c27ad0ab6d783e67160429c4108f3482377017525ad5f1b8bb3116ecc87081
+    sha256: d1878ae5271d696611a0a534fd808c732c34e5a44e077f76b4da1895d08c8dbe
   - id: logitech
     path: logitech
     version: 1.0.0
@@ -55,7 +55,7 @@ packages:
   - id: nuvoton_lpcio
     path: nuvoton_lpcio
     version: 1.0.0
-    sha256: a5acea23562fbb270c950cfcdfb454ffc1528aded79cb17e2ea2ab23c13db6ee
+    sha256: abf0516eeccb835231098695d81ba11b95bb1d68623e0042a108634ec857e102
   - id: nvidia
     path: nvidia
     version: 1.0.1
@@ -63,11 +63,11 @@ packages:
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0
-    sha256: a1c964c86920f710483a33e5bd3df133bdae7f39dc74956354dfedaa41e25590
+    sha256: 15f5e1a8171a9e21e97b423c7044d717e54084917a43fb5b0452db335f0b909c
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.2
-    sha256: 407a7f5ce29130ee90fa51c93a8d1eb2126c99b46ae4bcc893089f912ae7afb1
+    sha256: 9ddf5f495d574a01b9f44523a14ac7f021f09027ad4173eb9912380e127c88bd
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0

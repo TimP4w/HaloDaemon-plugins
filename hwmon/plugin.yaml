@@ -8,7 +8,7 @@ version: 1.0.0
 license: GPL-3.0-or-later
 description: Exposes Linux hwmon temperature sensors and motherboard PWM fan headers.
 platforms: [linux]
-capabilities: [sensors, fan]
+capabilities: [sensors, cooling]
 permissions: [hwmon]
 transports:
   hwmon: {}

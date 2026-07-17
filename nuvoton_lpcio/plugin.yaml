@@ -7,7 +7,7 @@ license: MPL-2.0
 description: Nuvoton NCT67xx temperature and PWM fan control through LPCIO.
 platforms: [windows]
 permissions: [lpcio]
-capabilities: [sensors, fan]
+capabilities: [sensors, cooling]
 dynamic_children: true
 devices:
   - vendor: Nuvoton

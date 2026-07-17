@@ -182,11 +182,10 @@ host values and are commonly zero-based.
 |---|---|
 | RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors, led_ids)` |
 | Cooling | `initialize` returns `cooling = { channels = {{id, name, kind = "fan"|"pump", controllable}, ...} }`; `get_cooling_status(dev, channel_id) -> {id, name, kind, controllable, duty?, rpm?}`; `set_cooling_duty(dev, channel_id, duty)` |
-| Fan (legacy) | `get_duty(dev) -> u8`; `set_duty(dev, duty)`; optional `get_rpm(dev) -> u32 | nil` |
 | Sensor | `get_sensors(dev) -> sensors` |
 | Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
 | Chain | `detect_accessories(dev) -> {{channel, accessory}, ...}`; `write_ext_frame(dev, channel_id, colors)` |
-| Chain accessory cooling | Accessory children expose their own `cooling` channel to the host. Legacy `fan_rpm`, `fan_duty`, `fan_controllable`, and `set_fan_duty` callbacks remain an internal compatibility bridge for packages not yet moved to `get_cooling_status` / `set_cooling_duty`. |
+| Chain accessory cooling | Accessory children expose their own cooling channel; the parent handles it through `get_cooling_status(dev, channel_id)` and `set_cooling_duty(dev, channel_id, duty)`. |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
 | DPI | `set_dpi(dev, dpi)` |
 | Choice | `set_choice(dev, key, selected)` |
