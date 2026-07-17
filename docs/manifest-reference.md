@@ -89,7 +89,8 @@ consumes: [telemetry.current, host.sensors.*, host.media.playback, host.environm
 
 Provided keys must begin with the package id. Cross-plugin and `host.*` reads
 are shown as user-approved authority. Host sensors are individual records plus
-`host.sensors.catalog`. Audio remains a dedicated sampled stream.
+`host.sensors.catalog`; fan curves, device state, LCD widgets, and RGB effects
+all consume that same host cache. Audio remains a dedicated sampled stream.
 
 ### Widget fields
 
