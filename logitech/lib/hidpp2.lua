@@ -385,7 +385,7 @@ local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
 local set_remap_active = remap.set_active
 local button_events = remap.events
-return {
+local callbacks = {
   event_source = function(event)
     local report = event.report
     if #report < 4 then return false end
@@ -919,4 +919,21 @@ return {
   end,
   close = function(_dev) end,
 }
+
+-- A powered-off device stays enumerated (its dongle answers ROOT from cache)
+-- and only fails once a request needs the hardware.
+local describe_device = callbacks.initialize
+callbacks.initialize = function(dev)
+  local ok, result = pcall(describe_device, dev)
+  if ok then return result end
+  local text = tostring(result)
+  if not (text:find("HID++ error response", 1, true)
+      or text:find("HID++ response did not arrive", 1, true)) then
+    error(result)
+  end
+  log("logitech: device is not powered on: " .. text, "trace")
+  return { ok = false }
+end
+
+return callbacks
 end

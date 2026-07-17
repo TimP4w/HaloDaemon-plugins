@@ -71,9 +71,26 @@ transports:
 | `widgets` | LCD widget declarations for an `lcd` package. |
 | `presets` | Declarative LCD template JSON files for an `lcd` package. |
 | `logo` | Optional filename under `assets/`. |
+| `provides` | Namespaced latest-value records published by this package. |
+| `consumes` | Records this package may read; `host.sensors.*` is the only wildcard. |
 
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
+
+## Shared snapshot data
+
+```yaml
+provides:
+  - key: telemetry.current
+    stale_after_ms: 900000
+    min_notify_interval_ms: 1000
+consumes: [telemetry.current, host.sensors.*, host.media.playback, host.environment]
+```
+
+Provided keys must begin with the package id. Cross-plugin and `host.*` reads
+are shown as user-approved authority. Host sensors are individual records plus
+`host.sensors.catalog`; fan curves, device state, LCD widgets, and RGB effects
+all consume that same host cache. Audio remains a dedicated sampled stream.
 
 ### Widget fields
 
@@ -85,6 +102,7 @@ daemon catalog.
 | `id` | Widget ID within the package. |
 | `name` | Display name shown in the widget library. |
 | `icon` | Required SVG filename under `assets/`; also available to `draw_asset`. |
+| `assets` | Additional SVG filenames under `assets/` available only to this widget through `draw_asset`. |
 | `params` | Editor parameters passed to the widget callbacks. |
 | `resize` | `uniform` or `box`. |
 | `default_scale` | Initial editor scale. |
@@ -99,11 +117,17 @@ daemon catalog.
 | `fixed_text_weight` | Host-enforced `normal`, `semibold`, or `bold` weight. Requires `font_controls: false`. |
 | `updates` | Update interval and live-data dependencies. |
 
-An `updates` map accepts `interval_ms`, `sensors`, `audio`, and `media`.
-`sensors_when` and `audio_when` can gate those dependencies with the same enum
+An `updates` map accepts `interval_ms`, `data`, and `audio`. Every key in
+`data` must also appear in the package-level `consumes` list. `data_when` and
+`audio_when` can gate those dependencies with the same enum
 condition syntax as parameter visibility. A visibility rule maps a target
 parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.
+
+Widget asset names must be bare `.svg` filenames. Every file is parsed during
+manifest validation and subject to per-file, per-widget, and package limits.
+The renderer rasterizes declared assets into bounded resize buckets; an
+undeclared name passed to `draw_asset` returns `false`.
 
 ### Preset fields
 
@@ -133,13 +157,18 @@ halod udev-rules
 Supported names are:
 
 ```text
-rgb, fan, sensors, battery, connection, dpi, report_rate,
+rgb, fan, sensors, battery, connection, dpi,
 key_remap, keyboard_layout, onboard_profiles, lcd, equalizer,
 pairing, controls, chain
 ```
 
 This list is the package's maximum capability set. `initialize()` may return a
 smaller set for a specific model.
+
+Device settings such as report rate, sleep timeout, debounce, sidetone, and
+similar controls use the generic `controls` capability. Model them as choice,
+range, boolean, or action descriptors instead of adding standalone capability
+names.
 
 ## Device entries and matches
 
@@ -365,8 +394,34 @@ config:
   fields:
     - key: host
       label: Server address
-      kind: text
+      kind: host
       default: 192.168.1.10
+      placeholder: openrgb.local
+      help: Hostname or IP address of the server.
+    - key: port
+      label: Server port
+      kind: port
+      default: 6742
+    - key: tls
+      label: Use TLS
+      kind: boolean
+      default: false
+    - key: mode
+      label: Connection mode
+      kind: enum
+      options: [direct, proxy]
+      default: direct
+    - key: proxy_url
+      label: Proxy URL
+      kind: url
+      default: ""
+      visible_when: { field: mode, equals: proxy }
+    - key: timeout
+      label: Timeout
+      kind: duration_ms
+      default: 5000
+      min: 100
+      max: 30000
     - key: token
       label: API token
       kind: text
@@ -374,9 +429,18 @@ config:
       secure: true
 ```
 
-Config `kind` is `text` or `number`. Number fields may set `min` and `max`.
-Every value is exposed to Lua as a string in `halod.config`. A secure value is
-available only with `secure_storage` permission.
+Config `kind` is `text`, `number`, `boolean`, `enum`, `host`, `port`, `url`, or
+`duration_ms`. Enum fields require a non-empty `options` list. Number, port,
+and duration fields may set `min` and `max`; ports are always restricted to
+1–65535. URLs must be absolute HTTP(S) URLs.
+
+`visible_when` uses sibling equality, matching widget parameter visibility.
+`help` and `placeholder` are optional display text.
+
+Lua receives booleans as booleans, numbers, ports, and durations as numbers,
+and text, enum, host, and URL values as strings. Secure fields are masked in
+the GUI, never cross IPC in plaintext, and require the manifest to declare the
+`secure_storage` permission before the package validates.
 
 ## Effect plugins
 

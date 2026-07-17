@@ -490,7 +490,12 @@ return {
   -- One rendered engine frame (raw RGBA at native resolution). Pre-rotate in
   -- software (firmware rotates only its built-in display), then Q565 or raw BGR.
   lcd_stream_frame = function(dev, rgba, width, height, rotation, raw, brightness)
-    local rotated = halod.rgba_rotate_square(rgba, width, rotation)
+    -- Keep the input buffer when no rotation is requested.  The host codec's
+    -- zero-degree path is a pass-through copy, which needlessly duplicates a frame.
+    local rotated = rgba
+    if rotation % 360 ~= 0 then
+      rotated = halod.rgba_rotate_square(rgba, width, rotation)
+    end
     if raw then
       stream_raw(dev, halod.rgba_to_bgr888(rotated), brightness)
     else

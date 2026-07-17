@@ -40,12 +40,15 @@ includes `string.pack` and `string.unpack`. HaloDaemon adds:
 | Global | Meaning |
 |---|---|
 | `log(message)` | Write a plugin log message. Pass a string. |
-| `halod.config` | This plugin's resolved config values, all represented as strings. |
+| `halod.config` | This plugin's resolved config values. Booleans are Lua booleans; number, port, and duration fields are numbers; textual fields are strings. |
 | `halod.platform` | Target platform name such as `windows` or `linux`. |
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
 | `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
 | `halod.require(name)` | Load a package-local module, for example `lib.hidpp.v1`. |
+| `halod.publish(key, value)` | Publish a declared bounded latest-value record. |
+| `halod.invalidate(key)` | Mark a declared provided record unavailable. |
+| `halod.data(key)` | Read a declared consumed record snapshot. |
 
 `halod.require` loads only modules indexed from this package's `lib/` directory.
 It does not read the filesystem at runtime. Absolute paths, `..`, path
@@ -58,6 +61,26 @@ only `os.time()` and `os.clock()`.
 Each VM has a 64 MiB Lua memory limit. Each callback has a 50,000,000 instruction
 budget. Device calls time out after 30 seconds; effect calls after 2 seconds.
 Do not busy-wait. Use `halod.sleep_ms` only for required hardware delays.
+
+## Shared snapshot data
+
+The data API accepts booleans, finite numbers, strings, contiguous arrays, and
+string-keyed maps. Functions, userdata, handles, sparse or mixed tables,
+cycles, nil values, and non-finite numbers are rejected.
+
+```lua
+halod.publish("telemetry.current", {
+  load = 0.42,
+  observed_at = 1784246400,
+})
+
+local snapshot = halod.data("telemetry.current")
+if snapshot.status == "fresh" then log(snapshot.value.load) end
+```
+
+Snapshots report `fresh`, `stale`, or `unavailable`, plus a revision and host
+timestamps. Stale snapshots retain their last value. Widget and effect
+contexts also expose `ctx:data(key)`. Audio remains a dedicated stream.
 
 ## The `dev` object
 
@@ -328,12 +351,21 @@ fit the manifest rules.
 The command transport exposes an allowlisted runner:
 
 ```lua
-local output = command.run("nvidia-smi", { "--query-gpu=name" })
+local result = command.run("nvidia-smi", { "--query-gpu=name" })
+-- result = {
+--   success = true,
+--   exit_code = 0,
+--   stdout = "...",
+--   stderr = "...",
+--   timed_out = false,
+-- }
 ```
 
 The executable must appear in `transports.command.commands`. Arguments are
-passed directly without a shell. Output is returned as a Lua string. The same
-operation is also available as `dev.transport:run(executable, args)`.
+passed directly without a shell. Non-zero exits return `success = false` with
+their exit code and bounded stderr. A timeout returns `timed_out = true`; a
+failure to resolve or spawn the executable raises a Lua error. The same result
+is returned by `dev.transport:run(executable, args)`.
 
 ## Windows typed transports
 
@@ -459,7 +491,7 @@ Every widget declared in `plugin.yaml` implements both functions below.
 
 `buffer` is bounded RGBA data, `width` and `height` are its canvas dimensions,
 and `params` contains the editor values declared by the widget manifest.
-HaloDaemon uses the preview when a declared sensor, audio, or media source is
+HaloDaemon uses the preview when a declared data or audio source is
 unavailable. `halod plugin-test` verifies that its 128×128 output is visible.
 
 ### Widget context
@@ -470,61 +502,105 @@ All context methods are bounded to the widget canvas.
 |---|---|
 | `ctx:is_preview()` | Whether the callback is producing a preview. |
 | `ctx:color()` | Selected widget color. |
+| `ctx:data(key)` | Read a manifest-declared immutable snapshot. |
 | `ctx:local_time()` | Host-local date and time. |
-| `ctx:sensor(id)` | Selected sensor value, or `nil`. |
-| `ctx:sensor_label(id)` | Host-provided sensor name. |
-| `ctx:sensor_text(id)` | Host-formatted sensor value. |
-| `ctx:sensor_unit(id)` | Standard sensor unit suffix. |
-| `ctx:audio_level()` | Current normalized audio level. |
-| `ctx:audio_band(index)` | Current normalized audio band value. |
-| `ctx:audio_band_count()` | Number of available audio bands. |
-| `ctx:media_title()`, `ctx:media_artist()`, `ctx:media_status()` | Current media metadata. |
+| `ctx:audio()` | `{ level, flux, beat, seq, bands }`, or `nil`. |
+| `ctx:push_clip(x, y, width, height)`, `ctx:pop_clip()` | Intersect drawing with a canvas-space clip rectangle. |
+| `ctx:push_opacity(value)`, `ctx:pop_opacity()` | Multiply image and primitive opacity by a value from 0 to 1. |
+| `ctx:push_rotation(degrees, center_x, center_y)`, `ctx:pop_rotation()` | Rotate subsequent drawing around a canvas point. |
 | `ctx:fill_rect(...)`, `ctx:fill_rounded_rect(...)` | Draw a filled rectangle. |
-| `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives. |
+| `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives; lines and hollow shapes accept an optional final stroke width. |
+| `ctx:draw_polyline(buffer, points, color?, stroke_width?)` | Draw 2–64 points as connected line segments. |
+| `ctx:draw_polygon(buffer, points, filled, color?, stroke_width?)` | Draw 3–64 points as a filled or stroked closed polygon. |
 | `ctx:draw_image(...)` | Draw host-provided declared image data. |
-| `ctx:draw_asset(...)` | Draw the widget's mandatory SVG icon as a host-rasterized image. |
+| `ctx:draw_asset(...)` | Draw the widget icon or an SVG listed in its manifest `assets`; undeclared names return `false`. |
 | `ctx:draw_media_art(...)` | Draw current album art. |
 | `ctx:measure_text(text, size)` | Measure text in the selected system font. |
 | `ctx:ellipsize_text(text, size, max_width)` | Truncate text at Unicode character boundaries. |
 | `ctx:draw_text(buffer, text, x, y, size, color?)` | Draw styled text. |
+| `ctx:measure_text_box(text, width, style)` | Return the width and height of host-laid-out text. |
+| `ctx:draw_text_box(buffer, text, x, y, width, height, style, color?)` | Draw the same layout, clipped to the text box and widget canvas. |
 
 `fill_rounded_rect(buffer, x, y, width, height, radius, color?)` rasterizes the
 complete rounded rectangle on one pixel grid. `draw_arc(buffer, cx, cy, radius,
 thickness, start_degrees, sweep_degrees, cap_radius, color?)` draws clockwise
 from the top; `cap_radius` is clamped to half the stroke thickness.
 
+Preview callbacks receive deterministic audio and time records. Snapshot data
+reports `unavailable` rather than returning a partial table.
+
 Text uses the host-selected system font. Widgets declaring `uses_font`
 automatically receive the editor's weight, italic, underline, and
 strikethrough settings. Lua never loads or rasterizes font files.
+
+Text-box `style` requires `size` and accepts `horizontal` (`left`, `center`, or
+`right`), `vertical` (`top`, `middle`, or `bottom`), `wrap` (`none`, `word`, or
+`character`), `max_lines` (1–64), and `overflow` (`clip` or `ellipsis`). The
+host owns shaping, Unicode boundaries, font selection, measurement, and bounds
+checking; unknown fields and invalid sizes are rejected.
+
+Polyline and polygon points use `{x = 10, y = 20}` or `{10, 20}` entries.
+Clip, opacity, and rotation calls are nested independently and must be balanced;
+each stack has a maximum depth of eight. Coordinates, opacity, stroke widths,
+and rotations must be finite. Stroke widths are limited to 0.25–32 pixels, and
+the host enforces a per-frame drawing-work budget so valid callbacks remain
+inside the widget timeout. These APIs do not expose paths, shaders, font files,
+or filesystem-backed image access.
 
 ## Effect API
 
 Pixmap callbacks mutate a 400×300 linear-RGBA buffer:
 
 ```lua
-render_plasma = function(buf, t, dt, params)
+render_effect_plasma = function(buf, ctx)
 end
 ```
 
 Direct effects return one linear-light `{r, g, b}` value (0..1) per input LED:
 
 ```lua
-led_colors_comet = function(leds, t, dt, params, sensor)
-  -- leds entries: { p, p_ring, nx, ny }
+led_effect_comet = function(leds, ctx)
+  -- leds entries: { id, zone_id, p, p_ring, nx, ny }
   return colors
 end
 ```
 
-When exactly one effect is declared, bare `render` or `led_colors` is also accepted. Helpers:
+Only the declared-id callback forms are accepted. Every callback receives the
+same engine-frame snapshot:
+
+```lua
+ctx = {
+  time = 1.25,
+  dt = 0.016,
+  params = {},
+  audio = { level = 0, flux = 0, beat = false, seq = 0, bands = {} },
+  frame = 42,
+  seed = 1234,
+  zone = { id = "ring", topology = "ring", led_count = 12, device_id = "device" },
+}
+```
+
+Pixmap callbacks use the synthetic `canvas` zone. Direct callbacks receive the
+actual device zone, and LED `id` and `zone_id` remain stable across frames.
+Effects read declared sensor and scalar host data through `ctx:data(key)`.
+
+Context helpers are deterministic for a stable effect seed:
 
 | API | Meaning |
 |---|---|
 | `halod.canvas_w`, `halod.canvas_h` | Pixmap dimensions. |
 | `halod.hsv(h, s, v)` | HSV to sRGB byte triplet. |
-| `halod.audio()` | Latest `{level, flux, beat, seq, bands}` frame; `bands` has 64 values. |
+| `ctx:random(stream)` | Seeded value in `[0, 1)`; the optional integer stream selects a reproducible value. |
+| `ctx:noise1d(x)`, `ctx:noise2d(x, y)` | Seeded, platform-stable value noise in `[0, 1]`. |
+| `ctx:lerp_color(a, b, amount)` | Clamp and interpolate `{r, g, b}` records. |
+| `ctx:gradient(stops, amount)` | Interpolate 2–16 `{at, color}` stops. |
+| `ctx:srgb_to_linear(value)` | Convert a normalized sRGB channel to linear light. |
+| `ctx:linear_to_srgb(value)` | Convert a normalized linear-light channel to sRGB. |
 
-A stateful direct effect may run once per zone at the same engine time. Update time-dependent state
-only when `t` advances to avoid multiplying smoothing/decay on multi-zone devices.
+A stateful direct effect may run once per zone in the same engine frame. Guard
+time-dependent state with `ctx.frame` so smoothing and decay advance only once
+on multi-zone devices. Identical seeds and inputs produce bit-identical random
+and noise values across frames and supported platforms.
 
 ## `test.lua` harness
 

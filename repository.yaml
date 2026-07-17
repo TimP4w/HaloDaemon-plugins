@@ -3,12 +3,12 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.1.2
+version: 1.3.0
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 compatibility:
   halod: '>=0.3.0'
-  plugin_api: 1
+  plugin_api: 2
 
 packages:
   - id: amd_smn
@@ -29,12 +29,12 @@ packages:
     sha256: ee964fcf0002f8fd54412fb6c33fa52c001b78a9fd2fddea2c06eaf0afd161fc
   - id: halo_effects
     path: halo_effects
-    version: 1.0.0
-    sha256: 4c7abd56e9cfb3979ac908a7e0674915b4311661de4b969bdb720de6285b6e7c
+    version: 1.1.0
+    sha256: 67b84a76b8e9e6f785678a26cff5bbc71670bb7d8b1aadb06cd670ee5506e03e
   - id: halo_lcd
     path: halo_lcd
-    version: 1.0.0
-    sha256: e30dd8c2c72277742172d64817b6e342e7b7b19f692f11427e3033a8ceabdba8
+    version: 1.1.0
+    sha256: 35e5fff3081ba9bed43fa8adda25b1ce7e2443fe3165d502f77f62d240191c56
   - id: hwmon
     path: hwmon
     version: 1.0.0
@@ -42,7 +42,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: e4381159b67928263ca9d9df299d6e43b54574859e09c2ae4a38b8cb1e81727d
+    sha256: 3021ac5fdbed54d04b952b07131d329cedc3d0ced439240a7cc83a83ce469b11
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
@@ -53,16 +53,16 @@ packages:
     sha256: a5acea23562fbb270c950cfcdfb454ffc1528aded79cb17e2ea2ab23c13db6ee
   - id: nvidia
     path: nvidia
-    version: 1.0.0
-    sha256: 636cb613020fd2cc80c4009a39cd1d68a082c308c89f3aa223d31cd9e3d95fb5
+    version: 1.0.1
+    sha256: bfd67ee19fc3413eb0e16d3eb097dcecf6ff341d26bbb9a526de6d6676936b71
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0
     sha256: a1c964c86920f710483a33e5bd3df133bdae7f39dc74956354dfedaa41e25590
   - id: nzxt_kraken
     path: nzxt_kraken
-    version: 1.0.1
-    sha256: 0156689f6927db90946be6737c8cd267397c23b21dc19827e119f34f9b7e5509
+    version: 1.0.2
+    sha256: 70a46ef411d6051013941b6516899811fe91eca56e4503731442765bca21479b
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0
@@ -70,7 +70,7 @@ packages:
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: 3cd21aa66eb471b7394628195c26ac1c5a529e6796c514f3f9fe0630a0ae17a8
+    sha256: 560a94623659d06b6c29463d3d4a0c9e53feaaf29e21e787fb8bb7ee43effe66
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
