@@ -38,6 +38,12 @@ local HIRES_WHEEL = 0x2121
 local K375S_FN_INVERSION = 0x40a3
 local BRIGHTNESS_CONTROL = 0x8040
 
+-- A powered-off device stays enumerated through its receiver: it answers
+-- nothing, or the receiver answers for it with unknown-device (0x08) /
+-- resource-error (0x09). See docs/hidpp1.md.
+local OFFLINE = "HID++ device is not powered on"
+local OFFLINE_ERRORS = { [0x08] = true, [0x09] = true }
+
 local function bytes(...) return string.char(...) end
 
 local function is_long_only(pid)
@@ -82,7 +88,9 @@ local function dispatch(dev, devnum, sub, address, check_func)
         dev.transport:defer_event(reply)
       elseif rsub == 0x8f or rsub == 0xff then
         if reply:byte(4) == sub then
-          error(string.format("HID++ error response (code 0x%02x)", reply:byte(6) or 0))
+          local code = reply:byte(6) or 0
+          if OFFLINE_ERRORS[code] then error(OFFLINE) end
+          error(string.format("HID++ error response (code 0x%02x)", code))
         end
         dev.transport:defer_event(reply)
       elseif rsub == sub and (not check_func or reply:byte(4) == address) then
@@ -143,8 +151,9 @@ local function enumerate_features(dev, devnum)
   return features
 end
 
+-- Returns nil when the device is powered off, so the caller can reject it
+-- instead of failing.
 local function enumerate_features_with_retry(dev, devnum)
-  local last_error
   -- A cold direct device can take longer than one 50 ms transport window to
   -- answer its first ROOT request. Retrying the same request is safe: HID++
   -- replies carry the same devnum, feature index, function, and software id,
@@ -152,12 +161,12 @@ local function enumerate_features_with_retry(dev, devnum)
   for _ = 1, 3 do
     local ok, value = pcall(enumerate_features, dev, devnum)
     if ok then return value end
-    last_error = value
+    if tostring(value):find(OFFLINE, 1, true) then return nil end
     if not tostring(value):find("HID++ response did not arrive", 1, true) then
       error(value)
     end
   end
-  error(last_error or "HID++ feature discovery failed")
+  return nil
 end
 
 local function read_name(dev, devnum, features)
@@ -452,6 +461,10 @@ return {
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
     local features = enumerate_features_with_retry(dev, devnum)
+    -- Reject a powered-off device rather than erroring: HID discovery retries a
+    -- direct device, and the receiver's 0x41 connect notification re-adds a
+    -- paired child, so it registers on its own once it wakes.
+    if not features then return { ok = false } end
     dev.hidpp = { devnum = devnum, features = features }
     local profile = device_profile(dev)
     dev.profile = profile

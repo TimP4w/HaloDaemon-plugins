@@ -42,7 +42,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: e4381159b67928263ca9d9df299d6e43b54574859e09c2ae4a38b8cb1e81727d
+    sha256: f22ae9cd643d334e6b4c564a138ee056793b0926fc5587f2d3aeb6394c74958b
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
@@ -62,7 +62,7 @@ packages:
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.0.2
-    sha256: c92aa761cf0262bb8b07fe2f420eeb4fd47f292ddc87fe8202ace3a4977afcb9
+    sha256: 70a46ef411d6051013941b6516899811fe91eca56e4503731442765bca21479b
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.0.0

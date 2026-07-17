@@ -434,6 +434,20 @@ return function(h)
   h:assert(not err_ok, "an error reply fails initialization")
   h:assert(tostring(err_msg):find("0x07"), "error reply surfaces its error code")
 
+  -- A powered-off device is rejected, not failed: a headset whose dongle stays
+  -- enumerated answers no ROOT request at all, and a receiver answers for an
+  -- offline paired device with resource-error 0x09. Both must initialize to
+  -- false so the daemon retries silently instead of surfacing an error.
+  local asleep_dev = h:open({ pid = 0x0af7, reads = {
+    {}, {}, {}, {}, {}, {}, -- three ROOT attempts, two empty read windows each
+  } })
+  h:assert(not asleep_dev:initialize(), "a silent device is rejected, not an error")
+
+  local offline_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x8f, 0x00, { 0x00, 0x09 }),
+  } })
+  h:assert(not offline_child:initialize(), "an unreachable receiver child is rejected")
+
   -- A packet that arrives interleaved with a request must be handed to the
   -- event path, not dropped: the button notification queued before the ROOT
   -- feature reply is deferred, the request still completes, and once the
