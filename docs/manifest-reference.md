@@ -370,8 +370,34 @@ config:
   fields:
     - key: host
       label: Server address
-      kind: text
+      kind: host
       default: 192.168.1.10
+      placeholder: openrgb.local
+      help: Hostname or IP address of the server.
+    - key: port
+      label: Server port
+      kind: port
+      default: 6742
+    - key: tls
+      label: Use TLS
+      kind: boolean
+      default: false
+    - key: mode
+      label: Connection mode
+      kind: enum
+      options: [direct, proxy]
+      default: direct
+    - key: proxy_url
+      label: Proxy URL
+      kind: url
+      default: ""
+      visible_when: { field: mode, equals: proxy }
+    - key: timeout
+      label: Timeout
+      kind: duration_ms
+      default: 5000
+      min: 100
+      max: 30000
     - key: token
       label: API token
       kind: text
@@ -379,9 +405,18 @@ config:
       secure: true
 ```
 
-Config `kind` is `text` or `number`. Number fields may set `min` and `max`.
-Every value is exposed to Lua as a string in `halod.config`. A secure value is
-available only with `secure_storage` permission.
+Config `kind` is `text`, `number`, `boolean`, `enum`, `host`, `port`, `url`, or
+`duration_ms`. Enum fields require a non-empty `options` list. Number, port,
+and duration fields may set `min` and `max`; ports are always restricted to
+1–65535. URLs must be absolute HTTP(S) URLs.
+
+`visible_when` uses sibling equality, matching widget parameter visibility.
+`help` and `placeholder` are optional display text.
+
+Lua receives booleans as booleans, numbers, ports, and durations as numbers,
+and text, enum, host, and URL values as strings. Secure fields are masked in
+the GUI, never cross IPC in plaintext, and require the manifest to declare the
+`secure_storage` permission before the package validates.
 
 ## Effect plugins
 

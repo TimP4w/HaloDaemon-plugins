@@ -23,10 +23,10 @@ transports:
 config:
   fields:
   - default: 127.0.0.1
-    kind: text
+    kind: host
     label: Server host
     key: host
   - default: '6742'
-    kind: number
+    kind: port
     label: Server port
     key: port

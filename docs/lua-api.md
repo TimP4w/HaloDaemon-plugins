@@ -40,7 +40,7 @@ includes `string.pack` and `string.unpack`. HaloDaemon adds:
 | Global | Meaning |
 |---|---|
 | `log(message)` | Write a plugin log message. Pass a string. |
-| `halod.config` | This plugin's resolved config values, all represented as strings. |
+| `halod.config` | This plugin's resolved config values. Booleans are Lua booleans; number, port, and duration fields are numbers; textual fields are strings. |
 | `halod.platform` | Target platform name such as `windows` or `linux`. |
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
 | `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
