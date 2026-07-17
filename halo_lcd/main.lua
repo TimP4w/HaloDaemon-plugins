@@ -177,7 +177,6 @@ local function render_shape(canvas, w, h, params, ctx)
   local filled = params.filled ~= false
   local stroke = params.stroke_width or 3
   ctx:push_clip(0, 0, w, h)
-  ctx:push_opacity(params.opacity or 1)
   ctx:push_rotation(params.rotation or 0, w / 2, h / 2)
   if shape == "circle" then
     ctx:draw_circle(canvas, w / 2, h / 2, math.min(w, h) * 0.42, filled, col, stroke)
@@ -194,7 +193,6 @@ local function render_shape(canvas, w, h, params, ctx)
     }, filled, col, stroke)
   end
   ctx:pop_rotation()
-  ctx:pop_opacity()
   ctx:pop_clip()
 end
 

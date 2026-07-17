@@ -3,7 +3,7 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.3.0
+version: 1.3.1
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 compatibility:
@@ -33,8 +33,8 @@ packages:
     sha256: 67b84a76b8e9e6f785678a26cff5bbc71670bb7d8b1aadb06cd670ee5506e03e
   - id: halo_lcd
     path: halo_lcd
-    version: 1.1.0
-    sha256: 35e5fff3081ba9bed43fa8adda25b1ce7e2443fe3165d502f77f62d240191c56
+    version: 1.1.1
+    sha256: 1c087e9d3c2125c27f24a4a2f7a3af6303fe03c0986f10533a4841d2ebc5eae6
   - id: hwmon
     path: hwmon
     version: 1.0.0
