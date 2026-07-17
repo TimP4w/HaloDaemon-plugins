@@ -10,10 +10,10 @@ end
 local function gpu_rows()
   -- Absence of nvidia-smi/a transient driver restart is not a device failure.
   -- The former native source simply yielded no readings in that case.
-  local ok, out = pcall(command.run, "nvidia-smi", { "--query-gpu=uuid,name", "--format=csv,noheader,nounits" })
-  if not ok then return {} end
+  local ok, result = pcall(command.run, "nvidia-smi", { "--query-gpu=uuid,name", "--format=csv,noheader,nounits" })
+  if not ok or not result.success then return {} end
   local rows = {}
-  for _, line in ipairs(lines(out)) do
+  for _, line in ipairs(lines(result.stdout)) do
     local uuid, name = line:match("^%s*([^,]+),%s*(.-)%s*$")
     if uuid and uuid ~= "" and name and name ~= "" then rows[#rows + 1] = { uuid = uuid, name = name } end
   end
@@ -46,14 +46,14 @@ return {
     if dev.sensor_cache and now < (dev.sensor_cache_until or 0) then
       return dev.sensor_cache
     end
-    local ok, out = pcall(command.run, "nvidia-smi", {
+    local ok, result = pcall(command.run, "nvidia-smi", {
       "-i", uuid, "--query-gpu=temperature.gpu,temperature.memory", "--format=csv,noheader,nounits"
     })
-    if not ok then
+    if not ok or not result.success then
       dev.sensor_cache, dev.sensor_cache_until = {}, now + 1000
       return dev.sensor_cache
     end
-    local row = lines(out)[1] or ""
+    local row = lines(result.stdout)[1] or ""
     local core, memory = row:match("^%s*([^,]+),%s*(.-)%s*$")
     local sensors = {}
     local value = tonumber(core)

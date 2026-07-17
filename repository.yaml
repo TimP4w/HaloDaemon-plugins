@@ -53,8 +53,8 @@ packages:
     sha256: a5acea23562fbb270c950cfcdfb454ffc1528aded79cb17e2ea2ab23c13db6ee
   - id: nvidia
     path: nvidia
-    version: 1.0.0
-    sha256: 636cb613020fd2cc80c4009a39cd1d68a082c308c89f3aa223d31cd9e3d95fb5
+    version: 1.0.1
+    sha256: bfd67ee19fc3413eb0e16d3eb097dcecf6ff341d26bbb9a526de6d6676936b71
   - id: nzxt_control_hub
     path: nzxt_control_hub
     version: 1.0.0

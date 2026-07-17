@@ -328,12 +328,21 @@ fit the manifest rules.
 The command transport exposes an allowlisted runner:
 
 ```lua
-local output = command.run("nvidia-smi", { "--query-gpu=name" })
+local result = command.run("nvidia-smi", { "--query-gpu=name" })
+-- result = {
+--   success = true,
+--   exit_code = 0,
+--   stdout = "...",
+--   stderr = "...",
+--   timed_out = false,
+-- }
 ```
 
 The executable must appear in `transports.command.commands`. Arguments are
-passed directly without a shell. Output is returned as a Lua string. The same
-operation is also available as `dev.transport:run(executable, args)`.
+passed directly without a shell. Non-zero exits return `success = false` with
+their exit code and bounded stderr. A timeout returns `timed_out = true`; a
+failure to resolve or spawn the executable raises a Lua error. The same result
+is returned by `dev.transport:run(executable, args)`.
 
 ## Windows typed transports
 
