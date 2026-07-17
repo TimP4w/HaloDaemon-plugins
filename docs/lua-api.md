@@ -480,14 +480,10 @@ All context methods are bounded to the widget canvas.
 | `ctx:is_preview()` | Whether the callback is producing a preview. |
 | `ctx:color()` | Selected widget color. |
 | `ctx:local_time()` | Host-local date and time. |
-| `ctx:sensor(id)` | Selected sensor value, or `nil`. |
-| `ctx:sensor_label(id)` | Host-provided sensor name. |
-| `ctx:sensor_text(id)` | Host-formatted sensor value. |
-| `ctx:sensor_unit(id)` | Standard sensor unit suffix. |
-| `ctx:audio_level()` | Current normalized audio level. |
-| `ctx:audio_band(index)` | Current normalized audio band value. |
-| `ctx:audio_band_count()` | Number of available audio bands. |
-| `ctx:media_title()`, `ctx:media_artist()`, `ctx:media_status()` | Current media metadata. |
+| `ctx:sensor_info(id)` | `{ value, label, formatted, unit, sensor_type, stale }`, or `nil`. |
+| `ctx:audio()` | `{ level, flux, beat, seq, bands }`, or `nil`. |
+| `ctx:media()` | `{ title, artist, status, art_available }`, or `nil`. |
+| `ctx:environment()` | `{ locale, timezone, temperature_unit, screen_shape, screen_width, screen_height }`. |
 | `ctx:fill_rect(...)`, `ctx:fill_rounded_rect(...)` | Draw a filled rectangle. |
 | `ctx:draw_line(...)`, `ctx:draw_circle(...)`, `ctx:draw_arc(...)`, `ctx:draw_triangle(...)` | Draw bounded vector primitives. |
 | `ctx:draw_image(...)` | Draw host-provided declared image data. |
@@ -501,6 +497,10 @@ All context methods are bounded to the widget canvas.
 complete rounded rectangle on one pixel grid. `draw_arc(buffer, cx, cy, radius,
 thickness, start_degrees, sweep_degrees, cap_radius, color?)` draws clockwise
 from the top; `cap_radius` is clamped to half the stroke thickness.
+
+Preview callbacks receive deterministic sensor, audio, media, time, and
+environment records. Live callbacks return `nil` for an unavailable sensor,
+audio stream, or media session rather than a partial table.
 
 Text uses the host-selected system font. Widgets declaring `uses_font`
 automatically receive the editor's weight, italic, underline, and

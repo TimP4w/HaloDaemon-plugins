@@ -55,23 +55,25 @@ end
 
 local function render_sensor(canvas, w, h, params, ctx)
   local id = params.sensor or ""
-  local value = ctx:sensor(id)
+  local sensor = ctx:sensor_info(id)
+  local value = sensor and sensor.value
   local label = params.label
-  if not label or label == "" then label = ctx:sensor_label(id) or "Sensor" end
+  if not label or label == "" then label = sensor and sensor.label or "Sensor" end
   local shown = value and string.format("%.0f", value) or "--"
-  if value and params.show_unit ~= false then shown = shown .. (ctx:sensor_unit(id) or "") end
+  if value and params.show_unit ~= false then shown = shown .. (sensor.unit or "") end
   if params.show_value ~= false then center_text(canvas, w, h, shown, h * 0.30, ctx, color(params.value_color, WHITE)) end
   center_text(canvas, w, h, label, h * 0.14, ctx, color(params.label_color, MUTED), h * 0.76)
 end
 
 local function render_spectrum(canvas, w, h, params, ctx)
   local count = math.max(8, math.min(64, math.floor((params.bands or 32) + 0.5)))
-  local available = ctx:audio_band_count()
+  local audio = ctx:audio()
+  local available = audio and #audio.bands or 0
   local bar_w = w / count
   for i = 0, count - 1 do
     local src = math.floor(i * math.max(1, available) / count)
     if params.mirror then src = math.floor(math.abs(i - (count - 1) / 2) * math.max(1, available) * 2 / count) end
-    local level = available > 0 and (ctx:audio_band(src) or 0) or (0.22 + 0.58 * math.abs(math.sin(i * 0.71)))
+    local level = available > 0 and (audio.bands[src + 1] or 0) or (0.22 + 0.58 * math.abs(math.sin(i * 0.71)))
     local x = params.flip_h and (count - 1 - i) or i
     local bh = math.max(1, h * 0.82 * math.max(0, math.min(1, level)))
     local y = params.flip_v and h * 0.09 or h * 0.91 - bh
@@ -82,12 +84,14 @@ end
 local function render_gauge(canvas, w, h, params, ctx)
   local level
   if (params.input or "audio") == "sensor" then
-    local value = ctx:sensor(params.sensor or "")
+    local sensor = ctx:sensor_info(params.sensor or "")
+    local value = sensor and sensor.value
     local min = params.min or 0
     local max = params.max or 100
     if value then level = (value - min) / math.max(0.001, max - min) end
   else
-    level = ctx:audio_level()
+    local audio = ctx:audio()
+    level = audio and audio.level
   end
   level = math.max(0, math.min(1, level or 0.62))
   local fill = color(params.fill, PRIMARY)
@@ -119,8 +123,9 @@ local function render_gauge(canvas, w, h, params, ctx)
 end
 
 local function render_now_playing(canvas, w, h, params, ctx)
-  local title = ctx:media_title() or "Not playing"
-  local artist = ctx:media_artist() or "No media player"
+  local media = ctx:media()
+  local title = media and media.title or "Not playing"
+  local artist = media and media.artist or "No media player"
   local padding = math.max(2, w * 0.04)
   local text_x = padding
   if params.show_art ~= false then
