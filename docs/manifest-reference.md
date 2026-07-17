@@ -71,9 +71,25 @@ transports:
 | `widgets` | LCD widget declarations for an `lcd` package. |
 | `presets` | Declarative LCD template JSON files for an `lcd` package. |
 | `logo` | Optional filename under `assets/`. |
+| `provides` | Namespaced latest-value records published by this package. |
+| `consumes` | Records this package may read; `host.sensors.*` is the only wildcard. |
 
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
+
+## Shared snapshot data
+
+```yaml
+provides:
+  - key: weather.current
+    stale_after_ms: 900000
+    min_notify_interval_ms: 1000
+consumes: [weather.current, host.sensors.*, host.media.playback, host.environment]
+```
+
+Provided keys must begin with the package id. Cross-plugin and `host.*` reads
+are shown as user-approved authority. Host sensors are individual records plus
+`host.sensors.catalog`. Audio remains a dedicated sampled stream.
 
 ### Widget fields
 

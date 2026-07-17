@@ -46,6 +46,9 @@ includes `string.pack` and `string.unpack`. HaloDaemon adds:
 | `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
 | `halod.require(name)` | Load a package-local module, for example `lib.hidpp.v1`. |
+| `halod.publish(key, value)` | Publish a declared bounded latest-value record. |
+| `halod.invalidate(key)` | Mark a declared provided record unavailable. |
+| `halod.data(key)` | Read a declared consumed record snapshot. |
 
 `halod.require` loads only modules indexed from this package's `lib/` directory.
 It does not read the filesystem at runtime. Absolute paths, `..`, path
@@ -58,6 +61,27 @@ only `os.time()` and `os.clock()`.
 Each VM has a 64 MiB Lua memory limit. Each callback has a 50,000,000 instruction
 budget. Device calls time out after 30 seconds; effect calls after 2 seconds.
 Do not busy-wait. Use `halod.sleep_ms` only for required hardware delays.
+
+## Shared snapshot data
+
+The data API accepts booleans, finite numbers, strings, contiguous arrays, and
+string-keyed maps. Functions, userdata, handles, sparse or mixed tables,
+cycles, nil values, and non-finite numbers are rejected.
+
+```lua
+halod.publish("weather.current", {
+  temperature = 22.4,
+  condition = "cloudy",
+  observed_at = 1784246400,
+})
+
+local snapshot = halod.data("weather.current")
+if snapshot.status == "fresh" then log(snapshot.value.condition) end
+```
+
+Snapshots report `fresh`, `stale`, or `unavailable`, plus a revision and host
+timestamps. Stale snapshots retain their last value. Widget and effect
+contexts also expose `ctx:data(key)`. Audio remains a dedicated stream.
 
 ## The `dev` object
 
