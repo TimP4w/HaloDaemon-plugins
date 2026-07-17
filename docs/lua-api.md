@@ -69,14 +69,13 @@ string-keyed maps. Functions, userdata, handles, sparse or mixed tables,
 cycles, nil values, and non-finite numbers are rejected.
 
 ```lua
-halod.publish("weather.current", {
-  temperature = 22.4,
-  condition = "cloudy",
+halod.publish("telemetry.current", {
+  load = 0.42,
   observed_at = 1784246400,
 })
 
-local snapshot = halod.data("weather.current")
-if snapshot.status == "fresh" then log(snapshot.value.condition) end
+local snapshot = halod.data("telemetry.current")
+if snapshot.status == "fresh" then log(snapshot.value.load) end
 ```
 
 Snapshots report `fresh`, `stale`, or `unavailable`, plus a revision and host
@@ -492,7 +491,7 @@ Every widget declared in `plugin.yaml` implements both functions below.
 
 `buffer` is bounded RGBA data, `width` and `height` are its canvas dimensions,
 and `params` contains the editor values declared by the widget manifest.
-HaloDaemon uses the preview when a declared sensor, audio, or media source is
+HaloDaemon uses the preview when a declared data or audio source is
 unavailable. `halod plugin-test` verifies that its 128×128 output is visible.
 
 ### Widget context
@@ -503,11 +502,9 @@ All context methods are bounded to the widget canvas.
 |---|---|
 | `ctx:is_preview()` | Whether the callback is producing a preview. |
 | `ctx:color()` | Selected widget color. |
+| `ctx:data(key)` | Read a manifest-declared immutable snapshot. |
 | `ctx:local_time()` | Host-local date and time. |
-| `ctx:sensor_info(id)` | `{ value, label, formatted, unit, sensor_type, stale }`, or `nil`. |
 | `ctx:audio()` | `{ level, flux, beat, seq, bands }`, or `nil`. |
-| `ctx:media()` | `{ title, artist, status, art_available }`, or `nil`. |
-| `ctx:environment()` | `{ locale, timezone, temperature_unit, screen_shape, screen_width, screen_height }`. |
 | `ctx:push_clip(x, y, width, height)`, `ctx:pop_clip()` | Intersect drawing with a canvas-space clip rectangle. |
 | `ctx:push_opacity(value)`, `ctx:pop_opacity()` | Multiply image and primitive opacity by a value from 0 to 1. |
 | `ctx:push_rotation(degrees, center_x, center_y)`, `ctx:pop_rotation()` | Rotate subsequent drawing around a canvas point. |
@@ -529,9 +526,8 @@ complete rounded rectangle on one pixel grid. `draw_arc(buffer, cx, cy, radius,
 thickness, start_degrees, sweep_degrees, cap_radius, color?)` draws clockwise
 from the top; `cap_radius` is clamped to half the stroke thickness.
 
-Preview callbacks receive deterministic sensor, audio, media, time, and
-environment records. Live callbacks return `nil` for an unavailable sensor,
-audio stream, or media session rather than a partial table.
+Preview callbacks receive deterministic audio and time records. Snapshot data
+reports `unavailable` rather than returning a partial table.
 
 Text uses the host-selected system font. Widgets declaring `uses_font`
 automatically receive the editor's weight, italic, underline, and
@@ -578,7 +574,6 @@ ctx = {
   dt = 0.016,
   params = {},
   audio = { level = 0, flux = 0, beat = false, seq = 0, bands = {} },
-  sensors = { liquid = 31.5 },
   frame = 42,
   seed = 1234,
   zone = { id = "ring", topology = "ring", led_count = 12, device_id = "device" },
@@ -587,7 +582,7 @@ ctx = {
 
 Pixmap callbacks use the synthetic `canvas` zone. Direct callbacks receive the
 actual device zone, and LED `id` and `zone_id` remain stable across frames.
-Missing sensor values are absent from `ctx.sensors`.
+Effects read declared sensor and scalar host data through `ctx:data(key)`.
 
 Context helpers are deterministic for a stable effect seed:
 

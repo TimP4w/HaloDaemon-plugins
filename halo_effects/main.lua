@@ -49,6 +49,19 @@ local function clamp01(v)
   return math.max(0.0, math.min(1.0, v))
 end
 
+local function sensor_value(ctx, id)
+  local catalog = ctx:data("host.sensors.catalog")
+  if catalog.status == "unavailable" then return nil end
+  for _, item in ipairs(catalog.value) do
+    if item.id == id then
+      local snapshot = ctx:data(item.key)
+      if snapshot.status ~= "unavailable" then return snapshot.value.value end
+      return nil
+    end
+  end
+  return nil
+end
+
 local function linear_rgb(ctx, color, brightness)
   return ctx:srgb_to_linear(color.r / 255.0) * brightness,
     ctx:srgb_to_linear(color.g / 255.0) * brightness,
@@ -331,7 +344,7 @@ return {
 
   -- Direct: colors a zone (`mode = "gradient"`) or fills it up to the
   -- reading (`mode = "meter"`) along a two-stop gradient, normalized against
-  -- [min, max]. `ctx.sensors[ctx.params.sensor]` is the live reading, or nil
+  -- [min, max]. The selected host sensor snapshot is the live reading, or nil
   -- while unset/unavailable — the effect fades to black rather than snapping
   -- when it disappears.
   led_effect_sensor_gradient = (function()
@@ -339,7 +352,7 @@ return {
     local MAX_TAU = 5.0
     return function(leds, ctx)
       local dt, params = ctx.dt, ctx.params
-      local sensor = ctx.sensors[params.sensor or ""]
+      local sensor = sensor_value(ctx, params.sensor or "")
       local min = params.min or 20.0
       local max = params.max or 90.0
       local smoothing = params.smoothing or 0.3
@@ -393,7 +406,7 @@ return {
     local MAX_TAU = 5.0
     return function(leds, ctx)
       local dt, params = ctx.dt, ctx.params
-      local sensor = ctx.sensors[params.sensor or ""]
+      local sensor = sensor_value(ctx, params.sensor or "")
       local smoothing = params.smoothing or 0.3
       if state.last_frame ~= ctx.frame then
         local tau = clamp01(smoothing) * MAX_TAU

@@ -3,9 +3,10 @@ id: halo_lcd
 type: lcd
 name: Halo LCD Widgets
 author: HaloDaemon
-version: 1.0.5
+version: 1.1.0
 license: GPL-3.0-or-later
 description: The stock LCD widget library and reference implementation of the LCD widget API.
+consumes: [host.sensors.*, host.media.playback]
 widgets:
   - id: clock
     name: Clock
@@ -34,7 +35,7 @@ widgets:
     name: Sensor
     icon: sensor.svg
     uses_font: true
-    updates: { sensors: true }
+    updates: { data: [host.sensors.*] }
     params:
       - id: sensor
         label: Sensor
@@ -151,8 +152,8 @@ widgets:
     icon: gauge.svg
     resize: box
     updates:
-      sensors: true
-      sensors_when: { param: input, equals: sensor }
+      data: [host.sensors.*]
+      data_when: { param: input, equals: sensor }
       audio: true
       audio_when: { param: input, equals: audio }
     params:
@@ -220,7 +221,7 @@ widgets:
     default_scale: 2.4
     default_aspect: 0.45
     uses_font: true
-    updates: { media: true }
+    updates: { data: [host.media.playback] }
     params:
       - id: show_art
         label: Show album art

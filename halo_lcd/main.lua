@@ -11,6 +11,28 @@ local BRAND_PURPLE = { r = 155, g = 127, b = 224 }
 local WHITE = { r = 255, g = 255, b = 255 }
 local MUTED = { r = 148, g = 163, b = 184 }
 
+local function data_value(ctx, key)
+  local snapshot = ctx:data(key)
+  if snapshot.status == "unavailable" then return nil, snapshot end
+  return snapshot.value, snapshot
+end
+
+local function sensor_record(ctx, id)
+  if ctx:is_preview() then
+    return { value = 42, label = "Sensor", unit = "°C", sensor_type = "temperature", stale = false }
+  end
+  local catalog = data_value(ctx, "host.sensors.catalog")
+  if not catalog then return nil end
+  for _, item in ipairs(catalog) do
+    if item.id == id then
+      local sensor, snapshot = data_value(ctx, item.key)
+      if sensor then sensor.stale = snapshot.status == "stale" end
+      return sensor
+    end
+  end
+  return nil
+end
+
 local function center_text(canvas, w, h, text, size, ctx, col, y)
   local tw, th = ctx:measure_text(text, size)
   ctx:draw_text(canvas, text, (w - tw) / 2, y or ((h - th) / 2), size, col)
@@ -55,7 +77,7 @@ end
 
 local function render_sensor(canvas, w, h, params, ctx)
   local id = params.sensor or ""
-  local sensor = ctx:sensor_info(id)
+  local sensor = sensor_record(ctx, id)
   local value = sensor and sensor.value
   local label = params.label
   if not label or label == "" then label = sensor and sensor.label or "Sensor" end
@@ -84,7 +106,7 @@ end
 local function render_gauge(canvas, w, h, params, ctx)
   local level
   if (params.input or "audio") == "sensor" then
-    local sensor = ctx:sensor_info(params.sensor or "")
+    local sensor = sensor_record(ctx, params.sensor or "")
     local value = sensor and sensor.value
     local min = params.min or 0
     local max = params.max or 100
@@ -123,7 +145,8 @@ local function render_gauge(canvas, w, h, params, ctx)
 end
 
 local function render_now_playing(canvas, w, h, params, ctx)
-  local media = ctx:media()
+  local media = data_value(ctx, "host.media.playback")
+  if ctx:is_preview() then media = { title = "Now Playing", artist = "HaloDaemon", status = "playing" } end
   local title = media and media.title or "Not playing"
   local artist = media and media.artist or "No media player"
   local padding = math.max(2, w * 0.04)

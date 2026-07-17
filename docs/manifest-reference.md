@@ -81,10 +81,10 @@ field or a flat device `transport` field.
 
 ```yaml
 provides:
-  - key: weather.current
+  - key: telemetry.current
     stale_after_ms: 900000
     min_notify_interval_ms: 1000
-consumes: [weather.current, host.sensors.*, host.media.playback, host.environment]
+consumes: [telemetry.current, host.sensors.*, host.media.playback, host.environment]
 ```
 
 Provided keys must begin with the package id. Cross-plugin and `host.*` reads
@@ -116,8 +116,9 @@ daemon catalog.
 | `fixed_text_weight` | Host-enforced `normal`, `semibold`, or `bold` weight. Requires `font_controls: false`. |
 | `updates` | Update interval and live-data dependencies. |
 
-An `updates` map accepts `interval_ms`, `sensors`, `audio`, and `media`.
-`sensors_when` and `audio_when` can gate those dependencies with the same enum
+An `updates` map accepts `interval_ms`, `data`, and `audio`. Every key in
+`data` must also appear in the package-level `consumes` list. `data_when` and
+`audio_when` can gate those dependencies with the same enum
 condition syntax as parameter visibility. A visibility rule maps a target
 parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.

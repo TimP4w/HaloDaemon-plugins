@@ -3,12 +3,12 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.1.2
+version: 1.2.0
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 compatibility:
   halod: '>=0.3.0'
-  plugin_api: 1
+  plugin_api: 2
 
 packages:
   - id: amd_smn
@@ -29,12 +29,12 @@ packages:
     sha256: ee964fcf0002f8fd54412fb6c33fa52c001b78a9fd2fddea2c06eaf0afd161fc
   - id: halo_effects
     path: halo_effects
-    version: 1.0.1
-    sha256: a760ea6c9c0fe5995de3216de0d0a3ce07ffbf4533cffcc677865eb71c3b0d57
+    version: 1.1.0
+    sha256: 67b84a76b8e9e6f785678a26cff5bbc71670bb7d8b1aadb06cd670ee5506e03e
   - id: halo_lcd
     path: halo_lcd
-    version: 1.0.5
-    sha256: 7ba311a6cf84700760ae2c134034d77c0c771d551aeb4fd6d453d712dc78a1b8
+    version: 1.1.0
+    sha256: 35e5fff3081ba9bed43fa8adda25b1ce7e2443fe3165d502f77f62d240191c56
   - id: hwmon
     path: hwmon
     version: 1.0.0
