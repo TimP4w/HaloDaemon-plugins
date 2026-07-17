@@ -124,6 +124,12 @@ condition syntax as parameter visibility. A visibility rule maps a target
 parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.
 
+The host owns the `opacity` and `scale_y` parameters and adds them to every
+widget's editor panel, so a widget cannot declare either id — it would be
+handed the host's value (`opacity` is stored as 0-100) rather than its own.
+The host applies `opacity` when compositing the rendered widget; don't fold it
+into the drawing. Widget rotation is likewise a host control, not a parameter.
+
 Widget asset names must be bare `.svg` filenames. Every file is parsed during
 manifest validation and subject to per-file, per-widget, and package limits.
 The renderer rasterizes declared assets into bounded resize buckets; an
