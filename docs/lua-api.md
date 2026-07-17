@@ -492,6 +492,8 @@ All context methods are bounded to the widget canvas.
 | `ctx:measure_text(text, size)` | Measure text in the selected system font. |
 | `ctx:ellipsize_text(text, size, max_width)` | Truncate text at Unicode character boundaries. |
 | `ctx:draw_text(buffer, text, x, y, size, color?)` | Draw styled text. |
+| `ctx:measure_text_box(text, width, style)` | Return the width and height of host-laid-out text. |
+| `ctx:draw_text_box(buffer, text, x, y, width, height, style, color?)` | Draw the same layout, clipped to the text box and widget canvas. |
 
 `fill_rounded_rect(buffer, x, y, width, height, radius, color?)` rasterizes the
 complete rounded rectangle on one pixel grid. `draw_arc(buffer, cx, cy, radius,
@@ -505,6 +507,12 @@ audio stream, or media session rather than a partial table.
 Text uses the host-selected system font. Widgets declaring `uses_font`
 automatically receive the editor's weight, italic, underline, and
 strikethrough settings. Lua never loads or rasterizes font files.
+
+Text-box `style` requires `size` and accepts `horizontal` (`left`, `center`, or
+`right`), `vertical` (`top`, `middle`, or `bottom`), `wrap` (`none`, `word`, or
+`character`), `max_lines` (1–64), and `overflow` (`clip` or `ellipsis`). The
+host owns shaping, Unicode boundaries, font selection, measurement, and bounds
+checking; unknown fields and invalid sizes are rejected.
 
 ## Effect API
 

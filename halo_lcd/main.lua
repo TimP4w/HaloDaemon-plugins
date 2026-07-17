@@ -136,11 +136,15 @@ local function render_now_playing(canvas, w, h, params, ctx)
   local available = math.max(1, w - text_x - padding)
   if params.show_title ~= false then
     local size = h * 0.22
-    ctx:draw_text(canvas, ctx:ellipsize_text(title, size, available), text_x, h * 0.25, size, params.title_color)
+    ctx:draw_text_box(canvas, title, text_x, h * 0.14, available, h * 0.36, {
+      size = size, vertical = "middle", wrap = "none", max_lines = 1, overflow = "ellipsis",
+    }, params.title_color)
   end
   if params.show_artist ~= false then
     local size = h * 0.15
-    ctx:draw_text(canvas, ctx:ellipsize_text(artist, size, available), text_x, h * 0.58, size, params.artist_color)
+    ctx:draw_text_box(canvas, artist, text_x, h * 0.50, available, h * 0.30, {
+      size = size, vertical = "middle", wrap = "none", max_lines = 1, overflow = "ellipsis",
+    }, params.artist_color)
   end
 end
 
