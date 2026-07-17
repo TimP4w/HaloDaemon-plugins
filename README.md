@@ -75,7 +75,7 @@ The repository index is generated; do not edit package hashes manually. From a
 HaloDaemon checkout, refresh or verify it with:
 
 ```powershell
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.07.1
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.7.1
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --check
 python scripts/generate-licenses.py
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
@@ -84,6 +84,53 @@ cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -
 Publication recomputes every package SHA-256 and the generated `licenses.txt`
 SHA-256 before signing the exact `repository.yaml` bytes. A package or license
 notice change therefore cannot retain an old hash or signature.
+
+Third-party repositories can use the same optional trust-on-first-use format:
+`halod-plugin-signing sign` writes the Ed25519 public key and key id into the
+canonical `repository.yaml`, then signs those exact bytes as `repository.sig`.
+HaloDaemon pins that advertised key on first import and rejects later key
+changes. The official repository remains a special case authenticated by the
+keys built into HaloDaemon.
+
+The advertised public key is a top-level block in the repository root's
+`repository.yaml`; it does not belong in any package's `plugin.yaml`:
+
+```yaml
+signing_key:
+  id: example-repository-2026
+  algorithm: ed25519
+  public_key: "<base64-encoded raw 32-byte Ed25519 public key>"
+```
+
+`public_key` is Base64 of the raw 32-byte Ed25519 public key, not PEM and not a
+path. Do not commit the matching private seed. Generate a key and let the tool
+populate the block and `repository.sig`:
+
+```powershell
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- keygen example-repository-2026
+$env:HALOD_PLUGIN_SIGNING_KEY_B64 = '<private_seed_b64>'
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.7.1
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- sign . --key-id example-repository-2026
+```
+
+Commit `repository.yaml` and `repository.sig`. Keep the key id stable: after the
+first successful import HaloDaemon pins the advertised key, and any later key
+addition, removal, or replacement requires users to remove and re-import the
+repository.
+
+To test this locally, do not start HaloDaemon with `--dev-plugin-repo`: that is
+an intentionally unverified working-tree override and always appears as a
+development source. Run `index` and `sign`, commit the resulting
+`repository.yaml`, `repository.sig`, and package changes, then import the
+checkout through **Local Git folder**. Local Git import reads the committed
+`HEAD`, not uncommitted edits. Remove an earlier unsigned registration before
+re-importing, because HaloDaemon will not silently add or replace a repository's
+pinned first-import key.
+
+A public key block alone is never sufficient. `repository.sig` must name the
+same key id and must be produced from the matching private seed over the exact
+committed `repository.yaml` bytes. Run `halod-plugin-signing validate .` before
+signing; package id, version, or hash mismatches make the repository invalid.
 
 Run one package against the daemon's recording transports:
 
