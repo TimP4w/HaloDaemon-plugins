@@ -13,11 +13,9 @@
 --   * direct effects compute one color per LED directly from its chain
 --     position, once per zone per frame.
 --
--- Colors here are treated as plain 0..1 fractions of the sRGB byte value
--- (no gamma conversion) — the same convention the reference "comet" effect
--- established; the engine re-applies LED gamma on the way out. No
--- permissions are needed — effects are pure compute and never touch
--- hardware.
+-- Direct effects convert manifest sRGB colors to linear light explicitly;
+-- the engine applies the device transfer function on output. No permissions
+-- are needed — effects are pure compute and never touch hardware.
 
 -- 256-entry rainbow palette, built once at load time so plasma's render loop
 -- never computes a hue conversion per pixel — 120000 pixels/frame in
@@ -31,7 +29,7 @@ end
 -- VM reuses them across frames instead of re-allocating (and GC'ing) a table
 -- per frame. Each effect fully overwrites the slots it uses before reading
 -- them, so no stale values leak between frames or between effects (only one
--- render_<id> callback ever runs in a given worker VM instance).
+-- render_effect_<id> callback ever runs in a given worker VM instance).
 local COL, ROW, PARTS = {}, {}, {}
 
 -- Eases `current` toward `target` with time constant `tau` seconds (`<= 0`
@@ -51,11 +49,10 @@ local function clamp01(v)
   return math.max(0.0, math.min(1.0, v))
 end
 
--- Byte-space lerp between two {r,g,b} colors (0..255 channels), `tt` clamped
--- to 0..1. Returns 0..255 channel values.
-local function lerp_color(a, b, tt)
-  tt = clamp01(tt)
-  return a.r + (b.r - a.r) * tt, a.g + (b.g - a.g) * tt, a.b + (b.b - a.b) * tt
+local function linear_rgb(ctx, color, brightness)
+  return ctx:srgb_to_linear(color.r / 255.0) * brightness,
+    ctx:srgb_to_linear(color.g / 255.0) * brightness,
+    ctx:srgb_to_linear(color.b / 255.0) * brightness
 end
 
 local DEFAULT_STEPS = {
@@ -65,7 +62,8 @@ local DEFAULT_STEPS = {
 }
 
 return {
-  render_plasma = function(buf, t, dt, params)
+  render_effect_plasma = function(buf, ctx)
+    local t, params = ctx.time, ctx.params
     local w, h = halod.canvas_w, halod.canvas_h
     local speed = params.speed or 0.8
     local sin, char, floor = math.sin, string.char, math.floor
@@ -93,7 +91,8 @@ return {
 
   -- Pixmap: a horizontal hue sweep, one row built once and copied to every
   -- scanline (the color only varies with x).
-  render_rainbow = function(buf, t, dt, params)
+  render_effect_rainbow = function(buf, ctx)
+    local t, params = ctx.time, ctx.params
     local w, h = halod.canvas_w, halod.canvas_h
     local speed = params.speed or 0.2
     local scale = params.scale or 1.0
@@ -114,9 +113,10 @@ return {
 
   -- Pixmap: one of `cells` equal columns lights up per `interval` seconds,
   -- decaying exponentially, deterministically picked (and never repeated
-  -- back-to-back) from a hash of the epoch — a pure function of `t`, so it
+  -- back-to-back) from the seeded host RNG — a pure function of `t`, so it
   -- needs no persisted state across frames or worker restarts.
-  render_random_flash = function(buf, t, dt, params)
+  render_effect_random_flash = function(buf, ctx)
+    local t, params = ctx.time, ctx.params
     local w, h = halod.canvas_w, halod.canvas_h
     local cells = math.max(2, math.min(8, math.floor((params.cells or 4.0) + 0.5)))
     local interval = params.interval or 1.0
@@ -125,10 +125,6 @@ return {
     local color = params.color or { r = 56, g = 189, b = 248 }
     local char, floor, exp = string.char, math.floor, math.exp
 
-    local function hash(seed)
-      local s = math.sin(seed * 12.9898) * 43758.547
-      return s - floor(s)
-    end
     local function epoch_seed(epoch)
       return epoch % 16777213
     end
@@ -136,7 +132,7 @@ return {
       if cells <= 1 then
         return 0
       end
-      local idx = floor(hash(seed) * cells) % cells
+      local idx = floor(ctx:random(seed) * cells) % cells
       if prev ~= nil and idx == prev then
         return (idx + 1) % cells
       end
@@ -156,7 +152,7 @@ return {
     local brightness = exp(-math.max(t - lit_at, 0.0) / decay)
     local r, g, b = color.r, color.g, color.b
     if random_color then
-      r, g, b = halod.hsv(hash(epoch_seed(epoch) * 7.0 + 3.1), 1.0, 1.0)
+      r, g, b = halod.hsv(ctx:random(epoch_seed(epoch) * 7 + 3), 1.0, 1.0)
     end
     local lr = floor(r * brightness + 0.5)
     local lg = floor(g * brightness + 0.5)
@@ -176,15 +172,15 @@ return {
     end
   end,
 
-  -- Pixmap: `halod.audio().bands` (64 values, 0..1) as a bottom-anchored
+  -- Pixmap: `ctx.audio.bands` (64 values, 0..1) as a bottom-anchored
   -- bar (or solid-fill) chart, each band lerped between color_low/high.
-  render_audio_spectrum = function(buf, t, dt, params)
+  render_effect_audio_spectrum = function(buf, ctx)
+    local params = ctx.params
     local w, h = halod.canvas_w, halod.canvas_h
     local color_low = params.color_low or { r = 0, g = 120, b = 255 }
     local color_high = params.color_high or { r = 255, g = 0, b = 120 }
     local bars = params.fill ~= "solid"
-    local audio = halod.audio()
-    local bands = audio.bands
+    local bands = ctx.audio.bands
     local n = #bands
     local char, concat, floor = string.char, table.concat, math.floor
     local black = char(0, 0, 0, 255)
@@ -203,12 +199,12 @@ return {
       local amp = clamp01(bands[i])
       local bar_h = floor(amp * h + 0.5)
       local tt = (i - 1) / math.max(n - 1, 1)
-      local r, g, b = lerp_color(color_low, color_high, tt)
+      local color = ctx:lerp_color(color_low, color_high, tt)
       starts[i] = {
         x0 = x0,
         x_end = x_end,
         y_start = h - bar_h,
-        bytes = char(floor(r + 0.5), floor(g + 0.5), floor(b + 0.5), 255),
+        bytes = char(floor(color.r + 0.5), floor(color.g + 0.5), floor(color.b + 0.5), 255),
       }
     end
 
@@ -231,12 +227,13 @@ return {
     end
   end,
 
-  -- Direct: `leds` is an array of {p, p_ring, nx, ny} (p = fractional chain
-  -- position). Return one {r, g, b} per LED, 0..1 — a comet head sweeping
-  -- the chain with a short fading tail.
-  led_colors_comet = function(leds, t, dt, params)
+  -- Direct: `leds` is an array of {id, zone_id, p, p_ring, nx, ny} (`p` is
+  -- fractional chain position). Return one linear {r, g, b} per LED, 0..1 —
+  -- a comet head sweeping the chain with a short fading tail.
+  led_effect_comet = function(leds, ctx)
+    local t, params = ctx.time, ctx.params
     local color = params.color or { r = 0, g = 160, b = 255 }
-    local cr, cg, cb = color.r / 255.0, color.g / 255.0, color.b / 255.0
+    local cr, cg, cb = linear_rgb(ctx, color, 1.0)
     local speed = params.speed or 0.3
     local dir = (params.direction == "backward") and -1.0 or 1.0
     local head = (t * speed * dir) % 1.0
@@ -252,12 +249,13 @@ return {
 
   -- Direct: brightness pulses as sin(t*speed*pi)^2 — a pure function of `t`,
   -- so it's safe to call once per zone per tick without persisted state.
-  led_colors_breathing = function(leds, t, dt, params)
+  led_effect_breathing = function(leds, ctx)
+    local t, params = ctx.time, ctx.params
     local color = params.color or { r = 0, g = 128, b = 255 }
     local speed = params.speed or 0.5
     local phase = math.sin(t * speed * math.pi)
     local bright = phase * phase
-    local cr, cg, cb = color.r / 255.0 * bright, color.g / 255.0 * bright, color.b / 255.0 * bright
+    local cr, cg, cb = linear_rgb(ctx, color, bright)
     local out = {}
     for i in ipairs(leds) do
       out[i] = { r = cr, g = cg, b = cb }
@@ -265,18 +263,19 @@ return {
     return out
   end,
 
-  -- Direct: flashes on a loud onset (`halod.audio().flux` crossing a
+  -- Direct: flashes on a loud onset (`ctx.audio.flux` crossing a
   -- sensitivity-scaled threshold on a new DSP frame) and decays otherwise.
-  -- `leds` is called once per zone per tick, all sharing the same `t`; the
-  -- `last_t` guard below makes the state update idempotent across those
+  -- `leds` is called once per zone per tick, all sharing the same `frame`; the
+  -- `last_frame` guard below makes the state update idempotent across those
   -- repeat calls instead of double-decaying multi-zone devices.
-  led_colors_audio_beat = (function()
-    local state = { pulse = 0.0, last_seq = 0, last_t = nil }
-    return function(leds, t, dt, params)
+  led_effect_audio_beat = (function()
+    local state = { pulse = 0.0, last_seq = 0, last_frame = nil }
+    return function(leds, ctx)
+      local dt, params = ctx.dt, ctx.params
       local decay = params.decay or 0.4
       local sensitivity = params.sensitivity or 0.5
-      if state.last_t ~= t then
-        local audio = halod.audio()
+      if state.last_frame ~= ctx.frame then
+        local audio = ctx.audio
         local threshold = 0.6 - 0.5 * sensitivity
         if audio.seq ~= state.last_seq and audio.flux >= threshold then
           state.pulse = 1.0
@@ -284,12 +283,10 @@ return {
           state.pulse = state.pulse * math.exp(-dt / (decay / 3.0))
         end
         state.last_seq = audio.seq
-        state.last_t = t
+        state.last_frame = ctx.frame
       end
       local color = params.color or { r = 255, g = 40, b = 40 }
-      local cr = color.r / 255.0 * state.pulse
-      local cg = color.g / 255.0 * state.pulse
-      local cb = color.b / 255.0 * state.pulse
+      local cr, cg, cb = linear_rgb(ctx, color, state.pulse)
       local out = {}
       for i in ipairs(leds) do
         out[i] = { r = cr, g = cg, b = cb }
@@ -298,20 +295,21 @@ return {
     end
   end)(),
 
-  -- Direct: brightness eases toward `halod.audio().level`. Same `last_t`
+  -- Direct: brightness eases toward `ctx.audio.level`. Same `last_frame`
   -- idempotency guard as audio_beat above.
-  led_colors_audio_level = (function()
-    local state = { display_level = 0.0, last_t = nil }
+  led_effect_audio_level = (function()
+    local state = { display_level = 0.0, last_frame = nil }
     local MAX_TAU = 0.5
-    return function(leds, t, dt, params)
+    return function(leds, ctx)
+      local dt, params = ctx.dt, ctx.params
       local smoothing = params.smoothing or 0.3
       local sensitivity = params.sensitivity or 1.0
-      if state.last_t ~= t then
-        local audio = halod.audio()
+      if state.last_frame ~= ctx.frame then
+        local audio = ctx.audio
         local target = clamp01(audio.level * sensitivity)
         local tau = clamp01(smoothing) * MAX_TAU
         state.display_level = ease_toward(state.display_level, target, tau, dt)
-        state.last_t = t
+        state.last_frame = ctx.frame
       end
       local bright = state.display_level
       local r, g, b
@@ -323,7 +321,7 @@ return {
         r, g, b = color.r, color.g, color.b
       end
       local out = {}
-      local cr, cg, cb = r / 255.0 * bright, g / 255.0 * bright, b / 255.0 * bright
+      local cr, cg, cb = linear_rgb(ctx, { r = r, g = g, b = b }, bright)
       for i in ipairs(leds) do
         out[i] = { r = cr, g = cg, b = cb }
       end
@@ -333,17 +331,19 @@ return {
 
   -- Direct: colors a zone (`mode = "gradient"`) or fills it up to the
   -- reading (`mode = "meter"`) along a two-stop gradient, normalized against
-  -- [min, max]. `sensor` is the 5th callback arg: the live reading for the
-  -- effect's declared `sensor` param, or nil while unset/unavailable — the
-  -- effect fades to black rather than snapping when it disappears.
-  led_colors_sensor_gradient = (function()
-    local state = { display_level = 0.0, presence = 0.0, last_t = nil }
+  -- [min, max]. `ctx.sensors[ctx.params.sensor]` is the live reading, or nil
+  -- while unset/unavailable — the effect fades to black rather than snapping
+  -- when it disappears.
+  led_effect_sensor_gradient = (function()
+    local state = { display_level = 0.0, presence = 0.0, last_frame = nil }
     local MAX_TAU = 5.0
-    return function(leds, t, dt, params, sensor)
+    return function(leds, ctx)
+      local dt, params = ctx.dt, ctx.params
+      local sensor = ctx.sensors[params.sensor or ""]
       local min = params.min or 20.0
       local max = params.max or 90.0
       local smoothing = params.smoothing or 0.3
-      if state.last_t ~= t then
+      if state.last_frame ~= ctx.frame then
         local target_level, target_presence
         if sensor ~= nil then
           local range = max - min
@@ -359,7 +359,7 @@ return {
         local tau = clamp01(smoothing) * MAX_TAU
         state.display_level = ease_toward(state.display_level, target_level, tau, dt)
         state.presence = ease_toward(state.presence, target_presence, tau, dt)
-        state.last_t = t
+        state.last_frame = ctx.frame
       end
 
       local mode = params.mode or "gradient"
@@ -372,25 +372,30 @@ return {
         if mode == "meter" and led.p > level then
           r, g, b = 0.0, 0.0, 0.0
         elseif mode == "meter" then
-          r, g, b = lerp_color(color_a, color_b, led.p)
+          local color = ctx:lerp_color(color_a, color_b, led.p)
+          r, g, b = color.r, color.g, color.b
         else
-          r, g, b = lerp_color(color_a, color_b, level)
+          local color = ctx:lerp_color(color_a, color_b, level)
+          r, g, b = color.r, color.g, color.b
         end
-        out[i] = { r = r / 255.0 * presence, g = g / 255.0 * presence, b = b / 255.0 * presence }
+        local cr, cg, cb = linear_rgb(ctx, { r = r, g = g, b = b }, presence)
+        out[i] = { r = cr, g = cg, b = cb }
       end
       return out
     end
   end)(),
 
   -- Direct: snaps to the color of the highest step whose threshold the
-  -- smoothed sensor reading has reached. Same `sensor` arg and fade-to-black
+  -- smoothed sensor reading has reached. Same context sensor and fade-to-black
   -- semantics as sensor_gradient above.
-  led_colors_sensor_steps = (function()
-    local state = { display_value = nil, presence = 0.0, last_t = nil }
+  led_effect_sensor_steps = (function()
+    local state = { display_value = nil, presence = 0.0, last_frame = nil }
     local MAX_TAU = 5.0
-    return function(leds, t, dt, params, sensor)
+    return function(leds, ctx)
+      local dt, params = ctx.dt, ctx.params
+      local sensor = ctx.sensors[params.sensor or ""]
       local smoothing = params.smoothing or 0.3
-      if state.last_t ~= t then
+      if state.last_frame ~= ctx.frame then
         local tau = clamp01(smoothing) * MAX_TAU
         if sensor ~= nil then
           if state.display_value == nil then
@@ -401,7 +406,7 @@ return {
         end
         local target_presence = (sensor ~= nil) and 1.0 or 0.0
         state.presence = ease_toward(state.presence, target_presence, tau, dt)
-        state.last_t = t
+        state.last_frame = ctx.frame
       end
 
       local steps = params.steps or DEFAULT_STEPS
@@ -423,9 +428,7 @@ return {
         color = chosen.color
       end
       local presence = state.presence
-      local cr = color.r / 255.0 * presence
-      local cg = color.g / 255.0 * presence
-      local cb = color.b / 255.0 * presence
+      local cr, cg, cb = linear_rgb(ctx, color, presence)
       local out = {}
       for i in ipairs(leds) do
         out[i] = { r = cr, g = cg, b = cb }

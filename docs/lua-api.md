@@ -532,29 +532,56 @@ or filesystem-backed image access.
 Pixmap callbacks mutate a 400×300 linear-RGBA buffer:
 
 ```lua
-render_plasma = function(buf, t, dt, params)
+render_effect_plasma = function(buf, ctx)
 end
 ```
 
 Direct effects return one linear-light `{r, g, b}` value (0..1) per input LED:
 
 ```lua
-led_colors_comet = function(leds, t, dt, params, sensor)
-  -- leds entries: { p, p_ring, nx, ny }
+led_effect_comet = function(leds, ctx)
+  -- leds entries: { id, zone_id, p, p_ring, nx, ny }
   return colors
 end
 ```
 
-When exactly one effect is declared, bare `render` or `led_colors` is also accepted. Helpers:
+Only the declared-id callback forms are accepted. Every callback receives the
+same engine-frame snapshot:
+
+```lua
+ctx = {
+  time = 1.25,
+  dt = 0.016,
+  params = {},
+  audio = { level = 0, flux = 0, beat = false, seq = 0, bands = {} },
+  sensors = { liquid = 31.5 },
+  frame = 42,
+  seed = 1234,
+  zone = { id = "ring", topology = "ring", led_count = 12, device_id = "device" },
+}
+```
+
+Pixmap callbacks use the synthetic `canvas` zone. Direct callbacks receive the
+actual device zone, and LED `id` and `zone_id` remain stable across frames.
+Missing sensor values are absent from `ctx.sensors`.
+
+Context helpers are deterministic for a stable effect seed:
 
 | API | Meaning |
 |---|---|
 | `halod.canvas_w`, `halod.canvas_h` | Pixmap dimensions. |
 | `halod.hsv(h, s, v)` | HSV to sRGB byte triplet. |
-| `halod.audio()` | Latest `{level, flux, beat, seq, bands}` frame; `bands` has 64 values. |
+| `ctx:random(stream)` | Seeded value in `[0, 1)`; the optional integer stream selects a reproducible value. |
+| `ctx:noise1d(x)`, `ctx:noise2d(x, y)` | Seeded, platform-stable value noise in `[0, 1]`. |
+| `ctx:lerp_color(a, b, amount)` | Clamp and interpolate `{r, g, b}` records. |
+| `ctx:gradient(stops, amount)` | Interpolate 2–16 `{at, color}` stops. |
+| `ctx:srgb_to_linear(value)` | Convert a normalized sRGB channel to linear light. |
+| `ctx:linear_to_srgb(value)` | Convert a normalized linear-light channel to sRGB. |
 
-A stateful direct effect may run once per zone at the same engine time. Update time-dependent state
-only when `t` advances to avoid multiplying smoothing/decay on multi-zone devices.
+A stateful direct effect may run once per zone in the same engine frame. Guard
+time-dependent state with `ctx.frame` so smoothing and decay advance only once
+on multi-zone devices. Identical seeds and inputs produce bit-identical random
+and noise values across frames and supported platforms.
 
 ## `test.lua` harness
 

@@ -29,8 +29,8 @@ packages:
     sha256: ee964fcf0002f8fd54412fb6c33fa52c001b78a9fd2fddea2c06eaf0afd161fc
   - id: halo_effects
     path: halo_effects
-    version: 1.0.0
-    sha256: 4c7abd56e9cfb3979ac908a7e0674915b4311661de4b969bdb720de6285b6e7c
+    version: 1.0.1
+    sha256: a760ea6c9c0fe5995de3216de0d0a3ce07ffbf4533cffcc677865eb71c3b0d57
   - id: halo_lcd
     path: halo_lcd
     version: 1.0.4
