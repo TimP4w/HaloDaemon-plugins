@@ -423,30 +423,29 @@ return function(h)
   h:assert_eq(pairing_writes[#pairing_writes].data[5], 0x02,
     "pairing nudge requests connection rebroadcast")
 
-  -- An error reply (sub 0xff on Lightspeed wireless) whose byte 4 echoes the
-  -- request feature index is surfaced as a coded HID++ error, not silently
-  -- mistaken for a feature mismatch.
-  local err_dev = h:open({ reads = {
-    -- [report, devnum, 0xff, feature_idx=0, func_byte=0x00, err_code=0x07]
-    report(0x11, 0xff, 0xff, 0x00, { 0x00, 0x07 }),
+  -- A powered-off device is rejected, not failed, so the daemon re-registers it
+  -- silently once it wakes. An off PRO X headset still enumerates through its
+  -- dongle and only errors (0x05) once a read needs the headset itself; a
+  -- receiver child that is off instead answers nothing at all. Neither may raise.
+  local asleep_headset = h:open({ pid = 0x0aba, reads = {
+    report(0x11, 0xff, 0x00, 0x01, { 2 }),          -- ROOT -> FEATURE_SET index
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),          -- FEATURE_SET count
+    report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x00 }), -- feature[1] = SIDETONE
+    -- [report, devnum, 0xff, feature_idx=1, func_byte=0x00, err_code=0x05]
+    report(0x11, 0xff, 0xff, 0x01, { 0x00, 0x05 }),
   } })
-  local err_ok, err_msg = pcall(function() return err_dev:initialize() end)
-  h:assert(not err_ok, "an error reply fails initialization")
-  h:assert(tostring(err_msg):find("0x07"), "error reply surfaces its error code")
+  h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
-  -- A powered-off device is rejected, not failed: a headset whose dongle stays
-  -- enumerated answers no ROOT request at all, and a receiver answers for an
-  -- offline paired device with resource-error 0x09. Both must initialize to
-  -- false so the daemon retries silently instead of surfacing an error.
-  local asleep_dev = h:open({ pid = 0x0af7, reads = {
+  local silent_child = h:open({ key = "1", reads = {
     {}, {}, {}, {}, {}, {}, -- three ROOT attempts, two empty read windows each
   } })
-  h:assert(not asleep_dev:initialize(), "a silent device is rejected, not an error")
+  h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
 
-  local offline_child = h:open({ key = "1", reads = {
-    report(0x10, 0x01, 0x8f, 0x00, { 0x00, 0x09 }),
-  } })
-  h:assert(not offline_child:initialize(), "an unreachable receiver child is rejected")
+  -- A failure that is not the HID++ protocol answering is not an absent device
+  -- and must still surface.
+  local broken_dev = h:open({ reads = {} })
+  h:assert(not pcall(function() return broken_dev:initialize() end),
+    "a transport failure still fails initialization")
 
   -- A packet that arrives interleaved with a request must be handed to the
   -- event path, not dropped: the button notification queued before the ROOT
