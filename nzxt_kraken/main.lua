@@ -382,6 +382,10 @@ return {
         brightness = brightness, rotation = rotation,
       },
       zones = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
+      cooling = { channels = {
+        { id="pump", name="Pump", kind="pump", controllable=true },
+        { id="fan1", name="Radiator fan", kind="fan", controllable=true },
+      } },
       chain = chain_channels,
       accessories = accessories,
     }
@@ -424,6 +428,27 @@ return {
   write_ext_frame = function(dev, channel, colors)
     ext_grb = grb_from_colors(colors, #colors)
     send_channels(dev)
+  end,
+
+  -- Unified cooling channels. The legacy fan callbacks below are retained for
+  -- old daemon releases, but new hosts route both outputs through these.
+  get_cooling_status = function(dev, id)
+    if id == "pump" then
+      return { id=id, name="Pump", kind="pump", controllable=true,
+        duty=(dev.status or {}).pump_duty or 0, rpm=(dev.status or {}).pump_rpm }
+    end
+    if id == "fan1" then
+      return { id=id, name="Radiator fan", kind="fan", controllable=((dev.status or {}).fan_rpm or 0) > 0,
+        duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
+    end
+    error("unknown cooling channel: " .. tostring(id))
+  end,
+  set_cooling_duty = function(dev, id, duty)
+    if id == "pump" then
+      dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
+    elseif id == "fan1" then
+      dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
+    else error("unknown cooling channel: " .. tostring(id)) end
   end,
 
   -- Pump duty (min 20%).

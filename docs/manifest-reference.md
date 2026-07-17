@@ -163,13 +163,18 @@ halod udev-rules
 Supported names are:
 
 ```text
-rgb, fan, sensors, battery, connection, dpi,
+rgb, cooling, fan, sensors, battery, connection, dpi,
 key_remap, keyboard_layout, onboard_profiles, lcd, equalizer,
 pairing, controls, chain
 ```
 
 This list is the package's maximum capability set. `initialize()` may return a
 smaller set for a specific model.
+
+`cooling` is the multi-channel replacement for `fan`. Its runtime descriptor
+contains device-local channel IDs, labels, `fan`/`pump` kind, and whether each
+channel can be controlled. Use `fan` only for compatibility with older daemon
+versions that expose exactly one output.
 
 Device settings such as report rate, sleep timeout, debounce, sidetone, and
 similar controls use the generic `controls` capability. Model them as choice,

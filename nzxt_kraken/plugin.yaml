@@ -7,7 +7,7 @@ version: 1.0.2
 license: GPL-3.0-or-later
 description: NZXT Kraken Z/Elite family with RGB, pump, telemetry, LCD, and chained fans.
 permissions: [hid, usb]
-capabilities: [rgb, fan, sensors, lcd, chain]
+capabilities: [rgb, cooling, sensors, lcd, chain]
 devices:
   - vendor: NZXT
     model: Kraken
