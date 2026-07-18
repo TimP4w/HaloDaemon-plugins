@@ -47,7 +47,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: b8e0e0c349d40934b6f4b3dd514a8dde7551fccd8cfff7b9e403216c18429730
+    sha256: d879b04ddb010b730e6b95b7a9e7d1bb9ced5824b42f225f1ac5ff792b577992
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0

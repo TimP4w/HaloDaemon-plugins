@@ -235,6 +235,9 @@ return function(h)
   h:assert_eq(eq_writes[#eq_writes].data[5], 0x02, "equalizer set carries custom prefix")
   h:assert_eq(eq_writes[#eq_writes].data[6], 0xf4, "equalizer set clamps to device db minimum")
   h:assert_eq(eq_writes[#eq_writes].data[7], 7, "equalizer set preserves valid values")
+  h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "successful EQ write updates cached value")
+  h:assert(not pcall(function() eq_dev:set_eq_bands({ 0, 0 }) end), "failed EQ write surfaces")
+  h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "failed EQ write preserves cached value")
 
   local native_dev = h:open({ pid = 0xc352, reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),

@@ -901,12 +901,14 @@ local callbacks = {
     if not eq then error("EQUALIZER unavailable") end
     if #values ~= eq.count then error("expected " .. eq.count .. " EQ band values") end
     local out = { 0x02 }
+    local applied = {}
     for i = 1, eq.count do
       local v = math.max(eq.min, math.min(eq.max, math.floor(values[i] + 0.5)))
       out[#out + 1] = v & 0xff
-      eq.result.bands[i].value = v
+      applied[i] = v
     end
     feature(dev, EQUALIZER, 0x30, bytes(table.unpack(out)))
+    for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
   end,
   apply = function(dev, state)
     if state.mode == "native_effect" then
