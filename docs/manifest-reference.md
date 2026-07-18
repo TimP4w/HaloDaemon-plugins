@@ -66,6 +66,7 @@ transports:
 | `requirements` | Explicit command or Linux kernel-module dependencies that cannot be inferred. |
 | `dynamic_children` | Allows `enumerate_controllers()` to create child devices. |
 | `config` | User-editable settings. |
+| `setup` | Optional host-rendered integration setup flow. |
 | `effects` | Effects provided by an effect plugin. |
 | `effect_assets` | Optional effect thumbnails. |
 | `widgets` | LCD widget declarations for an `lcd` package. |
@@ -396,6 +397,73 @@ Windows, PawnIO installation is checked automatically for these transports.
 SMBus access is fully described by the device match and does not need a
 separate transport block. The host automatically checks PawnIO on Windows and
 Linux i2c-dev presence and permissions on Linux.
+
+## Integration setup
+
+Integrations that need discovery, connection details, or credentials declare
+a typed `setup` block. Halo owns the modal, navigation, timeouts, retries, and
+persistence; Lua only returns typed data from `validate(context)`,
+`discover(context)`, and `pair(context)`.
+
+```yaml
+type: integration
+permissions: [network, secure_storage]
+setup:
+  modes: [automatic, manual]
+  discovery:
+    mdns: ["_example._tcp.local."]
+    ssdp: ["urn:example-org:device:controller:1"]
+  auth:
+    kind: button
+    title: Put the controller in pairing mode
+    instructions:
+      - Hold its link button for five seconds.
+      - Continue when its status light starts blinking.
+```
+
+`modes` contains `automatic`, `manual`, or both. Automatic mode requires at
+least one mDNS service type or SSDP search target. Halo performs those network
+protocols and passes normalized records to `discover`; the plugin does not get
+a raw socket. Manual mode requires at least one non-secure config field.
+
+`auth.kind` is one of:
+
+- `none`: validate and enable after choosing or entering the device.
+- `button`: show fixed `title` and `instructions`, then invoke `pair` when the
+  user starts pairing.
+- `oauth2_pkce`: run OAuth2 Authorization Code with PKCE through a loopback
+  callback. It requires HTTPS `authorization_url` and `token_url`, a
+  `client_id`, optional `scopes`, and `access_token_key` plus optional
+  `refresh_token_key`. Token keys must name secure config fields. Halo creates
+  and verifies `state`, the PKCE verifier/challenge, callback, token exchange,
+  and secure storage; Lua never implements the browser protocol.
+
+An integration without `setup` is considered configured immediately, but it
+still implements `validate(context)`. Halo invokes validation before every
+enable. A setup integration is enabled only after pairing and final validation
+succeed.
+
+### Hue bridge TLS
+
+The `hue-bridge` HTTP TLS profile trusts only the Signify Hue Bridge issuing
+CA and verifies the bridge certificate against the identity stored in the
+config field named by `verify_identity`:
+
+```yaml
+transports:
+  http:
+    host_key: host
+    origins: ["https://{host}"]
+    tls:
+      profile: hue-bridge
+      verify_identity: bridge_id
+```
+
+Halo connects to the configured LAN address while using `bridge_id` as the TLS
+server name. Plugins cannot disable certificate verification. Bridges whose
+certificate chains to an on-bridge root are not accepted by this profile; they
+need an explicit, host-owned trust-on-pairing design rather than a plugin flag
+that silently disables TLS verification.
 
 ## Config fields
 

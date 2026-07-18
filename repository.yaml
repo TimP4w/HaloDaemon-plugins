@@ -43,11 +43,11 @@ packages:
   - id: hwmon
     path: hwmon
     version: 1.0.0
-    sha256: d1878ae5271d696611a0a534fd808c732c34e5a44e077f76b4da1895d08c8dbe
+    sha256: eb2c5bc980501a00912a231c3254e6c002cf3317d4eac487c3e076d31c9f7de5
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: b952de7c681188412ed8020dab993748f56d4fb7e0664c022b262392cefa1465
+    sha256: 0249df979d16e69008ae35ca0ece68ea8ca4e89a1ff3e612341c09dd6e04d6f9
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
@@ -75,7 +75,7 @@ packages:
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: b2115b38bf74496d20eb43c75cb62d50946fa530fe554b37a336dca2db28e288
+    sha256: de9999261d277c000273e7cb1bf7f4d6621c578f21dc547b217490e34ab4ffc8
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0

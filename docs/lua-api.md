@@ -273,7 +273,63 @@ and key-action values and the official plugins as executable examples.
 
 ## Integration callbacks
 
-An integration root implements:
+Every integration implements the typed validation hook:
+
+```lua
+validate = function(context)
+  if not context.config.host or context.config.host == "" then
+    return { ok = false, reason = "A device address is required." }
+  end
+  return { ok = true }
+end
+```
+
+`context.config` contains the integration's declared configuration, including
+credentials only when the plugin has `secure_storage` consent. Halo invokes
+`validate` before enabling and after an interactive setup. Return `ok` and an
+optional user-facing `reason`; setup does not complete when `ok` is false.
+
+For `setup.modes: [automatic]`, Halo performs the manifest-declared mDNS and
+SSDP scans, normalizes their output, and calls:
+
+```lua
+discover = function(context)
+  local candidates = {}
+  for _, service in ipairs(context.mdns or {}) do
+    candidates[#candidates + 1] = {
+      id = service.id,
+      name = service.name,
+      values = { host = service.addresses[1] },
+    }
+  end
+  return candidates
+end
+```
+
+mDNS records contain `service`, `id`, `name`, `host`, `port`, `addresses`, and
+`txt`. SSDP records contain `service`, `id`, `name`, `location`, `source`, and
+`server`. Candidate IDs must be unique and stable. `values` may contain only
+non-secure config keys declared by the manifest. Halo renders the candidates;
+plugins cannot return arbitrary controls or modal markup.
+
+Button authentication invokes `pair(context)` after the user follows the
+manifest instructions:
+
+```lua
+pair = function(context)
+  local token = try_pair(context.config.host)
+  if not token then
+    return { ok = false, pending = true, reason = "Press the button, then retry." }
+  end
+  return { ok = true, values = { token = token } }
+end
+```
+
+`values` may include declared secure fields; Halo persists them through its
+secret store. `pending = true` keeps the user on the pairing screen. Errors
+remain retryable. OAuth2 PKCE is host-owned and does not call `pair`.
+
+After setup, an integration root implements:
 
 ```lua
 enumerate_controllers = function(dev)

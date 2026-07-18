@@ -38,6 +38,12 @@ local function cached(dev, field, load)
 end
 
 return {
+  -- Host requirement probing checks that a usable hwmon collection exists
+  -- before this hook runs. No additional user configuration is required.
+  validate = function(_context)
+    return { ok = true }
+  end,
+
   initialize = function(dev)
     if dev.match.index == nil then
       return { ok = true, capabilities = {} }

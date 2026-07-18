@@ -221,6 +221,14 @@ local function set_zone_colors(dev, index, zone_id, colors)
 end
 
 return {
+  validate = function(context)
+    local config = context.config or {}
+    if not config.host or config.host == "" or not config.port or config.port == "" then
+      return { ok = false, reason = "The OpenRGB server host and port are required." }
+    end
+    return { ok = true }
+  end,
+
   initialize = function(dev)
     if dev.match.index ~= nil then
       return {

@@ -8,6 +8,9 @@ author: HaloDaemon
 version: 1.0.0
 license: GPL-3.0-or-later
 description: Connects to an OpenRGB server and exposes its controllers as devices.
+setup:
+  modes: [manual]
+  auth: { kind: none }
 capabilities: [lighting]
 permissions:
   - network
