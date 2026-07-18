@@ -109,7 +109,7 @@ populate the block and `repository.sig`:
 ```powershell
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- keygen example-repository-2026
 $env:HALOD_PLUGIN_SIGNING_KEY_B64 = '<private_seed_b64>'
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.7.1
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 1.2.1
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- sign . --key-id example-repository-2026
 ```
 

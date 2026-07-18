@@ -18,9 +18,8 @@ return {
     return true
   end,
 
-  write_frame = function(dev, zone_id, colors, led_ids)
-    -- colors: {{ r = 0..255, g = 0..255, b = 0..255 }, ...}
-    -- led_ids[i] is the stable descriptor LED id for colors[i]
+  write_frame = function(dev, channel_id, bytes)
+    -- bytes: flat R,G,B byte array in the channel's declared LED order
   end,
 
   close = function(dev)
@@ -95,7 +94,7 @@ Every device callback receives `dev` first.
 | `dev.match.index` | Remote controller index for an integration child. |
 | `dev.match.key` | Optional stable route key for a dynamic child. |
 | `dev.match.name` | Optional child name returned by discovery. |
-| `dev.zones` | Host-provided static RGB-zone descriptors. |
+| `dev.channels` | Host-provided static lighting-channel descriptors. |
 | `dev.status` | Latest value returned by `read_status`; set by the polling loop. |
 | `dev.audio` | Audio-routing userdata when `audio_routing` is granted. |
 
@@ -123,8 +122,8 @@ return {
   model = "Firmware " .. version,
   -- Optional device-specific subset of plugin.yaml's advertised union.
   -- Undeclared names are ignored and reported as manifest mismatches.
-  capabilities = { "rgb", "controls" },
-  zones = {
+  capabilities = { "lighting", "controls" },
+  channels = {
     { id = "ring", name = "Ring", topology = "ring", led_count = 12 },
     -- Optional exact normalized geometry; when present it overrides the
     -- topology-derived layout and firmware `led_ids` ordering.
@@ -149,7 +148,11 @@ return {
     latches = true, raw_streaming = false,
     brightness = 80, rotation = 0,
   },
-  chain = { { id = "out1", name = "Output 1", max_leds = 40 } },
+  cooling = { channels = {
+    { id = "pump", name = "Pump", kind = "pump", controllable = true },
+    { id = "fan1", name = "Radiator fan", kind = "fan", controllable = true },
+  } },
+  division = { { id = "out1", name = "Output 1", max_leds = 40 } },
   ranges = { brightness = 70 },
   choices = { mode = 1 }, -- option indexes are zero-based
 }
@@ -180,12 +183,12 @@ host values and are commonly zero-based.
 
 | Capability | Callback signature |
 |---|---|
-| RGB | `apply(dev, state)`; `write_frame(dev, zone_id, colors, led_ids)` |
+| Lighting | `apply(dev, state)`; `write_frame(dev, channel_id, bytes)` |
 | Cooling | `initialize` returns `cooling = { channels = {{id, name, kind = "fan"|"pump", controllable}, ...} }`; `get_cooling_status(dev, channel_id) -> {id, name, kind, controllable, duty?, rpm?}`; `set_cooling_duty(dev, channel_id, duty)` |
 | Sensor | `get_sensors(dev) -> sensors` |
 | Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
-| Chain | `detect_accessories(dev) -> {{channel, accessory}, ...}`; `write_ext_frame(dev, channel_id, colors)` |
-| Chain accessory cooling | Accessory children expose their own cooling channel; the parent handles it through `get_cooling_status(dev, channel_id)` and `set_cooling_duty(dev, channel_id, duty)`. |
+| Lighting division | `detect_accessories(dev) -> {{channel, accessory}, ...}`; division-channel frames arrive through the same `write_frame(dev, channel_id, bytes)` |
+| Division accessory cooling | Accessory children expose their own cooling channel; the parent handles it through `get_cooling_status(dev, channel_id)` and `set_cooling_duty(dev, channel_id, duty)`. |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
 | DPI | `set_dpi(dev, dpi)` |
 | Choice | `set_choice(dev, key, selected)` |
@@ -199,8 +202,10 @@ host values and are commonly zero-based.
 | Onboard profiles | `switch_profile(dev, slot)`; `restore_profile(dev, slot)`; `set_profile_enabled(dev, slot, enabled)`; `onboard_profiles_status(dev) -> status` |
 | Key remap | `set_button_mapping(dev, mapping)`; `reset_button_mapping(dev, cid)`; `reset_all_button_mappings(dev)`; optional `key_remap_host_mode(dev) -> bool` |
 
-`state` passed to `apply` is tagged by `state.mode` (`static`, `per_led`, or `native_effect`). For
-software frames, `colors` is an array of `{r, g, b}` byte tables in the declared LED order.
+`state` passed to `apply` is tagged by `state.mode` (`static`, `per_led`, or
+`native_effect`): `static` carries a single `state.color`, and `per_led` carries
+`state.channels[channel_id][led_index]` colour maps. Software `write_frame` frames
+receive `bytes` as a flat R,G,B byte array in the channel's declared LED order.
 
 Common returned record shapes:
 
@@ -340,7 +345,7 @@ enumerate_controllers = function(dev)
       device_type = "keyboard", -- optional; defaults to "other"
       serial = "ABC123",       -- optional; used for conflict detection
       location = "HID: ...",   -- optional; used for conflict detection
-      zones = {
+      channels = {
         { id = "main", name = "Main", topology = "linear", led_count = 20 },
       },
     },
@@ -349,14 +354,12 @@ end
 ```
 
 Each record describes identity and routing. It may include `id`, `key`, `serial`,
-`location`, numeric `extra` fields, and simple `zones` data used by tests. Each
+`location`, numeric `extra` fields, and simple `channels` data used by tests. Each
 record becomes a separate device. The child receives its index in
 `dev.match.index` and its optional key in `dev.match.key`.
 
 Children use the normal callbacks, such as `initialize`, `apply`, and
 `write_frame`. Use `dev.match.index` or `dev.match.key` to route the call.
-`write_frame_batch(dev, frames)` is optional; each frame contains `zone_id`,
-`colors`, and `led_ids`.
 
 ## Stream transport: HID and TCP
 
@@ -616,7 +619,7 @@ Direct effects return one linear-light `{r, g, b}` value (0..1) per input LED:
 
 ```lua
 led_effect_comet = function(leds, ctx)
-  -- leds entries: { id, zone_id, p, p_ring, nx, ny }
+  -- leds entries: { id, channel_id, p, p_ring, nx, ny }
   return colors
 end
 ```
@@ -637,7 +640,7 @@ ctx = {
 ```
 
 Pixmap callbacks use the synthetic `canvas` zone. Direct callbacks receive the
-actual device zone, and LED `id` and `zone_id` remain stable across frames.
+actual device zone, and LED `id` and `channel_id` remain stable across frames.
 Effects read declared sensor and scalar host data through `ctx:data(key)`.
 
 Context helpers are deterministic for a stable effect seed:
@@ -676,9 +679,11 @@ halod plugin-test .\openrgb
 | `h:assert(condition, message)` | Record an assertion. |
 | `h:assert_eq(actual, expected, message)` | Record an equality assertion. |
 | `dev:initialize()` | Run the real plugin initialization path. |
-| `dev:apply(state)` | Run RGB state application. |
-| `dev:write_frame(zone, colors)` | Run a software RGB frame. |
-| `dev:write_ext_frame(channel, colors)` | Run a chain RGB frame. |
+| `dev:apply(state)` | Run lighting state application. |
+| `dev:write_frame(channel, bytes)` | Run a software lighting frame. |
+| `dev:write_divided_frame(channel, bytes)` | Run a lighting-division frame. |
+| `dev:get_cooling_status(channel)` | Read a cooling channel's status. |
+| `dev:set_cooling_duty(channel, duty)` | Exercise a cooling duty write. |
 | `dev:lcd_stream_frame(bytes, width, height, rotation, raw, brightness)` | Run an LCD frame callback. |
 | `dev:get_batteries()` | Run the declared battery capability and return its readings. |
 | `dev:set_range(key, value)` | Exercise a runtime range-control write. |
@@ -688,7 +693,7 @@ halod plugin-test .\openrgb
 | `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |
 | `dev:hwmon_read(key, attribute)` | Inspect a fixture attribute after plugin writes. |
 | `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
-| `dev:rgb_descriptor()` | Return the resolved RGB zones and LED positions. |
+| `dev:lighting_descriptor()` | Return the resolved lighting channels and LED positions. |
 | `dev:writes()` | Recorded byte writes. |
 | `dev:usb_writes()` | Recorded USB endpoint/control writes with device routing metadata. |
 | `dev:queue_read(bytes)` | Add a scripted transport reply. |
