@@ -33,7 +33,7 @@ version: 1.0.0
 license: GPL-3.0-or-later
 platforms: [linux, windows]
 permissions: [hid]
-capabilities: [rgb]
+capabilities: [lighting]
 
 devices:
   - vendor: Example
@@ -90,8 +90,8 @@ consumes: [telemetry.current, host.sensors.*, host.media.playback, host.environm
 
 Provided keys must begin with the package id. Cross-plugin and `host.*` reads
 are shown as user-approved authority. Host sensors are individual records plus
-`host.sensors.catalog`; fan curves, device state, LCD widgets, and RGB effects
-all consume that same host cache. Audio remains a dedicated sampled stream.
+`host.sensors.catalog`; fan curves, device state, LCD widgets, and lighting
+effects all consume that same host cache. Audio remains a dedicated sampled stream.
 
 ### Widget fields
 
@@ -164,17 +164,27 @@ halod udev-rules
 Supported names are:
 
 ```text
-rgb, cooling, sensors, battery, connection, dpi,
+lighting, lighting_division, cooling, sensors, battery, connection, dpi,
 key_remap, keyboard_layout, onboard_profiles, lcd, equalizer,
-pairing, controls, chain
+pairing, controls
 ```
 
 This list is the package's maximum capability set. `initialize()` may return a
 smaller set for a specific model.
 
-`cooling` is the multi-channel cooling capability. Its runtime descriptor
-contains device-local channel IDs, labels, `fan`/`pump` kind, and whether each
-channel can be controlled.
+`lighting` is the color capability. Its runtime descriptor contains device-local
+lighting channels, each with an ID, label, topology, and LED count. `apply` and
+`write_frame` drive them. There is no separate `rgb` capability.
+
+`lighting_division` lets a controller expose divisible outputs (chained ARGB
+hubs, fan headers) whose accessories are detected at runtime via
+`detect_accessories`. Frames for a division channel arrive through the same
+`write_frame(dev, channel_id, bytes)` callback.
+
+`cooling` is the multi-channel cooling capability, covering both fans and pumps —
+there is no separate `fan` capability. Its runtime descriptor contains
+device-local channel IDs, labels, `fan`/`pump` kind, and whether each channel
+can be controlled.
 
 Device settings such as report rate, sleep timeout, debounce, sidetone, and
 similar controls use the generic `controls` capability. Model them as choice,
@@ -540,8 +550,8 @@ callback names and parameters.
 ## Runtime descriptors
 
 Device details that may change by model or firmware come from `initialize()`,
-not from YAML. This includes RGB zones, controls, DPI limits, LCD size, fan
-details, keyboard layouts, and chain accessories.
+not from YAML. This includes lighting channels, controls, DPI limits, LCD size,
+cooling channels, keyboard layouts, and lighting-division accessories.
 
 Set `dynamic_children: true` only when `enumerate_controllers()` creates
 separate devices, such as receiver slots or GPUs. Each child needs a stable
