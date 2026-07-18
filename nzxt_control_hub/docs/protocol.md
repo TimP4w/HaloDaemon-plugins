@@ -13,11 +13,11 @@ RGB payloads may be longer and are sent as one report without truncation.
 
 Commands use a two-byte command/subcommand prefix. Initialization sends:
 
-1. `10 02` — firmware query; reply `11 02` stores the version at offsets
+1. `10 02` - firmware query; reply `11 02` stores the version at offsets
    `0x11..0x13`.
-2. `20 03` — RGB accessory detection.
-3. `60 03` — fan-type detection.
-4. `60 02 01 E8 <ctl> 01 E8 <ctl>` — configure periodic status reports.
+2. `20 03` - RGB accessory detection.
+3. `60 03` - fan-type detection.
+4. `60 02 01 E8 <ctl> 01 E8 <ctl>` - configure periodic status reports.
 
 The polling control byte is derived from the requested interval and bounded by
 the values accepted by the controller.

@@ -126,7 +126,7 @@ parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.
 
 The host owns the `opacity` and `scale_y` parameters and adds them to every
-widget's editor panel, so a widget cannot declare either id — it would be
+widget's editor panel, so a widget cannot declare either id; it would be
 handed the host's value (`opacity` is stored as 0-100) rather than its own.
 The host applies `opacity` when compositing the rendered widget; don't fold it
 into the drawing. Widget rotation is likewise a host control, not a parameter.
@@ -181,7 +181,7 @@ hubs, fan headers) whose accessories are detected at runtime via
 `detect_accessories`. Frames for a division channel arrive through the same
 `write_frame(dev, channel_id, bytes)` callback.
 
-`cooling` is the multi-channel cooling capability, covering both fans and pumps —
+`cooling` is the multi-channel cooling capability, covering both fans and pumps;
 there is no separate `fan` capability. Its runtime descriptor contains
 device-local channel IDs, labels, `fan`/`pump` kind, and whether each channel
 can be controlled.
@@ -239,7 +239,7 @@ devices:
 
 The grid is as wide as the furthest `column + span`. Entries are placed in
 `order`; one that would overlap or overflow the current row starts a new one. A
-category with no entry — or one whose controls the device does not report — is
+category with no entry (or one whose controls the device does not report) is
 appended as its own full-width row, so a layout may name fewer categories than
 the plugin declares.
 
@@ -416,7 +416,7 @@ transports:
       certificate_identity: webpki
 ```
 
-`origins` is an exact `scheme://host[:port]` allowlist — no wildcards. An origin
+`origins` is an exact `scheme://host[:port]` allowlist, no wildcards. An origin
 whose address isn't known at authoring time uses the literal token `{host}`,
 resolved at runtime from the config field named by `host_key`. `methods`
 defaults to `[GET]`. The size, timeout, and concurrency ceilings default to
@@ -437,7 +437,7 @@ verification. An integration declares exactly one root transport, so `http`,
 A scoped connected-UDP capability (`halod.udp`). Like `http` it is a bounded
 capability rather than a root transport, so it may accompany a device or an
 integration. Requires the `network` permission. Datagrams may only reach the one
-configured destination — there is no broadcast, multicast, or `send_to`.
+configured destination; there is no broadcast, multicast, or `send_to`.
 
 ```yaml
 permissions: [network]

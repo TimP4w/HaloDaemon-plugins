@@ -28,7 +28,7 @@ Control-transfer parameters:
 | `bRequest` | `0x80` |
 | `wValue` | `0` |
 | `wIndex` | Target register address (16-bit) |
-| `data` | Payload — register-dependent length |
+| `data` | Payload: register-dependent length |
 
 ---
 
@@ -68,7 +68,7 @@ leaves the tail black; extra colours are dropped.
 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 ```
 
-Written on `close()` — and on demand when the user selects the **"Monitor
+Written on `close()`, and on demand when the user selects the **"Monitor
 (firmware control)"** mode in the GUI (exposed as a parameter-less native
 effect whose apply triggers the same baseline restore) — to hand the LEDs back
 to the monitor's own Ambiglow firmware. The 64-byte block spans the four 16-byte

@@ -8,7 +8,7 @@ SMBus RGB control for Corsair Vengeance / Dominator DDR4 and DDR5 memory modules
 
 ## Overview
 
-A Corsair DRAM module exposes an RGB controller on the chipset SMBus, addressed through a fixed register map. The host issues SMBus byte/block reads and writes; there is no asynchronous channel — every exchange is a host-initiated request/response, and long operations are confirmed by polling a status busy bit. Byte movement is over the [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md) (`SmBusSyncOps`).
+A Corsair DRAM module exposes an RGB controller on the chipset SMBus, addressed through a fixed register map. The host issues SMBus byte/block reads and writes; there is no asynchronous channel; every exchange is a host-initiated request/response, and long operations are confirmed by polling a status busy bit. Byte movement is over the [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md) (`SmBusSyncOps`).
 
 The controller is probed at 16 chipset-bus addresses:
 
@@ -59,7 +59,7 @@ Read as 32 successive single-byte reads of register `0x40` into `data[0..32]`, t
 
 Firmware string = `"{data[9]}.{data[8]}.{u16_le(data[10],data[11])}"`. Offsets 4–7, 12–27, 29–31 are unused.
 
-### Direct-mode color packet (protocol ≥ 4) — `build_direct_packet`
+### Direct-mode color packet (protocol ≥ 4) - `build_direct_packet`
 
 Total length `led_count * 3 + 2`:
 
@@ -71,11 +71,11 @@ Total length `led_count * 3 + 2`:
 
 Color order on the wire is **R, G, B**. Trailing byte is `crc8(packet[..len-1])`. The packet is split at 32 bytes across `0x31` / `0x32` (see §2). A 10-LED packet is exactly 32 bytes (one block); a 12-LED packet is 38 bytes (6 spill into block 2).
 
-### Effect-mode color buffer (legacy DDR4, protocol < 4) — `build_effect_color_data`
+### Effect-mode color buffer (legacy DDR4, protocol < 4) - `build_effect_color_data`
 
-Per-LED **RGBA** with fixed `0xFF` alpha: for each LED `[R, G, B, 0xFF]`. Length `led_count * 4`. No length prefix and no trailing CRC inside the buffer — integrity is verified by reading the device CRC at `0x42` before commit.
+Per-LED **RGBA** with fixed `0xFF` alpha: for each LED `[R, G, B, 0xFF]`. Length `led_count * 4`. No length prefix and no trailing CRC inside the buffer; integrity is verified by reading the device CRC at `0x42` before commit.
 
-### Native effect descriptor (20 bytes, all protocol versions) — `build_native_effect`
+### Native effect descriptor (20 bytes, all protocol versions) - `build_native_effect`
 
 ```
 [0]       mode        (see §3 mode table)
@@ -108,71 +108,71 @@ Master table of every operation the driver can issue. `<addr>` is the 7-bit SMBu
 
 | Function | Bytes sent (exact) | Params | Note |
 |----------|--------------------|--------|------|
-| Detection ACK | `write_quick(<addr>)` | — | Probe step 1 — see [Detection probe](#detection-probe) |
-| Read sentinel A | read `0x43` | — | Probe step 2 |
-| Read sentinel B | read `0x44` | — | Probe step 3 |
-| Read info block | `0x61←0x00`, `0x21←0x00`, read `0x40` ×32, read `0x42` | — | See [Info-block read](#info-block-read--parse) |
-| Color write (direct) | block `0x31←[len, R G B …]` (+ `0x32←[rest]`) | per-LED `R G B` | proto ≥ 4 — see [Direct block color write](#direct-block-color-write) |
-| Color write (effect) | stream `[R G B 0xFF …]` → `0x82←0x02` | per-LED `R G B` | proto < 4 — see [Streamed RGBA color write](#streamed-rgba-color-write) |
+| Detection ACK | `write_quick(<addr>)` | - | Probe step 1, see [Detection probe](#detection-probe) |
+| Read sentinel A | read `0x43` | - | Probe step 2 |
+| Read sentinel B | read `0x44` | - | Probe step 3 |
+| Read info block | `0x61←0x00`, `0x21←0x00`, read `0x40` ×32, read `0x42` | - | See [Info-block read](#info-block-read--parse) |
+| Color write (direct) | block `0x31←[len, R G B …]` (+ `0x32←[rest]`) | per-LED `R G B` | proto ≥ 4, see [Direct block color write](#direct-block-color-write) |
+| Color write (effect) | stream `[R G B 0xFF …]` → `0x82←0x02` | per-LED `R G B` | proto < 4, see [Streamed RGBA color write](#streamed-rgba-color-write) |
 | Native effect | stream `[20-byte descriptor]` → `0x82←0x01` | mode, speed, dir, color1, color2 | see [Native-effect write](#native-effect-write) |
-| Reset stream buffer | `0x0B←0x00` | — | Trivial; first step of a stream |
-| Stream seek/start | `0x21←0x00` | — | Trivial; second step of a stream |
+| Reset stream buffer | `0x0B←0x00` | - | Trivial; first step of a stream |
+| Stream seek/start | `0x21←0x00` | - | Trivial; second step of a stream |
 | Stream one byte | `0x20←<byte>` | `<byte>` | Trivial; repeated per payload byte |
 | Commit config | `0x82←<config_id>` | `0x01` effect / `0x02` color | Trivial; only after CRC match |
-| Poll status | read `0x30` | — | Trivial; ready when `& 0x08 == 0` (§4) |
+| Poll status | read `0x30` | - | Trivial; ready when `& 0x08 == 0` (§4) |
 
 ### Detection probe
 
 Three steps; all must pass for the controller to be considered present (`probe` in `main.lua`). On any failure the device is skipped (`initialize` returns `false`) before any info read.
 
-1. **ACK** — `write_quick(<addr>)`. Must return an ACK (true); otherwise abort.
-2. **Sentinel A** — read register `0x43`. Accept only `0x1A`, `0x1B`, or `0x1C`; any other value or a read error aborts.
-3. **Sentinel B** — read register `0x44`. Accept only `0x01`, `0x03`, or `0x04`; otherwise abort.
+1. **ACK** - `write_quick(<addr>)`. Must return an ACK (true); otherwise abort.
+2. **Sentinel A** - read register `0x43`. Accept only `0x1A`, `0x1B`, or `0x1C`; any other value or a read error aborts.
+3. **Sentinel B** - read register `0x44`. Accept only `0x01`, `0x03`, or `0x04`; otherwise abort.
 
 ### Info-block read & parse
 
 Loads the 32-byte info block and validates it (`read_info` in `main.lua`).
 
-1. **Request** — `0x61←0x00` (`REG_GET_DEVICE_INFO`), then `0x21←0x00` (`REG_BINARY_START`). This arms the device-info buffer.
-2. **Read body** — read register `0x40` (`REG_GET_BINARY_DATA`) 32 times, filling `data[0..32]`.
-3. **Verify CRC** — compute `crc8(data)` (algorithm in §3), read the device CRC from `0x42`. A mismatch **aborts the info read and returns an error** — parsing does not continue with corrupt data.
-4. **Parse** — extract fields per the §1 info-block table: VID `data[0..2]`, PID `data[2..4]`, firmware from `data[8..12]`, protocol version `data[28]`.
-5. **Validate VID** — if VID ≠ `0x1B1C`, return an error (device rejected). PID then resolves LED count and reverse via the §3 PID table.
+1. **Request** - `0x61←0x00` (`REG_GET_DEVICE_INFO`), then `0x21←0x00` (`REG_BINARY_START`). This arms the device-info buffer.
+2. **Read body** - read register `0x40` (`REG_GET_BINARY_DATA`) 32 times, filling `data[0..32]`.
+3. **Verify CRC** - compute `crc8(data)` (algorithm in §3), read the device CRC from `0x42`. A mismatch **aborts the info read and returns an error**; parsing does not continue with corrupt data.
+4. **Parse** - extract fields per the §1 info-block table: VID `data[0..2]`, PID `data[2..4]`, firmware from `data[8..12]`, protocol version `data[28]`.
+5. **Validate VID** - if VID ≠ `0x1B1C`, return an error (device rejected). PID then resolves LED count and reverse via the §3 PID table.
 
 ### Direct block color write
 
-Used when `protocol_version >= 4` (`build_direct_packet` + `write_direct_packet`). No streaming, no commit, no busy poll — the block write applies on the SMBus ACK.
+Used when `protocol_version >= 4` (`build_direct_packet` + `write_direct_packet`). No streaming, no commit, no busy poll; the block write applies on the SMBus ACK.
 
-1. **Build packet** — length `led_count * 3 + 2`:
+1. **Build packet** - length `led_count * 3 + 2`:
    - byte `[0]` = `led_count`.
    - bytes `[1 + 3i .. +3]` = `R, G, B` of LED `i` (reverse-mapped if the model reverses, §3).
    - byte `[last]` = `crc8(packet[0 .. len-1])` (CRC8 over everything before it).
-2. **Write block 1** — SMBus block-write the first `min(len, 32)` bytes to register `0x31` (`REG_COLOR_BUFFER_BLOCK_1`).
-3. **Write block 2 (conditional)** — only if `len > 32`: block-write bytes `[32..]` to register `0x32` (`REG_COLOR_BUFFER_BLOCK_2`). Example: 10 LEDs → 32 bytes (block 1 only); 12 LEDs → 38 bytes (block 1 = 32, block 2 = 6).
+2. **Write block 1** - SMBus block-write the first `min(len, 32)` bytes to register `0x31` (`REG_COLOR_BUFFER_BLOCK_1`).
+3. **Write block 2 (conditional)** - only if `len > 32`: block-write bytes `[32..]` to register `0x32` (`REG_COLOR_BUFFER_BLOCK_2`). Example: 10 LEDs → 32 bytes (block 1 only); 12 LEDs → 38 bytes (block 1 = 32, block 2 = 6).
 
 ### Streamed RGBA color write
 
 Used when `protocol_version < 4` (legacy DDR4) (`build_effect_color_data` + `stream_and_commit`). Selection vs. the direct path is by `info.protocol_version >= 4`.
 
-1. **Build buffer** — for each LED emit 4 bytes `R, G, B, 0xFF` (alpha fixed at `0xFF`), reverse-mapped if the model reverses (§3). Length `led_count * 4`. No length prefix, no in-buffer CRC.
-2. **Reset** — `0x0B←0x00` (`REG_RESET_BUFFER`).
-3. **Seek** — `0x21←0x00` (`REG_BINARY_START`).
-4. **Stream** — for each buffer byte, `0x20←<byte>` (`REG_SET_BINARY_DATA`).
-5. **Verify CRC** — read device CRC from `0x42`; compare to `crc8(buffer)`. On **mismatch, log a warning and skip the commit** — LEDs are left unchanged.
-6. **Commit** — on match, `0x82←0x02` (`REG_WRITE_CONFIGURATION` ← `CONFIG_ID_COLOR_DATA`).
-7. **Poll** — read `0x30` up to 5 times at 10 ms intervals; done when `(status & 0x08) == 0` (busy bit clear).
+1. **Build buffer** - for each LED emit 4 bytes `R, G, B, 0xFF` (alpha fixed at `0xFF`), reverse-mapped if the model reverses (§3). Length `led_count * 4`. No length prefix, no in-buffer CRC.
+2. **Reset** - `0x0B←0x00` (`REG_RESET_BUFFER`).
+3. **Seek** - `0x21←0x00` (`REG_BINARY_START`).
+4. **Stream** - for each buffer byte, `0x20←<byte>` (`REG_SET_BINARY_DATA`).
+5. **Verify CRC** - read device CRC from `0x42`; compare to `crc8(buffer)`. On **mismatch, log a warning and skip the commit**; LEDs are left unchanged.
+6. **Commit** - on match, `0x82←0x02` (`REG_WRITE_CONFIGURATION` ← `CONFIG_ID_COLOR_DATA`).
+7. **Poll** - read `0x30` up to 5 times at 10 ms intervals; done when `(status & 0x08) == 0` (busy bit clear).
 
 ### Native-effect write
 
 Sets a hardware effect; available on all protocol versions (`build_native_effect` + `stream_and_commit`). Same stream→CRC→commit→poll ceremony as above, differing only in payload and config ID.
 
-1. **Build descriptor** — the 20-byte layout in §1: `[0]` mode, `[1]` speed, `[2]` random flag (`0x00` random else `0x01`), `[3]` direction, `[4..7]` color1 RGB, `[7]` brightness, `[8..11]` color2 RGB, `[11]` brightness again, `[12..20]` zero. Enum values are in §3.
-2. **Reset** — `0x0B←0x00`.
-3. **Seek** — `0x21←0x00`.
-4. **Stream** — `0x20←<byte>` for each of the 20 bytes.
-5. **Verify CRC** — read `0x42`; compare to `crc8(descriptor)`. Mismatch → warn and skip.
-6. **Commit** — `0x82←0x01` (`CONFIG_ID_EFFECT`).
-7. **Poll** — read `0x30` up to 5× at 10 ms until `(status & 0x08) == 0`.
+1. **Build descriptor** - the 20-byte layout in §1: `[0]` mode, `[1]` speed, `[2]` random flag (`0x00` random else `0x01`), `[3]` direction, `[4..7]` color1 RGB, `[7]` brightness, `[8..11]` color2 RGB, `[11]` brightness again, `[12..20]` zero. Enum values are in §3.
+2. **Reset** - `0x0B←0x00`.
+3. **Seek** - `0x21←0x00`.
+4. **Stream** - `0x20←<byte>` for each of the 20 bytes.
+5. **Verify CRC** - read `0x42`; compare to `crc8(descriptor)`. Mismatch → warn and skip.
+6. **Commit** - `0x82←0x01` (`CONFIG_ID_EFFECT`).
+7. **Poll** - read `0x30` up to 5× at 10 ms until `(status & 0x08) == 0`.
 
 ---
 
@@ -184,7 +184,7 @@ This section defines every value, range, enum, and formula the protocol uses. No
 
 Colors are sent **R, G, B** in that byte order. The direct packet uses 3 bytes per LED (`R G B`); the legacy effect buffer uses 4 (`R G B 0xFF`, alpha always `0xFF`). Any LED with no supplied color defaults to black `[0x00, 0x00, 0x00]`.
 
-### LED count & reverse — PID table
+### LED count & reverse - PID table
 
 LED count is **not** carried in the info block; it is determined entirely by the PID (`data[2..4]`) via this table. A model with `reverse = yes` has its color list mirrored before transmission: logical LED 0 is written to the physically last LED, i.e. color index `led_count - 1 - i` is used for output position `i`.
 
@@ -199,7 +199,7 @@ LED count is **not** carried in the info block; it is determined entirely by the
 | Corsair Dominator Platinum RGB DDR4 | `0200` `0201` | 12 | yes |
 | Corsair Vengeance RGB Pro SL DDR4 | `0300` `0301` | 10 | no |
 | Corsair Vengeance RGB RS DDR4 | `0400` `0401` | 6 | no |
-| **Any unlisted PID (fallback)** | — | 10 | no |
+| **Any unlisted PID (fallback)** | - | 10 | no |
 
 An unrecognised PID logs a warning and assumes 10 LEDs, non-reversed (the Vengeance DDR5 layout).
 
@@ -216,7 +216,7 @@ The path is selected purely by the firmware **protocol-version byte** at info-bl
 | `>= 4` | Direct | block writes to `0x31`/`0x32`, framed packet, no commit |
 | `< 4` | Effect/streaming | byte stream + commit `0x82←0x02` + busy poll |
 
-This is a firmware-capability threshold, not the marketing DDR generation — a DDR4 stick on new enough firmware uses the direct path, and canvas/animation frames always use the direct path regardless.
+This is a firmware-capability threshold, not the marketing DDR generation; a DDR4 stick on new enough firmware uses the direct path, and canvas/animation frames always use the direct path regardless.
 
 ### Config IDs (commit register `0x82`)
 
@@ -259,7 +259,7 @@ Known-answer values (used as conformance tests): `crc8([]) = 0x00`, `crc8([0x00]
 | `0x04` | ColorWave | `0x09` | Sequential |
 | `0x05` | Visor | `0x10` | Static |
 
-The UI surfaces only three of these, mapped from string IDs: `breathing` → ColorPulse (`0x01`), `rainbow_wave` → RainbowWave (`0x03`), `color_shift` → ColorShift (`0x00`). The `off` effect is **not** a hardware mode — it writes an all-black per-LED frame instead.
+The UI surfaces only three of these, mapped from string IDs: `breathing` → ColorPulse (`0x01`), `rainbow_wave` → RainbowWave (`0x03`), `color_shift` → ColorShift (`0x00`). The `off` effect is **not** a hardware mode; it writes an all-black per-LED frame instead.
 
 ### Speed enum (descriptor byte `[1]`)
 
@@ -292,22 +292,22 @@ In the native-effect descriptor, **brightness** is a single byte `0x00`–`0xFF`
 
 All reads are register-addressed single bytes (`read_byte_data`); the controller returns no unsolicited data.
 
-- **Info block:** 32 bytes via repeated reads of `0x40`, followed by a CRC8 byte at `0x42` matching `crc8(data[0..32])` (the apply continues even on mismatch — §2 Info-block read).
+- **Info block:** 32 bytes via repeated reads of `0x40`, followed by a CRC8 byte at `0x42` matching `crc8(data[0..32])` (the apply continues even on mismatch, §2 Info-block read).
 - **Detection sentinels:** read `0x43` → one of `0x1A`/`0x1B`/`0x1C`; read `0x44` → one of `0x01`/`0x03`/`0x04`. Any other value (or read error) fails detection.
 - **Streamed-buffer CRC:** after streaming a payload, read `0x42`; the commit proceeds only if it equals `crc8(payload)`.
-- **Busy-bit poll (ACK-after-commit):** after a commit (`0x82`), read `0x30` up to 5× at 10 ms; the device is ready once `(value & 0x08) == 0`. Direct block writes (`0x31`/`0x32`) have no poll — they apply on the SMBus ACK.
+- **Busy-bit poll (ACK-after-commit):** after a commit (`0x82`), read `0x30` up to 5× at 10 ms; the device is ready once `(value & 0x08) == 0`. Direct block writes (`0x31`/`0x32`) have no poll; they apply on the SMBus ACK.
 
 ---
 
 ## 5. Polling & notifications
 
-None — all access is host-initiated request/response. There is no interrupt or asynchronous channel; the busy bit is polled after a commit (see §2 Streamed RGBA color write and §4).
+None; all access is host-initiated request/response. There is no interrupt or asynchronous channel; the busy bit is polled after a commit (see §2 Streamed RGBA color write and §4).
 
 ---
 
 ## Notes
 
-- DDR4/DDR5 behavior is keyed on firmware `protocol_version`, not the physical memory generation — a DDR4 stick on newer firmware uses the direct path.
-- CRC mismatches are non-fatal for the info-block read (logged) but **abort the apply** for streamed writes — a corrupted stream silently leaves LEDs unchanged.
+- DDR4/DDR5 behavior is keyed on firmware `protocol_version`, not the physical memory generation; a DDR4 stick on newer firmware uses the direct path.
+- CRC mismatches are non-fatal for the info-block read (logged) but **abort the apply** for streamed writes; a corrupted stream silently leaves LEDs unchanged.
 - Native effects only ever send brightness `0xFF` and `random = false`; modes beyond breathing/rainbow_wave/color_shift exist in the enum but are not issued by the device layer.
 - Requires SMBus access: plugin-derived udev rules and the `halod` group on Linux; on Windows, PawnIO through HaloDaemon's elevated broker while the daemon and Lua worker remain non-elevated (see [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md)).

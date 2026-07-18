@@ -27,8 +27,8 @@ The host polls by sending command requests and reading the device's replies; the
 
 Offsets are 0-based into the stripped slice. Unlisted bytes are zero. Bytes 0 and 1 are always a **report ID** and a **message ID**:
 
-- Byte 0 — report ID: `0x06` (`REPORT_CMD`, host→device command *and* the device's reply to one) or `0x07` (`REPORT_NOTIFY`, unsolicited device→host notification).
-- Byte 1 — message ID. A host command and its matching notification share the same message ID (e.g. `0x37` mic-volume is both set and reported).
+- Byte 0 - report ID: `0x06` (`REPORT_CMD`, host→device command *and* the device's reply to one) or `0x07` (`REPORT_NOTIFY`, unsolicited device→host notification).
+- Byte 1 - message ID. A host command and its matching notification share the same message ID (e.g. `0x37` mic-volume is both set and reported).
 
 There is no checksum and no ACK.
 
@@ -134,16 +134,16 @@ Every write uses report ID `0x06`.
 | EQ preset select | `06 2E <preset>` | raw preset byte (not clamped) | shared write flow. See *Set custom EQ* |
 | EQ band write | `06 33 <b0>…<b9>` | 10 raw band bytes | preceded by preset `0x04`; shared write flow. See *Set custom EQ* |
 | ChatMix display activate | `06 49 01` | fixed `0x01` | sent once on init; no persist |
-| Persist | `06 09` | — | commit prior write to NVRAM |
-| Status-poll request | `06 B0` | — | reply = status response (§4) |
-| Settings-poll request | `06 20` | — | reply = settings response (§4) |
+| Persist | `06 09` | - | commit prior write to NVRAM |
+| Status-poll request | `06 B0` | - | reply = status response (§4) |
+| Settings-poll request | `06 20` | - | reply = settings response (§4) |
 
 ### Shared write flow (write → persist)
 
 Every user-driven setting write (`set_choice`, `set_range`, the equalizer setters) follows the same flow:
 
 1. **Write** the command packet, e.g. `06 39 <level>` for sidetone.
-2. **Persist** — send `06 09`, committing the value to NVRAM. Best-effort: a failure is swallowed because the hardware already holds the value.
+2. **Persist** - send `06 09`, committing the value to NVRAM. Best-effort: a failure is swallowed because the hardware already holds the value.
 
 The plugin does not run a read-back suppression window. Choice/range values are **host-cached** by the daemon (seeded from the device on `initialize`, then updated on each write), so a stale poll read cannot clobber a value the user just set. Battery, mic-mute, and the equalizer are read live from the poll instead.
 
@@ -155,7 +155,7 @@ The plugin does not run a read-back suppression window. Choice/range values are 
 
 ### NC level / transparency (`06 B9 <level>`)
 
-`level` 0–10 (clamped with `min(10)`) sets the transparency strength used when NC mode is *transparent*. Distinct from NC mode: it has its own opcode `0xB9` (not the shared-`0x33` form — see below). Read back from the status response at byte `0x08`.
+`level` 0–10 (clamped with `min(10)`) sets the transparency strength used when NC mode is *transparent*. Distinct from NC mode: it has its own opcode `0xB9` (not the shared-`0x33` form, see below). Read back from the status response at byte `0x08`.
 
 ### Set custom EQ
 
@@ -343,25 +343,25 @@ A poll pass writes the status request `06 B0` then the settings request `06 20`,
 
 ### Host-cached controls (no suppress window)
 
-The daemon caches choice/range control values host-side: seeded from the device on `initialize`, then updated on each write. There is therefore no read-back suppression window — a stale poll read cannot clobber a just-written value, because poll only refreshes the live-read state (battery, mic-mute, equalizer), not the cached controls.
+The daemon caches choice/range control values host-side: seeded from the device on `initialize`, then updated on each write. There is therefore no read-back suppression window: a stale poll read cannot clobber a just-written value, because poll only refreshes the live-read state (battery, mic-mute, equalizer), not the cached controls.
 
 ### ChatMix
 
-On `initialize` the plugin registers two virtual audio sinks — **Media** and **Chat** — via the daemon's `dev.audio` API, each looped into the headset's physical sink. On every poll pass it parses any `07 45 <game> <chat>` dial notification and sets the Media sink's volume to `game` and the Chat sink's to `chat`, so the physical dial balances game/media audio against chat audio. The notification is emitted only when the dial moves, so `set_volume` runs only on an actual change. Both sinks are required — if either fails to register (e.g. no matching physical sink, or Windows), ChatMix stays inactive. The sinks are host-owned and torn down when the device closes.
+On `initialize` the plugin registers two virtual audio sinks, **Media** and **Chat**, via the daemon's `dev.audio` API, each looped into the headset's physical sink. On every poll pass it parses any `07 45 <game> <chat>` dial notification and sets the Media sink's volume to `game` and the Chat sink's to `chat`, so the physical dial balances game/media audio against chat audio. The notification is emitted only when the dial moves, so `set_volume` runs only on an actual change. Both sinks are required: if either fails to register (e.g. no matching physical sink, or Windows), ChatMix stays inactive. The sinks are host-owned and torn down when the device closes.
 
 ### Unsolicited notifications
 
-- **ChatMix** — `07 45 <game> <chat>`, each 0–100. Drives the Media/Chat sink volumes (see above).
-- **Mic volume** — `07 37 <level>`, level 1–10. Drained and ignored.
-- **Station volume** — `07 25 <level>`, a signed dB attenuation. Drained and ignored.
+- **ChatMix** - `07 45 <game> <chat>`, each 0–100. Drives the Media/Chat sink volumes (see above).
+- **Mic volume** - `07 37 <level>`, level 1–10. Drained and ignored.
+- **Station volume** - `07 25 <level>`, a signed dB attenuation. Drained and ignored.
 
 ---
 
 ## Notes
 
 - **NC mode opcode `0xBD` is inferred** and needs hardware confirmation.
-- **Mic mute is read-only** — no write opcode exists for it.
-- **`0x47` sets the ChatMix balance** — the host→device frame `06 47 <game> 00 <chat>` writes the game/chat split, mirroring the `07 45` notification. The plugin does not emit it: it balances ChatMix through two virtual audio sinks (see §5) rather than the device's hardware split. Documented here for reference only.
-- **Shared `0x33`** — length-disambiguated; the plugin only emits the 10-byte EQ-band form, never the NC-level form (NC level uses `0xB9`).
-- **No checksum / ACK** — writes are fire-and-forget; `persist` failures are not surfaced.
-- **Settings frame always carries the Custom curve** — band values read back reflect the Custom preset regardless of the active preset.
+- **Mic mute is read-only** - no write opcode exists for it.
+- **`0x47` sets the ChatMix balance** - the host→device frame `06 47 <game> 00 <chat>` writes the game/chat split, mirroring the `07 45` notification. The plugin does not emit it: it balances ChatMix through two virtual audio sinks (see §5) rather than the device's hardware split. Documented here for reference only.
+- **Shared `0x33`** - length-disambiguated; the plugin only emits the 10-byte EQ-band form, never the NC-level form (NC level uses `0xB9`).
+- **No checksum / ACK** - writes are fire-and-forget; `persist` failures are not surfaced.
+- **Settings frame always carries the Custom curve** - band values read back reflect the Custom preset regardless of the active preset.

@@ -1,8 +1,8 @@
 # DDC/CI protocol
 
-DDC/CI (Display Data Channel Command Interface) MCCS control tunnelled over USB vendor control transfers — the complete control surface HaloDaemon uses to drive the Philips Evnia 49 monitor (brightness, picture, audio, OSD, system, gaming, and device-info reads).
+DDC/CI (Display Data Channel Command Interface) MCCS control tunnelled over USB vendor control transfers, the complete control surface HaloDaemon uses to drive the Philips Evnia 49 monitor (brightness, picture, audio, OSD, system, gaming, and device-info reads).
 
-**Credits:** VESA DDC/CI and MCCS standards — no reverse engineering required.
+**Credits:** VESA DDC/CI and MCCS standards; no reverse engineering required.
 
 ---
 
@@ -25,7 +25,7 @@ Timing: reads wait `150 ms` after the request before the reply is read (firmware
 
 All frames share the DDC/CI envelope: source byte `0x6e`, host byte `0x51`, a length byte (`0x80 | payload_len`), then the MCCS opcode and payload, terminated by an XOR checksum (defined in full in [§3](#xor-checksum-algorithm)).
 
-### Standard Set-VCP write — 8 bytes (`build_write`)
+### Standard Set-VCP write - 8 bytes (`build_write`)
 
 ```
 Offset  Value   Meaning
@@ -39,7 +39,7 @@ Offset  Value   Meaning
   7     xor     XOR of bytes 0..6
 ```
 
-### Extended (Philips vendor) Set write — 10 bytes (`build_extended_set`)
+### Extended (Philips vendor) Set write - 10 bytes (`build_extended_set`)
 
 Philips OSD-only settings sit behind vendor VCP `0xE2` with prefix `0xA0`; the setting is chosen by a one-byte sub-command.
 
@@ -57,20 +57,20 @@ Offset  Value   Meaning
   9     xor     XOR of bytes 0..9
 ```
 
-### Standard Get-VCP request — 6 bytes (`build_get_standard`)
+### Standard Get-VCP request - 6 bytes (`build_get_standard`)
 
 ```
 0x6E  0x51  0x82  0x01  vcp  xor
                   └ Get VCP Feature opcode
 ```
 
-### Extended Get request — 8 bytes (`build_get_extended`)
+### Extended Get request - 8 bytes (`build_get_extended`)
 
 ```
 0x6E  0x51  0x84  0x01  0xE2  0xA0  sub  xor
 ```
 
-### Get-info string request — 10 bytes (`build_get_info`)
+### Get-info string request - 10 bytes (`build_get_info`)
 
 Reads device-info / EEPROM strings; the 4-byte address selects the page.
 
@@ -81,8 +81,8 @@ Reads device-info / EEPROM strings; the 4-byte address selects the page.
 
 ### Reply frames
 
-- **Get-VCP reply** (`parse_get_reply`) — `6e 88 02 00 vcp type maxH maxL curH curL xor`. Current value is the big-endian `u16` from bytes 8–9.
-- **Info-string reply** (`parse_info_reply`) — `6e <len> [02 fe <addr_echo>] <ascii…> xor`. The standard envelope carries an `02 fe <addr_echo>` prefix; the asset-EEPROM reply (`ef 13 00 20`) is raw ASCII with no prefix.
+- **Get-VCP reply** (`parse_get_reply`) - `6e 88 02 00 vcp type maxH maxL curH curL xor`. Current value is the big-endian `u16` from bytes 8–9.
+- **Info-string reply** (`parse_info_reply`) - `6e <len> [02 fe <addr_echo>] <ascii…> xor`. The standard envelope carries an `02 fe <addr_echo>` prefix; the asset-EEPROM reply (`ef 13 00 20`) is raw ASCII with no prefix.
 
 Reply parsing, error codes, and reply-checksum verification are detailed in [§4](#4-responses).
 
@@ -90,7 +90,7 @@ Reply parsing, error codes, and reply-checksum verification are detailed in [§4
 
 ## 2. Functions
 
-Frame column shows exact bytes with `<param>` placeholders. **STD** = 8-byte `build_write(vcp, value)`; **EXT** = 10-byte `build_extended_set(sub, value)` (vendor prefix `0xE2 0xA0`). The `<xor>` byte is the trailing checksum — its computation is the same for every frame and is shown in [§2 Standard Set flow](#standard-set-vcp-flow) and defined in [§3](#xor-checksum-algorithm). Every individual VCP write below is a plain `build_write`/`build_extended_set` call with identical mechanics, so they stay table rows referencing the Set-flow subsections. Enum/range values resolve in [§3](#3-parameters).
+Frame column shows exact bytes with `<param>` placeholders. **STD** = 8-byte `build_write(vcp, value)`; **EXT** = 10-byte `build_extended_set(sub, value)` (vendor prefix `0xE2 0xA0`). The `<xor>` byte is the trailing checksum, its computation is the same for every frame and is shown in [§2 Standard Set flow](#standard-set-vcp-flow) and defined in [§3](#xor-checksum-algorithm). Every individual VCP write below is a plain `build_write`/`build_extended_set` call with identical mechanics, so they stay table rows referencing the Set-flow subsections. Enum/range values resolve in [§3](#3-parameters).
 
 ### Picture
 
@@ -167,13 +167,13 @@ Frame column shows exact bytes with `<param>` placeholders. **STD** = 8-byte `bu
 
 Used by every "STD" row above. `build_write(vcp, value)`:
 
-1. Lay out the 8-byte frame `[0x6e, 0x51, 0x84, 0x03, vcp, 0x00, value, 0x00]`. Byte 2 `0x84` = `0x80 | 4` (length 4); byte 3 `0x03` = Set-VCP opcode; byte 4 is the VCP code; byte 5 is the value-high byte (always `0x00` — all values are 8-bit); byte 6 is the value.
+1. Lay out the 8-byte frame `[0x6e, 0x51, 0x84, 0x03, vcp, 0x00, value, 0x00]`. Byte 2 `0x84` = `0x80 | 4` (length 4); byte 3 `0x03` = Set-VCP opcode; byte 4 is the VCP code; byte 5 is the value-high byte (always `0x00`, all values are 8-bit); byte 6 is the value.
 2. Compute the checksum over **bytes 0–6** (XOR fold from seed `0x00`, see [§3](#xor-checksum-algorithm)) and store it in byte 7.
 3. Issue the control-OUT (`bmRequestType=0x40`, `bRequest=0xB2`, `wValue=0`, `wIndex=0`) carrying the 8 bytes, after honouring the 50 ms write gap (`write_packet`).
 
-There is no acknowledgement — the write is fire-and-forget.
+There is no acknowledgement; the write is fire-and-forget.
 
-Worked example — brightness 75 (`0x4B`): frame `6e 51 84 03 10 00 4b`, checksum `6e^51^84^03^10^00^4b = 0x9b`, transmitted `6e 51 84 03 10 00 4b 9b`.
+Worked example, brightness 75 (`0x4B`): frame `6e 51 84 03 10 00 4b`, checksum `6e^51^84^03^10^00^4b = 0x9b`, transmitted `6e 51 84 03 10 00 4b 9b`.
 
 ### Extended Set-VCP flow
 
@@ -183,16 +183,16 @@ Used by every "EXT" row above. `build_extended_set(sub, value)`:
 2. Compute the checksum over **bytes 0–8** (seed `0x00`) into byte 9.
 3. Issue the control-OUT exactly as the standard flow (same `bmRequestType`/`bRequest`/`wValue`/`wIndex`).
 
-Worked example — light-enhancement 3: frame `6e 51 86 03 e2 a0 3d 00 03`, checksum `…^03 = 0xc6`, transmitted `6e 51 86 03 e2 a0 3d 00 03 c6`.
+Worked example, light-enhancement 3: frame `6e 51 86 03 e2 a0 3d 00 03`, checksum `…^03 = 0xc6`, transmitted `6e 51 86 03 e2 a0 3d 00 03 c6`.
 
 ### Get-VCP read flow
 
 Used by `get_standard`/`get_extended`:
 
-1. **Request.** Build the get frame — standard `6e 51 82 01 <vcp> <xor>` (`build_get_standard`, byte 3 `0x01` = Get-VCP opcode) or extended `6e 51 84 01 e2 a0 <sub> <xor>` (`build_get_extended`) — and write it via the standard control-OUT.
+1. **Request.** Build the get frame, standard `6e 51 82 01 <vcp> <xor>` (`build_get_standard`, byte 3 `0x01` = Get-VCP opcode) or extended `6e 51 84 01 e2 a0 <sub> <xor>` (`build_get_extended`), and write it via the standard control-OUT.
 2. **Wait.** Sleep `READ_DELAY` = 150 ms so the firmware can assemble the reply.
 3. **Read.** Issue the control-IN (`bmRequestType=0xC0`, `bRequest=0xA3`, `wValue=0`, `wIndex=0x006F`) into a 32-byte buffer.
-4. **Parse** (`parse_get_reply`): verify byte 0 == `0x6e`, byte 2 == `0x02` (reply opcode), byte 3 == `0x00` (error code; non-zero = monitor error), and the reply checksum `buf[10] == 0x50 ^ XOR(buf[0..10])` (seed `0x50`, see [§3](#xor-checksum-algorithm)). Return the big-endian `u16` from bytes 8–9. Extended replies use the identical layout and report `vcp = 0xe2` (the sub byte is omitted — the caller already knows it).
+4. **Parse** (`parse_get_reply`): verify byte 0 == `0x6e`, byte 2 == `0x02` (reply opcode), byte 3 == `0x00` (error code; non-zero = monitor error), and the reply checksum `buf[10] == 0x50 ^ XOR(buf[0..10])` (seed `0x50`, see [§3](#xor-checksum-algorithm)). Return the big-endian `u16` from bytes 8–9. Extended replies use the identical layout and report `vcp = 0xe2` (the sub byte is omitted, the caller already knows it).
 
 ### Device-info string read flow
 
@@ -212,7 +212,7 @@ The five device-info pages:
 | Panel id | `e1 e8 00 00` | standard `02 fe …` |
 | Serial number | `ef 13 00 20` | raw ASCII (asset EEPROM) |
 
-**Frame-type selection.** Standard MCCS features use the standard 8-byte Set; Philips OSD-only features behind vendor VCP `0xE2 0xA0` use the extended 10-byte Set. Reads mirror this. No apply/commit step exists — each Set takes effect on its own, subject only to the 50 ms write gap.
+**Frame-type selection.** Standard MCCS features use the standard 8-byte Set; Philips OSD-only features behind vendor VCP `0xE2 0xA0` use the extended 10-byte Set. Reads mirror this. No apply/commit step exists; each Set takes effect on its own, subject only to the 50 ms write gap.
 
 ---
 
@@ -228,10 +228,10 @@ The trailing checksum byte of every frame is a running XOR fold. Given the frame
 checksum = seed XOR b[0] XOR b[1] XOR … XOR b[k-1]
 ```
 
-- **Outbound frames (all writes and get-requests): seed = `0x00`.** The checksum covers every byte from offset 0 up to (but not including) the checksum slot — bytes 0–6 for the 8-byte Set, 0–8 for the 10-byte extended Set, 0–4 for the 6-byte get, 0–6 for the 8-byte extended get, 0–8 for the 10-byte get-info.
+- **Outbound frames (all writes and get-requests): seed = `0x00`.** The checksum covers every byte from offset 0 up to (but not including) the checksum slot: bytes 0–6 for the 8-byte Set, 0–8 for the 10-byte extended Set, 0–4 for the 6-byte get, 0–6 for the 8-byte extended get, 0–8 for the 10-byte get-info.
 - **Reply frames (get-VCP and info-string): seed = `0x50`.** The verifier computes `0x50 XOR (XOR of all reply bytes before the checksum slot)` and compares it to the received checksum byte.
 
-Worked example (outbound, seed `0x00`) — contrast = 0, frame `6e 51 84 03 12 00 00`:
+Worked example (outbound, seed `0x00`), contrast = 0, frame `6e 51 84 03 12 00 00`:
 `0x00 ^ 0x6e = 0x6e`; `^0x51 = 0x3f`; `^0x84 = 0xbb`; `^0x03 = 0xb8`; `^0x12 = 0xaa`; `^0x00 = 0xaa`; `^0x00 = 0xaa`. Checksum = **`0xaa`**, so the wire bytes are `6e 51 84 03 12 00 00 aa`.
 
 (The first XORed byte is `0x6e` itself, so the outbound `0x00` seed yields an effective `0x6e`-seeded fold over the remaining bytes; replies fold from an explicit `0x50` seed instead.)
@@ -240,23 +240,23 @@ Worked example (outbound, seed `0x00`) — contrast = 0, frame `6e 51 84 03 12 0
 
 Every settable value is a single unsigned byte. In both Set frames the byte immediately before the value (`value high byte`) is always `0x00`; the device uses only the low byte. Ranges below are inclusive.
 
-### Brightness / Contrast / Sharpness / Volume — `0x10` / `0x12` / `0x87` / `0x62`
+### Brightness / Contrast / Sharpness / Volume - `0x10` / `0x12` / `0x87` / `0x62`
 
 Whole value **0–100**, sent directly as the value byte.
 
-### Light / Color Enhancement — EXT `0x3D` / `0x3E`
+### Light / Color Enhancement - EXT `0x3D` / `0x3E`
 
 Whole value **0–3** (0 = off … 3 = strongest).
 
-### OSD H-Position / V-Position — EXT `0x0E` / `0x0F`
+### OSD H-Position / V-Position - EXT `0x0E` / `0x0F`
 
 Whole value **0–100**.
 
-### Power LED Brightness — `0xF2`
+### Power LED Brightness - `0xF2`
 
 Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-brighter; UI labels the endpoints "Off" and "Max").
 
-### Color Temperature — VCP `0x14`
+### Color Temperature - VCP `0x14`
 
 | Code | Label |
 |------|-------|
@@ -269,7 +269,7 @@ Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-bright
 | `0x0A` | 11500K |
 | `0x0D` | Preset |
 
-### Select Gamma — VCP `0x72`
+### Select Gamma - VCP `0x72`
 
 | Code | Label |
 |------|-------|
@@ -279,7 +279,7 @@ Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-bright
 | `0x8C` | 2.4 |
 | `0xA0` | 2.6 |
 
-### Input Source — VCP `0x60`
+### Input Source - VCP `0x60`
 
 | Code | Id | Label |
 |------|----|-------|
@@ -290,7 +290,7 @@ Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-bright
 
 The write sends just the port code in the value byte. On **read**, VCP `0x60` returns the port code in the low byte and `0x35` in the high byte; the driver masks with `& 0xFF` to recover the port.
 
-### SmartImage — VCP `0xDC`
+### SmartImage - VCP `0xDC`
 
 SDR and HDR presets share this single VCP. Codes `0x21`–`0x24` and `0x30` are the HDR presets; `0x20` = HDR Off.
 
@@ -316,7 +316,7 @@ SDR and HDR presets share this single VCP. Codes `0x21`–`0x24` and `0x30` are 
 
 The OSD only shows the subset valid for the current input mode, so this exposed list is a superset of what any single mode displays. A separate cap-string entry `0xE2` is omitted (unknown OSD label).
 
-### OSD Language — VCP `0xCC` (21 entries)
+### OSD Language - VCP `0xCC` (21 entries)
 
 | Code | Label |
 |------|-------|
@@ -342,7 +342,7 @@ The OSD only shows the subset valid for the current input mode, so this exposed 
 | `0x1E` | Ukrainian |
 | `0x24` | Swedish |
 
-### Pixel Orbiting — EXT `0x34`
+### Pixel Orbiting - EXT `0x34`
 
 | Code | Label |
 |------|-------|
@@ -351,7 +351,7 @@ The OSD only shows the subset valid for the current input mode, so this exposed 
 | `0x03` | Normal |
 | `0x04` | Fast |
 
-### Screen Saver — EXT `0x35`
+### Screen Saver - EXT `0x35`
 
 | Code | Label |
 |------|-------|
@@ -382,15 +382,15 @@ Most booleans send `0` (off) / `1` (on) directly: `low_input_lag` `0x07`, `usb_s
 | Resolution Notice | STD `0xE9` | `0x00` | `0x02` |
 | sRGB | EXT `0x20` | `0x00` | `0x02` |
 
-### Pixel Refresh — EXT `0x36`
+### Pixel Refresh - EXT `0x36`
 
-Momentary action, not a stored setting: always sends value `0x01` once. There is no "off" — triggering it runs a one-shot panel pixel-refresh cycle.
+Momentary action, not a stored setting: always sends value `0x01` once. There is no "off"; triggering it runs a one-shot panel pixel-refresh cycle.
 
 ---
 
 ## 4. Responses
 
-Writes have no acknowledgement frame — they are fire-and-forget control-OUTs.
+Writes have no acknowledgement frame; they are fire-and-forget control-OUTs.
 
 **Get-VCP reply** (`parse_get_reply`): `6e 88 02 00 vcp type maxH maxL curH curL xor`. The driver verifies byte 0 == `0x6e`, byte 2 == `0x02` (reply opcode), byte 3 == `0x00` (error code; non-zero ⇒ monitor error, surfaced as an error and the read skipped), and the checksum `buf[10] == 0x50 ^ XOR(buf[0..10])`. The returned value is the big-endian `u16` from bytes 8–9. Extended-VCP replies use the identical layout with `vcp` reported as `0xe2`.
 
@@ -402,13 +402,13 @@ Writes have no acknowledgement frame — they are fire-and-forget control-OUTs.
 
 ## 5. Polling & notifications
 
-None — the protocol is host-initiated. The monitor never pushes state; every value is obtained with an explicit Get request (see [§2 Reads](#reads-get-requests) / [§4](#4-responses)). At `initialize()` the driver reads all device-info strings once, then `refresh_from_monitor()` re-reads every VCP on its own cadence; individual read failures are logged and skipped so one mode-gated VCP doesn't block connection.
+None; the protocol is host-initiated. The monitor never pushes state; every value is obtained with an explicit Get request (see [§2 Reads](#reads-get-requests) / [§4](#4-responses)). At `initialize()` the driver reads all device-info strings once, then `refresh_from_monitor()` re-reads every VCP on its own cadence; individual read failures are logged and skipped so one mode-gated VCP doesn't block connection.
 
 ---
 
 ## Notes
 
-- No apply/commit step — each Set takes effect individually; the only ordering constraint is the 50 ms minimum gap between writes, without which the firmware drops or mis-applies commands.
+- No apply/commit step: each Set takes effect individually; the only ordering constraint is the 50 ms minimum gap between writes, without which the firmware drops or mis-applies commands.
 - Many VCPs are mode-gated by the firmware (e.g. brightness is locked unless SmartImage is "Personal"); a Get on a gated VCP returns an error and is skipped.
 - The outbound checksum seed is `0x00`; reply checksums use seed `0x50`. The `0x50` seed never appears in outbound frames.
 - SmartImage and HDR presets share one VCP, so the exposed preset list is a superset of what any single input mode shows in the OSD.

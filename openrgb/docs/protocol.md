@@ -4,7 +4,7 @@ The network protocol OpenRGB's SDK server exposes (default `127.0.0.1:6742`,
 "ORGB" on a phone keypad), letting a client enumerate the RGB controllers
 OpenRGB itself supports and drive them directly.
 
-**Source:** transcribed directly from OpenRGB's own serialization code —
+**Source:** transcribed directly from OpenRGB's own serialization code:
 `RGBController::GetDeviceDescriptionData`/`GetModeDescriptionData`/
 `GetZoneDescriptionData` in `RGBController/RGBController.cpp`, and
 `NetworkServer::SendReply_ControllerData`/`ProcessRequest_ClientProtocolVersion`
@@ -12,7 +12,7 @@ in `NetworkServer.cpp` (both in the
 [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) repository,
 GPL-2.0-or-later). Several third-party summaries of this protocol get details
 wrong (a version-1+ `vendor` field is easy to miss, since it isn't obvious
-from a packet capture alone) — this doc and the client are both checked
+from a packet capture alone); this doc and the client are both checked
 against the actual server source, not a paraphrase of it.
 
 ---
@@ -22,13 +22,13 @@ against the actual server source, not a paraphrase of it.
 TCP, little-endian throughout. HaloDaemon connects as a client through its
 [`tcp` plugin transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#stream-transport-tcp);
 the implementation is this repository's [`openrgb/main.lua`](../../openrgb/main.lua)
-integration package (not a hardware device—it connects to a host/port the user
+integration package (not a hardware device, it connects to a host/port the user
 configures).
 
 **Scope implemented:** connect, name the client, enumerate controllers and
 their zones, and drive them in Direct/custom mode (`SetCustomMode` +
 `UpdateZoneLEDs`). Mode enumeration/switching beyond that, profiles, and
-plugin-to-plugin messages are **not** implemented — see [Fields deliberately
+plugin-to-plugin messages are **not** implemented; see [Fields deliberately
 not parsed](#fields-deliberately-not-parsed).
 
 ---
@@ -40,9 +40,9 @@ Every message starts with a fixed 16-byte header:
 | Offset | Size | Field | Value |
 |--------|------|-------|-------|
 | 0 | 4 | magic | `"ORGB"` (ASCII, not null-terminated) |
-| 4 | 4 | `device_idx` | u32 — target controller index (0 for global requests) |
-| 8 | 4 | `packet_id` | u32 — message type, see below |
-| 12 | 4 | `message_size` | u32 — length of the payload that follows (**not** including this header) |
+| 4 | 4 | `device_idx` | u32, target controller index (0 for global requests) |
+| 8 | 4 | `packet_id` | u32, message type, see below |
+| 12 | 4 | `message_size` | u32, length of the payload that follows (**not** including this header) |
 
 ## 2. Message types used
 
@@ -55,9 +55,9 @@ Every message starts with a fixed 16-byte header:
 | 1051 | `RGBCONTROLLER_UPDATEZONELEDS` | client → server, no reply |
 | 1100 | `RGBCONTROLLER_SETCUSTOMMODE` | client → server, no reply, empty payload |
 
-(OpenRGB defines many more — server info/flags, detection, profile/plugin/
+(OpenRGB defines many more: server info/flags, detection, profile/plugin/
 settings managers, `RESIZEZONE`, `UPDATELEDS`/`UPDATESINGLELED`,
-`UPDATEMODE`/`SAVEMODE`/`UPDATEZONEMODE` — none are used by this client.)
+`UPDATEMODE`/`SAVEMODE`/`UPDATEZONEMODE`; none are used by this client.)
 
 ## 3. Protocol version negotiation
 
