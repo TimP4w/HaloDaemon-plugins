@@ -22,6 +22,14 @@ devices:
     type: keyboard
     match: { hid: { vid: 0x046d, pid: 0xc352, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
   - vendor: Logitech
+    model: Unifying Receiver
+    type: dongle
+    match: { hid: { vid: 0x046d, pids: [0xc52b, 0xc532], interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
+  - vendor: Logitech
+    model: Nano Receiver
+    type: dongle
+    match: { hid: { vid: 0x046d, pids: [0xc518, 0xc51a, 0xc51b, 0xc521, 0xc525, 0xc526, 0xc52e, 0xc52f, 0xc531, 0xc534, 0xc535, 0xc537], interface: 1, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
+  - vendor: Logitech
     model: LIGHTSPEED Receiver
     type: dongle
     # Windows exposes the HID++ vendor interface as two collections. Receiver
@@ -29,7 +37,7 @@ devices:
     # (usage page FF00 / usage 1), never the long-report col02 collection.
     # Pacing (max_bytes_per_sec) is the aggregate ceiling for the mouse+keyboard
     # sharing this receiver: unpaced per-key frames stall the receiver.
-    match: { hid: { vid: 0x046d, pid: 0xc547, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
+    match: { hid: { vid: 0x046d, pids: [0xc539, 0xc53a, 0xc53d, 0xc53f, 0xc541, 0xc545, 0xc547, 0xc54d], interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
   - vendor: Logitech
     model: PRO X Wireless
     type: headset
@@ -59,5 +67,5 @@ transports:
     report_size: 0
     # Bounds a missed/slow HID++ reply's stall on the synchronous dispatch worker
     # (~2x this) so it can't back up queued RGB frames and button-input handling.
-    timeout_ms: 150
+    timeout_ms: 250
     companion: { usage_page: 0xff00, usage: 2 }

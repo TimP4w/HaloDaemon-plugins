@@ -199,7 +199,7 @@ Each device needs `vendor`, `model`, and exactly one nested `match` entry.
 | Match | Main fields |
 |---|---|
 | `hid` | `vid`, `pid` or `pids`; optional `usage_page`, `usage`, `interface`, `max_bytes_per_sec` |
-| `usb` | `vid` and `pid`; optional `interface` (default `0`) |
+| `usb` | `vid` and `pid` (or `pids`); optional `interface` (default `0`), `serial`, `max_bytes_per_sec` |
 | `smbus` | `bus`, `addresses`; optional `extra_addresses`, `pre_scan`, `probe`, `pci_match`, `max_bytes_per_sec` |
 | `command` | Exact executable name |
 | `amd_smn` | `any: true` |
@@ -212,7 +212,9 @@ SMBus `bus` is `chipset` or `gpu`. `probe` is `quick`, `read_byte`, or `none`.
 A GPU match also needs at least one `pci_match` entry.
 
 USB discovery keeps the bus, port path, address, interface, and serial. This
-keeps identical VID/PID devices separate.
+keeps identical VID/PID devices separate. A USB match may use `pids` for a
+device family (like `hid`), `serial` to bind to one unit, and
+`max_bytes_per_sec` to cap that device's write rate.
 
 ### Control layout
 
@@ -257,9 +259,9 @@ the plugin declares.
 | `secure_storage` | Reading this plugin's protected config values. |
 | `audio_routing` | Creating and controlling host audio sinks. |
 
-A hardware match must declare its matching permission. TCP requires `network`.
-The command transport requires `command`. A new permission requires new user
-consent.
+A hardware match must declare its matching permission. TCP and HTTP require
+`network`. The command transport requires `command`. A new permission requires
+new user consent.
 
 ## Host requirements
 
@@ -360,6 +362,102 @@ transports:
 only when the integration must connect to loopback, private, or link-local
 addresses.
 
+### Serial
+
+A serial/COM byte stream for integrations that talk over a UART or USB-serial
+adapter. Requires the `serial` permission.
+
+```yaml
+permissions: [serial]
+transports:
+  serial:
+    port_key: serial_port   # config field holding the selected port
+    baud: 115200
+    data_bits: 8            # 5–8
+    parity: none            # none | odd | even
+    stop_bits: 1            # 1 | 2
+    read_timeout_ms: 1000
+    dtr: true               # optional initial line states
+    rts: false
+    flush_on_open: true
+    reconnect: true         # reopen after an I/O failure
+    events: true            # deliver unsolicited bytes to event()
+    max_bytes: 65536        # per read/write and event-queue bound
+config:
+  fields:
+    - { key: serial_port, label: Port, kind: serial_port }
+```
+
+`port_key` names a `config` field of kind `serial_port`, which the GUI renders as
+a dropdown of the host's ports. Prefer a replug-stable `/dev/serial/by-id/...`
+value. See [docs/transports/serial.md](../../HaloDaemon/docs/transports/serial.md)
+for the runtime contract and line-control operations.
+
+### HTTP
+
+A scoped HTTP client for integrations. Requires the `network` permission.
+
+```yaml
+permissions: [network]
+transports:
+  http:
+    host_key: host
+    origins: ["https://{host}", "https://api.example.com"]
+    methods: [GET, POST]
+    max_request_bytes: 65536
+    max_response_bytes: 1048576
+    max_timeout_ms: 10000
+    max_concurrency: 4
+    allow_private: false
+    tls:
+      profile: custom-ca
+      ca_der_base64: <base64 DER trust anchor>
+      verify_identity: bridge_id
+      certificate_identity: webpki
+```
+
+`origins` is an exact `scheme://host[:port]` allowlist — no wildcards. An origin
+whose address isn't known at authoring time uses the literal token `{host}`,
+resolved at runtime from the config field named by `host_key`. `methods`
+defaults to `[GET]`. The size, timeout, and concurrency ceilings default to
+`64 KiB` / `1 MiB` / `10000 ms` / `4`. Set `allow_private: true` only when the
+integration must reach loopback, private, or link-local origins.
+
+`tls.profile` is `default` (public web PKI) or `custom-ca`. `custom-ca` trusts
+exactly the plugin-shipped `ca_der_base64` DER root and **requires**
+`verify_identity` to name a non-secure config field used as the TLS server name
+while the socket still connects to the `host_key` address.
+`certificate_identity` is `webpki` (standard SAN verification, the default) or
+`subject-cn` (match one exact subject CN). Plugins cannot disable certificate
+verification. An integration declares exactly one root transport, so `http`,
+`tcp`, `serial`, and `hwmon` cannot appear together.
+
+### UDP
+
+A scoped connected-UDP capability (`halod.udp`). Like `http` it is a bounded
+capability rather than a root transport, so it may accompany a device or an
+integration. Requires the `network` permission. Datagrams may only reach the one
+configured destination — there is no broadcast, multicast, or `send_to`.
+
+```yaml
+permissions: [network]
+transports:
+  udp:
+    host_key: host          # config field holding the destination host
+    port_key: port          # config field holding the destination port
+    allow_private: false
+    max_datagram_bytes: 65507   # 1–65507 (the UDP/IPv4 payload maximum)
+    send_timeout_ms: 5000
+    recv_timeout_ms: 5000
+config:
+  fields:
+    - { key: host, label: Host, kind: host }
+    - { key: port, label: Port, kind: port }
+```
+
+The destination is resolved once through the SSRF guard; set `allow_private:
+true` only for a LAN device. See [docs/lua-api.md](lua-api.md) for `halod.udp`.
+
 ### Command
 
 ```yaml
@@ -452,28 +550,6 @@ An integration without `setup` is considered configured immediately, but it
 still implements `validate(context)`. Halo invokes validation before every
 enable. A setup integration is enabled only after pairing and final validation
 succeed.
-
-### Hue bridge TLS
-
-The `hue-bridge` HTTP TLS profile trusts only the Signify Hue Bridge issuing
-CA and verifies the bridge certificate against the identity stored in the
-config field named by `verify_identity`:
-
-```yaml
-transports:
-  http:
-    host_key: host
-    origins: ["https://{host}"]
-    tls:
-      profile: hue-bridge
-      verify_identity: bridge_id
-```
-
-Halo connects to the configured LAN address while using `bridge_id` as the TLS
-server name. Plugins cannot disable certificate verification. Bridges whose
-certificate chains to an on-bridge root are not accepted by this profile; they
-need an explicit, host-owned trust-on-pairing design rather than a plugin flag
-that silently disables TLS verification.
 
 ## Config fields
 

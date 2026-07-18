@@ -3,7 +3,7 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.5.1
+version: 1.6.0
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 signing_key:
@@ -27,7 +27,7 @@ packages:
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 497a7d71434a9f93bdf86270b5dc6d2cf47f6b4ceb5375567c31dedc63288737
+    sha256: 85ecdd596e90f56323aeefca7e069e5a3aee7d709d904e675722c7e0193d3df4
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
@@ -47,7 +47,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: 0249df979d16e69008ae35ca0ece68ea8ca4e89a1ff3e612341c09dd6e04d6f9
+    sha256: d879b04ddb010b730e6b95b7a9e7d1bb9ced5824b42f225f1ac5ff792b577992
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
@@ -79,7 +79,7 @@ packages:
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: e3e286f02446dd80d7991d7f56896a43100eaaf42131149410a95fe45ca35224
+    sha256: eb878194ec4444da1701d0cc9d2cbefca7bbe4befb28557d27f039ce0eca936f
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.1.0

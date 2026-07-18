@@ -88,7 +88,7 @@ Every device callback receives `dev` first.
 | Member | Meaning |
 |---|---|
 | `dev.transport` | Transport userdata documented below. |
-| `dev.match.transport` | Transport kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, or `tcp`. |
+| `dev.match.transport` | Transport kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, `tcp`, or `http`. |
 | `dev.match.vid`, `.pid` | Matched USB IDs when available. |
 | `dev.match.bus`, `.addr` | SMBus bus kind and matched address when available. |
 | `dev.match.index` | Remote controller index for an integration child. |
@@ -373,7 +373,10 @@ Byte inputs accept a Lua string or `halod.buffer`. Reads return Lua strings.
 | `:read_any(size)` | Read from either HID collection. |
 | `:defer_event(data)` | Put a report back into the HID event path. |
 | `:write_then_read(data, size)` | Write, then read a reply. |
-| `:feature_exchange(data, size)` | HID feature-report exchange. |
+| `:feature_exchange(data, size)` | HID feature-report exchange (send then get). |
+| `:send_feature_report(data)` | Send a feature report; no reply. `data[1]` is the report id. |
+| `:get_feature_report(report_id, size)` | Read a feature report for `report_id`; `size` excludes the report-id byte. |
+| `:get_input_report(report_id, size)` | Read an input report for `report_id`; `size` excludes the report-id byte. |
 | `:write_many({data, ...})` | Write several packets. |
 | `:has_companion()` | Whether a companion HID collection is open. |
 | `:write_companion(data)` | Write to the companion collection. |
@@ -387,6 +390,18 @@ collection opens successfully.
 TCP has no message framing. Its `read(size)` returns exactly `size` bytes or
 fails on timeout or EOF. Read a fixed header first, then read its stated payload
 length. HID padding is handled by the HID transport.
+
+Serial ports are the same exact-length byte stream as TCP, plus line control:
+
+| Method | Purpose |
+| --- | --- |
+| `:set_dtr(level)` | Assert/clear the DTR line. |
+| `:set_rts(level)` | Assert/clear the RTS line. |
+| `:send_break(duration_ms)` | Assert BREAK for a bounded duration, then clear. |
+| `:flush_input()` | Discard buffered inbound bytes. |
+
+When the manifest sets `serial.events: true` and the package declares an
+`event()` callback, unsolicited inbound bytes arrive through the event path.
 
 ## USB endpoint transport
 
@@ -493,6 +508,53 @@ end)
 
 An address outside the manifest scope raises an error. The `ops` value is valid
 only inside the `batch` callback. Do not save it for later use.
+
+## Scoped HTTP requests
+
+A plugin that declares an `http` transport and holds the `network` permission
+gets `halod.http:request{…}`. It is a capability global (like `halod.publish`),
+not `dev.transport:` userdata — there is no persistent socket. Each call is a
+synchronous, bounded request validated against the declared origins before a
+socket opens.
+
+```lua
+local r = halod.http:request{
+  method = "GET",                       -- optional, defaults to GET
+  origin = "https://api.example.com",   -- required; must be a declared origin
+  path = "/v1/status",                  -- optional
+  headers = { ["accept"] = "application/json" },
+  body = "",                            -- optional string
+  timeout_ms = 3000,                    -- optional; capped by max_timeout_ms
+}
+
+print(r.status)                         -- numeric HTTP status
+print(r.headers["content-type"])        -- header names are lowercased
+if r.json then print(r.json.value) end  -- parsed JSON body when the body is JSON
+print(r.body)                           -- always the raw response body string
+```
+
+`origin` must exactly match one of the manifest's `origins`. When an origin uses
+the `{host}` placeholder, pass the resolved `scheme://host[:port]` form (the
+value substituted from the `host_key` config field). Requests that exceed the
+declared method set, size limits, timeout, or origin scope raise an error.
+
+## Scoped UDP datagrams
+
+A plugin that declares a `udp` transport and holds the `network` permission gets
+`halod.udp`, a capability global for exchanging datagrams with the single
+configured destination. There is no `send_to` — every datagram goes to the one
+vetted host/port.
+
+```lua
+halod.udp:send{ bytes = "\x01\x02\x03" }        -- returns the byte count sent
+
+local reply = halod.udp:receive{ timeout_ms = 1000 }  -- capped by recv_timeout_ms
+if reply then print(#reply) end                 -- a datagram string, or nil on timeout
+```
+
+`send` raises an error if the payload exceeds `max_datagram_bytes`. `receive`
+returns the next datagram (truncated to `max_datagram_bytes`) or `nil` when no
+datagram arrives before the timeout.
 
 ## Byte buffers
 

@@ -157,6 +157,19 @@ return function(h)
   h:assert_eq(receiver_writes[2].data[5], 0x20, "pairing info slot selector")
   h:assert_eq(receiver_writes[3].data[5], 0x30, "extended-pairing selector")
 
+  -- Receiver behavior is a device capability shared by the HID++ 1.x
+  -- families, not a special case tied to the C547 LIGHTSPEED PID. The pairing
+  -- record's kind nibble identifies devices unknown to the small WPID catalog.
+  local unifying = h:open({ pid = 0xc52b, reads = {
+    report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0, 0, 0, 0x12, 0x34, 0, 0, 0x02 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0, 0x12, 0x34, 0x56, 0x78 }),
+  } })
+  h:assert(unifying:initialize(), "Unifying receiver root initializes")
+  local unifying_children = unifying:enumerate_controllers()
+  h:assert_eq(#unifying_children, 1, "Unifying receiver enumerates paired slot")
+  h:assert_eq(unifying_children[1].device_type, "mouse", "pairing-record kind supplies device type")
+
   local wireless_child = h:open({ key = "1", reads = {
     report(0x10, 0x01, 0x00, 0x01, { 2 }),
     report(0x11, 0x01, 0x02, 0x01, { 0 }),
@@ -222,6 +235,9 @@ return function(h)
   h:assert_eq(eq_writes[#eq_writes].data[5], 0x02, "equalizer set carries custom prefix")
   h:assert_eq(eq_writes[#eq_writes].data[6], 0xf4, "equalizer set clamps to device db minimum")
   h:assert_eq(eq_writes[#eq_writes].data[7], 7, "equalizer set preserves valid values")
+  h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "successful EQ write updates cached value")
+  h:assert(not pcall(function() eq_dev:set_eq_bands({ 0, 0 }) end), "failed EQ write surfaces")
+  h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "failed EQ write preserves cached value")
 
   local native_dev = h:open({ pid = 0xc352, reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
