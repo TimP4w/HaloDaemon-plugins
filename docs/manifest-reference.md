@@ -362,6 +362,37 @@ transports:
 only when the integration must connect to loopback, private, or link-local
 addresses.
 
+### Serial
+
+A serial/COM byte stream for integrations that talk over a UART or USB-serial
+adapter. Requires the `serial` permission.
+
+```yaml
+permissions: [serial]
+transports:
+  serial:
+    port_key: serial_port   # config field holding the selected port
+    baud: 115200
+    data_bits: 8            # 5–8
+    parity: none            # none | odd | even
+    stop_bits: 1            # 1 | 2
+    read_timeout_ms: 1000
+    dtr: true               # optional initial line states
+    rts: false
+    flush_on_open: true
+    reconnect: true         # reopen after an I/O failure
+    events: true            # deliver unsolicited bytes to event()
+    max_bytes: 65536        # per read/write and event-queue bound
+config:
+  fields:
+    - { key: serial_port, label: Port, kind: serial_port }
+```
+
+`port_key` names a `config` field of kind `serial_port`, which the GUI renders as
+a dropdown of the host's ports. Prefer a replug-stable `/dev/serial/by-id/...`
+value. See [docs/transports/serial.md](../../HaloDaemon/docs/transports/serial.md)
+for the runtime contract and line-control operations.
+
 ### HTTP
 
 A scoped HTTP client for integrations. Requires the `network` permission.
@@ -399,7 +430,33 @@ while the socket still connects to the `host_key` address.
 `certificate_identity` is `webpki` (standard SAN verification, the default) or
 `subject-cn` (match one exact subject CN). Plugins cannot disable certificate
 verification. An integration declares exactly one root transport, so `http`,
-`tcp`, and `hwmon` cannot appear together.
+`tcp`, `serial`, and `hwmon` cannot appear together.
+
+### UDP
+
+A scoped connected-UDP capability (`halod.udp`). Like `http` it is a bounded
+capability rather than a root transport, so it may accompany a device or an
+integration. Requires the `network` permission. Datagrams may only reach the one
+configured destination — there is no broadcast, multicast, or `send_to`.
+
+```yaml
+permissions: [network]
+transports:
+  udp:
+    host_key: host          # config field holding the destination host
+    port_key: port          # config field holding the destination port
+    allow_private: false
+    max_datagram_bytes: 65507   # 1–65507 (the UDP/IPv4 payload maximum)
+    send_timeout_ms: 5000
+    recv_timeout_ms: 5000
+config:
+  fields:
+    - { key: host, label: Host, kind: host }
+    - { key: port, label: Port, kind: port }
+```
+
+The destination is resolved once through the SSRF guard; set `allow_private:
+true` only for a LAN device. See [docs/lua-api.md](lua-api.md) for `halod.udp`.
 
 ### Command
 

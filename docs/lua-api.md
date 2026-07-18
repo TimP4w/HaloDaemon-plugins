@@ -391,6 +391,18 @@ TCP has no message framing. Its `read(size)` returns exactly `size` bytes or
 fails on timeout or EOF. Read a fixed header first, then read its stated payload
 length. HID padding is handled by the HID transport.
 
+Serial ports are the same exact-length byte stream as TCP, plus line control:
+
+| Method | Purpose |
+| --- | --- |
+| `:set_dtr(level)` | Assert/clear the DTR line. |
+| `:set_rts(level)` | Assert/clear the RTS line. |
+| `:send_break(duration_ms)` | Assert BREAK for a bounded duration, then clear. |
+| `:flush_input()` | Discard buffered inbound bytes. |
+
+When the manifest sets `serial.events: true` and the package declares an
+`event()` callback, unsolicited inbound bytes arrive through the event path.
+
 ## USB endpoint transport
 
 ```lua
@@ -525,6 +537,24 @@ print(r.body)                           -- always the raw response body string
 the `{host}` placeholder, pass the resolved `scheme://host[:port]` form (the
 value substituted from the `host_key` config field). Requests that exceed the
 declared method set, size limits, timeout, or origin scope raise an error.
+
+## Scoped UDP datagrams
+
+A plugin that declares a `udp` transport and holds the `network` permission gets
+`halod.udp`, a capability global for exchanging datagrams with the single
+configured destination. There is no `send_to` — every datagram goes to the one
+vetted host/port.
+
+```lua
+halod.udp:send{ bytes = "\x01\x02\x03" }        -- returns the byte count sent
+
+local reply = halod.udp:receive{ timeout_ms = 1000 }  -- capped by recv_timeout_ms
+if reply then print(#reply) end                 -- a datagram string, or nil on timeout
+```
+
+`send` raises an error if the payload exceeds `max_datagram_bytes`. `receive`
+returns the next datagram (truncated to `max_datagram_bytes`) or `nil` when no
+datagram arrives before the timeout.
 
 ## Byte buffers
 
