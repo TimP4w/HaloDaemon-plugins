@@ -11,6 +11,28 @@ local BRAND_PURPLE = { r = 155, g = 127, b = 224 }
 local WHITE = { r = 255, g = 255, b = 255 }
 local MUTED = { r = 148, g = 163, b = 184 }
 
+local function data_value(ctx, key)
+  local snapshot = ctx:data(key)
+  if snapshot.status == "unavailable" then return nil, snapshot end
+  return snapshot.value, snapshot
+end
+
+local function sensor_record(ctx, id)
+  if ctx:is_preview() then
+    return { value = 42, label = "Sensor", unit = "°C", sensor_type = "temperature", stale = false }
+  end
+  local catalog = data_value(ctx, "host.sensors.catalog")
+  if not catalog then return nil end
+  for _, item in ipairs(catalog) do
+    if item.id == id then
+      local sensor, snapshot = data_value(ctx, item.key)
+      if sensor then sensor.stale = snapshot.status == "stale" end
+      return sensor
+    end
+  end
+  return nil
+end
+
 local function center_text(canvas, w, h, text, size, ctx, col, y)
   local tw, th = ctx:measure_text(text, size)
   ctx:draw_text(canvas, text, (w - tw) / 2, y or ((h - th) / 2), size, col)
@@ -55,23 +77,25 @@ end
 
 local function render_sensor(canvas, w, h, params, ctx)
   local id = params.sensor or ""
-  local value = ctx:sensor(id)
+  local sensor = sensor_record(ctx, id)
+  local value = sensor and sensor.value
   local label = params.label
-  if not label or label == "" then label = ctx:sensor_label(id) or "Sensor" end
+  if not label or label == "" then label = sensor and sensor.label or "Sensor" end
   local shown = value and string.format("%.0f", value) or "--"
-  if value and params.show_unit ~= false then shown = shown .. (ctx:sensor_unit(id) or "") end
+  if value and params.show_unit ~= false then shown = shown .. (sensor.unit or "") end
   if params.show_value ~= false then center_text(canvas, w, h, shown, h * 0.30, ctx, color(params.value_color, WHITE)) end
   center_text(canvas, w, h, label, h * 0.14, ctx, color(params.label_color, MUTED), h * 0.76)
 end
 
 local function render_spectrum(canvas, w, h, params, ctx)
   local count = math.max(8, math.min(64, math.floor((params.bands or 32) + 0.5)))
-  local available = ctx:audio_band_count()
+  local audio = ctx:audio()
+  local available = audio and #audio.bands or 0
   local bar_w = w / count
   for i = 0, count - 1 do
     local src = math.floor(i * math.max(1, available) / count)
     if params.mirror then src = math.floor(math.abs(i - (count - 1) / 2) * math.max(1, available) * 2 / count) end
-    local level = available > 0 and (ctx:audio_band(src) or 0) or (0.22 + 0.58 * math.abs(math.sin(i * 0.71)))
+    local level = available > 0 and (audio.bands[src + 1] or 0) or (0.22 + 0.58 * math.abs(math.sin(i * 0.71)))
     local x = params.flip_h and (count - 1 - i) or i
     local bh = math.max(1, h * 0.82 * math.max(0, math.min(1, level)))
     local y = params.flip_v and h * 0.09 or h * 0.91 - bh
@@ -82,12 +106,14 @@ end
 local function render_gauge(canvas, w, h, params, ctx)
   local level
   if (params.input or "audio") == "sensor" then
-    local value = ctx:sensor(params.sensor or "")
+    local sensor = sensor_record(ctx, params.sensor or "")
+    local value = sensor and sensor.value
     local min = params.min or 0
     local max = params.max or 100
     if value then level = (value - min) / math.max(0.001, max - min) end
   else
-    level = ctx:audio_level()
+    local audio = ctx:audio()
+    level = audio and audio.level
   end
   level = math.max(0, math.min(1, level or 0.62))
   local fill = color(params.fill, PRIMARY)
@@ -119,8 +145,10 @@ local function render_gauge(canvas, w, h, params, ctx)
 end
 
 local function render_now_playing(canvas, w, h, params, ctx)
-  local title = ctx:media_title() or "Not playing"
-  local artist = ctx:media_artist() or "No media player"
+  local media = data_value(ctx, "host.media.playback")
+  if ctx:is_preview() then media = { title = "Now Playing", artist = "HaloDaemon", status = "playing" } end
+  local title = media and media.title or "Not playing"
+  local artist = media and media.artist or "No media player"
   local padding = math.max(2, w * 0.04)
   local text_x = padding
   if params.show_art ~= false then
@@ -131,11 +159,15 @@ local function render_now_playing(canvas, w, h, params, ctx)
   local available = math.max(1, w - text_x - padding)
   if params.show_title ~= false then
     local size = h * 0.22
-    ctx:draw_text(canvas, ctx:ellipsize_text(title, size, available), text_x, h * 0.25, size, params.title_color)
+    ctx:draw_text_box(canvas, title, text_x, h * 0.14, available, h * 0.36, {
+      size = size, vertical = "middle", wrap = "none", max_lines = 1, overflow = "ellipsis",
+    }, params.title_color)
   end
   if params.show_artist ~= false then
     local size = h * 0.15
-    ctx:draw_text(canvas, ctx:ellipsize_text(artist, size, available), text_x, h * 0.58, size, params.artist_color)
+    ctx:draw_text_box(canvas, artist, text_x, h * 0.50, available, h * 0.30, {
+      size = size, vertical = "middle", wrap = "none", max_lines = 1, overflow = "ellipsis",
+    }, params.artist_color)
   end
 end
 
@@ -143,22 +175,25 @@ local function render_shape(canvas, w, h, params, ctx)
   local shape = params.shape or "circle"
   local col = color(params.fill, PRIMARY)
   local filled = params.filled ~= false
+  local stroke = params.stroke_width or 3
+  ctx:push_clip(0, 0, w, h)
+  ctx:push_rotation(params.rotation or 0, w / 2, h / 2)
   if shape == "circle" then
-    ctx:draw_circle(canvas, w / 2, h / 2, math.min(w, h) * 0.42, filled, col)
+    ctx:draw_circle(canvas, w / 2, h / 2, math.min(w, h) * 0.42, filled, col, stroke)
   elseif shape == "line" then
-    ctx:draw_line(canvas, w * 0.08, h / 2, w * 0.92, h / 2, col)
+    ctx:draw_polyline(canvas, { { w * 0.08, h / 2 }, { w * 0.92, h / 2 } }, col, stroke)
   elseif shape == "triangle" then
-    ctx:draw_triangle(canvas, w / 2, h * 0.08, w * 0.92, h * 0.90, w * 0.08, h * 0.90, filled, col)
+    ctx:draw_polygon(canvas, {
+      { w / 2, h * 0.08 }, { w * 0.92, h * 0.90 }, { w * 0.08, h * 0.90 },
+    }, filled, col, stroke)
   else
-    if filled then
-      ctx:fill_rect(canvas, w * 0.08, h * 0.08, w * 0.84, h * 0.84, col)
-    else
-      ctx:draw_line(canvas, w * 0.08, h * 0.08, w * 0.92, h * 0.08, col)
-      ctx:draw_line(canvas, w * 0.92, h * 0.08, w * 0.92, h * 0.92, col)
-      ctx:draw_line(canvas, w * 0.92, h * 0.92, w * 0.08, h * 0.92, col)
-      ctx:draw_line(canvas, w * 0.08, h * 0.92, w * 0.08, h * 0.08, col)
-    end
+    ctx:draw_polygon(canvas, {
+      { w * 0.08, h * 0.08 }, { w * 0.92, h * 0.08 },
+      { w * 0.92, h * 0.92 }, { w * 0.08, h * 0.92 },
+    }, filled, col, stroke)
   end
+  ctx:pop_rotation()
+  ctx:pop_clip()
 end
 
 local function render_logo(canvas, w, h, params, ctx)

@@ -93,23 +93,15 @@ return {
     log("NZXT Kraken X initialized")
     return {
       ok = true,
-      zones = {
+      channels = {
         { id="ring", name="Ring", topology="ring", led_count=8 },
         { id="logo", name="Logo", topology="linear", led_count=1 },
       },
-      chain = chain_channels,
+      division = chain_channels,
       accessories = accessories,
     }
   end,
 
-  write_frame = function(dev, zone_id, colors)
-    if zone_id == "logo" then
-      local c = colors[1] or { r = 0, g = 0, b = 0 }
-      write_logo(dev, c)
-    else
-      write_x3_channel(dev, 0x02, colors)
-    end
-  end,
   apply = function(dev, state)
     if state.mode == "static" then
       local fill = {}
@@ -117,21 +109,29 @@ return {
       write_x3_channel(dev, 0x02, fill)
       write_logo(dev, state.color)
     elseif state.mode == "per_led" then
-      local zones = state.zones or {}
-      local ring_map = zones.ring or {}
+      local channels = state.channels or {}
+      local ring_map = channels.ring or {}
       local fill = {}
       for i = 0, RING_LEDS - 1 do
         fill[i + 1] = ring_map[tostring(i)] or { r = 0, g = 0, b = 0 }
       end
       write_x3_channel(dev, 0x02, fill)
-      local logo_map = zones.logo or {}
+      local logo_map = channels.logo or {}
       write_logo(dev, logo_map["0"] or { r = 0, g = 0, b = 0 })
     end
   end,
 
-  -- Accessory (F-fan) RGB.
-  write_ext_frame = function(dev, channel, colors)
-    write_x3_channel(dev, 0x01, colors)
+  -- A single byte-frame callback serves both direct channels and divisions.
+  write_frame = function(dev, channel, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    if channel == "logo" then
+      write_logo(dev, colors[1] or { r = 0, g = 0, b = 0 })
+    elseif channel == "ring" then
+      write_x3_channel(dev, 0x02, colors)
+    else
+      write_x3_channel(dev, 0x01, colors)
+    end
   end,
 
   -- Status stream (0x75): liquid temp only — pump/fan duty aren't

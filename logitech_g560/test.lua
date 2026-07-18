@@ -6,7 +6,7 @@ return function(h)
 
   dev:apply({ mode = "static", color = { r = 255, g = 0, b = 128 } })
   local writes = dev:writes()
-  h:assert_eq(#writes, 4, "static color writes all four speaker zones")
+  h:assert_eq(#writes, 4, "static color writes all four speaker channels")
   h:assert_eq(writes[1].data[1], 0x11, "long report id")
   h:assert_eq(writes[1].data[2], 0xff, "G560 device number")
   h:assert_eq(writes[1].data[3], 0x04, "lighting feature")

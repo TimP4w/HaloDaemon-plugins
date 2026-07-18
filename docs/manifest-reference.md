@@ -66,14 +66,32 @@ transports:
 | `requirements` | Explicit command or Linux kernel-module dependencies that cannot be inferred. |
 | `dynamic_children` | Allows `enumerate_controllers()` to create child devices. |
 | `config` | User-editable settings. |
+| `setup` | Optional host-rendered integration setup flow. |
 | `effects` | Effects provided by an effect plugin. |
 | `effect_assets` | Optional effect thumbnails. |
 | `widgets` | LCD widget declarations for an `lcd` package. |
 | `presets` | Declarative LCD template JSON files for an `lcd` package. |
 | `logo` | Optional filename under `assets/`. |
+| `provides` | Namespaced latest-value records published by this package. |
+| `consumes` | Records this package may read; `host.sensors.*` is the only wildcard. |
 
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
+
+## Shared snapshot data
+
+```yaml
+provides:
+  - key: telemetry.current
+    stale_after_ms: 900000
+    min_notify_interval_ms: 1000
+consumes: [telemetry.current, host.sensors.*, host.media.playback, host.environment]
+```
+
+Provided keys must begin with the package id. Cross-plugin and `host.*` reads
+are shown as user-approved authority. Host sensors are individual records plus
+`host.sensors.catalog`; fan curves, device state, LCD widgets, and RGB effects
+all consume that same host cache. Audio remains a dedicated sampled stream.
 
 ### Widget fields
 
@@ -85,6 +103,7 @@ daemon catalog.
 | `id` | Widget ID within the package. |
 | `name` | Display name shown in the widget library. |
 | `icon` | Required SVG filename under `assets/`; also available to `draw_asset`. |
+| `assets` | Additional SVG filenames under `assets/` available only to this widget through `draw_asset`. |
 | `params` | Editor parameters passed to the widget callbacks. |
 | `resize` | `uniform` or `box`. |
 | `default_scale` | Initial editor scale. |
@@ -99,11 +118,23 @@ daemon catalog.
 | `fixed_text_weight` | Host-enforced `normal`, `semibold`, or `bold` weight. Requires `font_controls: false`. |
 | `updates` | Update interval and live-data dependencies. |
 
-An `updates` map accepts `interval_ms`, `sensors`, `audio`, and `media`.
-`sensors_when` and `audio_when` can gate those dependencies with the same enum
+An `updates` map accepts `interval_ms`, `data`, and `audio`. Every key in
+`data` must also appear in the package-level `consumes` list. `data_when` and
+`audio_when` can gate those dependencies with the same enum
 condition syntax as parameter visibility. A visibility rule maps a target
 parameter to an enum source and required value, for example
 `fill: { param: variant, equals: bar }`.
+
+The host owns the `opacity` and `scale_y` parameters and adds them to every
+widget's editor panel, so a widget cannot declare either id — it would be
+handed the host's value (`opacity` is stored as 0-100) rather than its own.
+The host applies `opacity` when compositing the rendered widget; don't fold it
+into the drawing. Widget rotation is likewise a host control, not a parameter.
+
+Widget asset names must be bare `.svg` filenames. Every file is parsed during
+manifest validation and subject to per-file, per-widget, and package limits.
+The renderer rasterizes declared assets into bounded resize buckets; an
+undeclared name passed to `draw_asset` returns `false`.
 
 ### Preset fields
 
@@ -133,13 +164,22 @@ halod udev-rules
 Supported names are:
 
 ```text
-rgb, fan, sensors, battery, connection, dpi, report_rate,
+rgb, cooling, sensors, battery, connection, dpi,
 key_remap, keyboard_layout, onboard_profiles, lcd, equalizer,
 pairing, controls, chain
 ```
 
 This list is the package's maximum capability set. `initialize()` may return a
 smaller set for a specific model.
+
+`cooling` is the multi-channel cooling capability. Its runtime descriptor
+contains device-local channel IDs, labels, `fan`/`pump` kind, and whether each
+channel can be controlled.
+
+Device settings such as report rate, sleep timeout, debounce, sidetone, and
+similar controls use the generic `controls` capability. Model them as choice,
+range, boolean, or action descriptors instead of adding standalone capability
+names.
 
 ## Device entries and matches
 
@@ -358,6 +398,73 @@ SMBus access is fully described by the device match and does not need a
 separate transport block. The host automatically checks PawnIO on Windows and
 Linux i2c-dev presence and permissions on Linux.
 
+## Integration setup
+
+Integrations that need discovery, connection details, or credentials declare
+a typed `setup` block. Halo owns the modal, navigation, timeouts, retries, and
+persistence; Lua only returns typed data from `validate(context)`,
+`discover(context)`, and `pair(context)`.
+
+```yaml
+type: integration
+permissions: [network, secure_storage]
+setup:
+  modes: [automatic, manual]
+  discovery:
+    mdns: ["_example._tcp.local."]
+    ssdp: ["urn:example-org:device:controller:1"]
+  auth:
+    kind: button
+    title: Put the controller in pairing mode
+    instructions:
+      - Hold its link button for five seconds.
+      - Continue when its status light starts blinking.
+```
+
+`modes` contains `automatic`, `manual`, or both. Automatic mode requires at
+least one mDNS service type or SSDP search target. Halo performs those network
+protocols and passes normalized records to `discover`; the plugin does not get
+a raw socket. Manual mode requires at least one non-secure config field.
+
+`auth.kind` is one of:
+
+- `none`: validate and enable after choosing or entering the device.
+- `button`: show fixed `title` and `instructions`, then invoke `pair` when the
+  user starts pairing.
+- `oauth2_pkce`: run OAuth2 Authorization Code with PKCE through a loopback
+  callback. It requires HTTPS `authorization_url` and `token_url`, a
+  `client_id`, optional `scopes`, and `access_token_key` plus optional
+  `refresh_token_key`. Token keys must name secure config fields. Halo creates
+  and verifies `state`, the PKCE verifier/challenge, callback, token exchange,
+  and secure storage; Lua never implements the browser protocol.
+
+An integration without `setup` is considered configured immediately, but it
+still implements `validate(context)`. Halo invokes validation before every
+enable. A setup integration is enabled only after pairing and final validation
+succeed.
+
+### Hue bridge TLS
+
+The `hue-bridge` HTTP TLS profile trusts only the Signify Hue Bridge issuing
+CA and verifies the bridge certificate against the identity stored in the
+config field named by `verify_identity`:
+
+```yaml
+transports:
+  http:
+    host_key: host
+    origins: ["https://{host}"]
+    tls:
+      profile: hue-bridge
+      verify_identity: bridge_id
+```
+
+Halo connects to the configured LAN address while using `bridge_id` as the TLS
+server name. Plugins cannot disable certificate verification. Bridges whose
+certificate chains to an on-bridge root are not accepted by this profile; they
+need an explicit, host-owned trust-on-pairing design rather than a plugin flag
+that silently disables TLS verification.
+
 ## Config fields
 
 ```yaml
@@ -365,8 +472,34 @@ config:
   fields:
     - key: host
       label: Server address
-      kind: text
+      kind: host
       default: 192.168.1.10
+      placeholder: openrgb.local
+      help: Hostname or IP address of the server.
+    - key: port
+      label: Server port
+      kind: port
+      default: 6742
+    - key: tls
+      label: Use TLS
+      kind: boolean
+      default: false
+    - key: mode
+      label: Connection mode
+      kind: enum
+      options: [direct, proxy]
+      default: direct
+    - key: proxy_url
+      label: Proxy URL
+      kind: url
+      default: ""
+      visible_when: { field: mode, equals: proxy }
+    - key: timeout
+      label: Timeout
+      kind: duration_ms
+      default: 5000
+      min: 100
+      max: 30000
     - key: token
       label: API token
       kind: text
@@ -374,9 +507,18 @@ config:
       secure: true
 ```
 
-Config `kind` is `text` or `number`. Number fields may set `min` and `max`.
-Every value is exposed to Lua as a string in `halod.config`. A secure value is
-available only with `secure_storage` permission.
+Config `kind` is `text`, `number`, `boolean`, `enum`, `host`, `port`, `url`, or
+`duration_ms`. Enum fields require a non-empty `options` list. Number, port,
+and duration fields may set `min` and `max`; ports are always restricted to
+1–65535. URLs must be absolute HTTP(S) URLs.
+
+`visible_when` uses sibling equality, matching widget parameter visibility.
+`help` and `placeholder` are optional display text.
+
+Lua receives booleans as booleans, numbers, ports, and durations as numbers,
+and text, enum, host, and URL values as strings. Secure fields are masked in
+the GUI, never cross IPC in plaintext, and require the manifest to declare the
+`secure_storage` permission before the package validates.
 
 ## Effect plugins
 

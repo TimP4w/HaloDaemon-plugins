@@ -4,11 +4,13 @@
 wire protocol. Its protocol is the Lua effect callback contract used by the RGB
 engine.
 
-Pixmap effects return one RGB color per canvas pixel for each render tick.
-Direct effects receive a device zone's LED positions and return one RGB color
-per LED. Parameters, audio samples, sensor values, and elapsed time are supplied
-by HaloDaemon according to the declarations in `plugin.yaml`; `main.lua` contains
-the reference implementations for both callback forms.
+Pixmap effects implement `render_effect_<id>(buffer, ctx)` and write one RGB
+color per canvas pixel for each render tick. Direct effects implement
+`led_effect_<id>(leds, ctx)` and return one linear RGB color per LED. The context
+contains a single engine-frame snapshot of parameters, audio, sensors, timing,
+seed, and zone identity. Direct LED records also carry stable LED and zone IDs.
+`main.lua` contains the reference implementations for both callback forms and
+uses `ctx.frame` to keep state updates idempotent across multiple zones.
 
 The runtime contract and value limits are documented in the repository's
 [Lua API reference](../../docs/lua-api.md).

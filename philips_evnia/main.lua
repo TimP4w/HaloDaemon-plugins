@@ -416,7 +416,7 @@ return {
       controls = RUNTIME_CONTROLS,
       ranges = ranges,
       choices = choices,
-      zones = { {
+      channels = { {
         id = "ambiglow",
         name = "Ambiglow",
         topology = "grid",
@@ -514,14 +514,16 @@ return {
       for i = 1, LED_COUNT do fill[i] = state.color end
       write_colors(dev, fill)
     elseif state.mode == "per_led" then
-      local map = (state.zones or {}).ambiglow or {}
+      local map = (state.channels or {}).ambiglow or {}
       local fill = {}
       for i = 0, LED_COUNT - 1 do fill[i + 1] = map[tostring(i)] or { r = 0, g = 0, b = 0 } end
       write_colors(dev, fill)
     end
   end,
 
-  write_frame = function(dev, zone_id, colors)
+  write_frame = function(dev, zone_id, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     if zone_id == "ambiglow" then write_colors(dev, colors) end
   end,
 }

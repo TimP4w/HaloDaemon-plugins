@@ -10,8 +10,8 @@ return function(h)
   dev:clear()
 
   dev:apply({ mode = "static", color = { r = 1, g = 2, b = 3 } })
-  local rgb = dev:usb_writes()
-  h:assert(#rgb >= 2, "capture and frame writes were recorded")
-  h:assert_eq(rgb[1].device, "ambiglow", "Ambiglow routes to companion USB device")
-  h:assert_eq(rgb[#rgb].device, "ambiglow", "frame stays on companion USB device")
+  local lighting = dev:usb_writes()
+  h:assert(#lighting >= 2, "capture and frame writes were recorded")
+  h:assert_eq(lighting[1].device, "ambiglow", "Ambiglow routes to companion USB device")
+  h:assert_eq(lighting[#lighting].device, "ambiglow", "frame stays on companion USB device")
 end

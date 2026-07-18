@@ -30,7 +30,7 @@ return {
   initialize = function(_dev)
     return {
       ok = true,
-      zones = {
+      channels = {
         { id = "zone_0", name = "Left Secondary", topology = "linear", led_count = 1 },
         { id = "zone_1", name = "Right Secondary", topology = "linear", led_count = 1 },
         { id = "zone_2", name = "Left Primary", topology = "linear", led_count = 1 },
@@ -50,14 +50,16 @@ return {
     if state.mode == "static" then
       for _, zone in ipairs(ZONES) do write_zone(dev, zone, state.color) end
     elseif state.mode == "per_led" then
-      local values = state.zones or {}
+      local values = state.channels or {}
       for _, zone in ipairs(ZONES) do
         write_zone(dev, zone, color_or_black((values[zone.id] or {})["0"]))
       end
     end
   end,
 
-  write_frame = function(dev, zone_id, colors)
+  write_frame = function(dev, zone_id, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     for _, zone in ipairs(ZONES) do
       if zone.id == zone_id then
         write_zone(dev, zone, color_or_black(colors[1]))

@@ -7,7 +7,7 @@ version: 1.0.0
 license: GPL-3.0-or-later
 description: NZXT Control Hub with chained RGB fan accessories.
 permissions: [hid]
-capabilities: [chain]
+capabilities: [lighting_division]
 devices:
   - vendor: NZXT
     model: Control Hub

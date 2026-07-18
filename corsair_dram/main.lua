@@ -248,7 +248,7 @@ return {
     return {
       ok = true,
       model = info.model,
-      zones = { { id = "leds", name = "LEDs", topology = "linear", led_count = info.led_count } },
+      channels = { { id = "leds", name = "LEDs", topology = "linear", led_count = info.led_count } },
     }
   end,
 
@@ -262,7 +262,7 @@ return {
         for i = 1, info.led_count do colors[i] = state.color end
         write_colors(ops, addr, info, colors)
       elseif state.mode == "per_led" then
-        local zone = state.zones and state.zones["leds"]
+        local zone = state.channels and state.channels["leds"]
         if zone then
           local frame = {}
           for i = 0, info.led_count - 1 do
@@ -293,7 +293,9 @@ return {
   end,
 
   -- Canvas-engine frame: always the direct block path (fastest, version-agnostic).
-  write_frame = function(dev, _zone, colors)
+  write_frame = function(dev, _zone, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     local info = dev.info
     if not info then error("Corsair DRAM device used before initialize()") end
     local addr = dev.match.addr

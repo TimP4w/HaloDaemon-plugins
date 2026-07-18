@@ -6,7 +6,7 @@ author: HaloDaemon
 version: 1.0.0
 license: GPL-3.0-or-later
 description: Philips Evnia 49M2C8900 — DDC/CI picture/OSD controls + Ambiglow RGB.
-capabilities: [rgb, controls]
+capabilities: [lighting, controls]
 permissions: [usb]
 devices:
   - vendor: Philips

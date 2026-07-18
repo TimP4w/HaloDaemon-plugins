@@ -267,7 +267,11 @@ return function(h)
   h:assert(mouse_rgb_dev:initialize(), "G502 per-LED fixture initializes")
   mouse_rgb_dev:clear()
   local mouse_frame = {}
-  for i = 1, 8 do mouse_frame[i] = { r = i, g = i + 10, b = i + 20 } end
+  for i = 1, 8 do
+    mouse_frame[#mouse_frame + 1] = i
+    mouse_frame[#mouse_frame + 1] = i + 10
+    mouse_frame[#mouse_frame + 1] = i + 20
+  end
   mouse_rgb_dev:write_frame("zone_0", mouse_frame)
   local mouse_writes = mouse_rgb_dev:writes()
   h:assert_eq(#mouse_writes, 3, "G502 frame uses two explicit batches plus commit")
@@ -307,9 +311,9 @@ return function(h)
   end
   h:assert(key_a and key_a.cell.id == "a", "firmware LED 1 maps to the A key")
   h:assert(media_brightness ~= nil, "keyboard layout includes Logitech media keys")
-  local keyboard_rgb = keyboard_dev:rgb_descriptor()
+  local keyboard_lighting = keyboard_dev:lighting_descriptor()
   local led_a
-  for _, led in ipairs(keyboard_rgb.zones[1].leds) do if led.id == 1 then led_a = led end end
+  for _, led in ipairs(keyboard_lighting.channels[1].leds) do if led.id == 1 then led_a = led end end
   h:assert(led_a ~= nil, "keyboard RGB descriptor contains firmware LED 1")
   h:assert(math.abs(led_a.x - ((key_a.cell.col + key_a.cell.w / 2) / 18)) < 0.0001,
     "keyboard RGB uses the native key x position")
@@ -317,7 +321,11 @@ return function(h)
     "keyboard RGB uses the native key y position")
   keyboard_dev:clear()
   local breathing = {}
-  for _ = 1, 8 do breathing[#breathing + 1] = { r = 10, g = 20, b = 30 } end
+  for _ = 1, 8 do
+    breathing[#breathing + 1] = 10
+    breathing[#breathing + 1] = 20
+    breathing[#breathing + 1] = 30
+  end
   keyboard_dev:write_frame("zone_0", breathing)
   local frame_writes = keyboard_dev:writes()
   h:assert_eq(#frame_writes, 2, "uniform per-key frame is one range plus commit")
@@ -327,18 +335,23 @@ return function(h)
   h:assert_eq(frame_writes[2].data[4], 0x71, "per-key frame commits atomically")
   keyboard_dev:clear()
   local led_4_index
-  for i, led in ipairs(keyboard_rgb.zones[1].leds) do
+  for i, led in ipairs(keyboard_lighting.channels[1].leds) do
     if led.id == 4 then led_4_index = i end
   end
   h:assert(led_4_index ~= nil, "keyboard RGB descriptor contains firmware LED 4")
-  breathing[led_4_index] = { r = 255, g = 0, b = 0 }
+  -- The descriptor is zero-based at the protocol boundary; frame bytes remain
+  -- a flat, one-based Lua sequence, so LED id 4 starts after four RGB triples.
+  local led_4_offset = led_4_index * 3
+  breathing[led_4_offset + 1] = 255
+  breathing[led_4_offset + 2] = 0
+  breathing[led_4_offset + 3] = 0
   keyboard_dev:write_frame("zone_0", breathing)
   local one_led = keyboard_dev:writes()
   h:assert_eq(#one_led, 2, "one changed LED is one range plus commit")
   h:assert_eq(one_led[1].data[5], 4, "single-LED update addresses its firmware LED")
   h:assert_eq(one_led[1].data[6], 4, "single-LED range contains only that LED")
   keyboard_dev:clear()
-  keyboard_dev:apply({ mode = "per_led", zones = {
+  keyboard_dev:apply({ mode = "per_led", channels = {
     zone_0 = { ["6"] = { r = 0x44, g = 0x55, b = 0x66 } },
   } })
   local paint = keyboard_dev:writes()
@@ -423,16 +436,29 @@ return function(h)
   h:assert_eq(pairing_writes[#pairing_writes].data[5], 0x02,
     "pairing nudge requests connection rebroadcast")
 
-  -- An error reply (sub 0xff on Lightspeed wireless) whose byte 4 echoes the
-  -- request feature index is surfaced as a coded HID++ error, not silently
-  -- mistaken for a feature mismatch.
-  local err_dev = h:open({ reads = {
-    -- [report, devnum, 0xff, feature_idx=0, func_byte=0x00, err_code=0x07]
-    report(0x11, 0xff, 0xff, 0x00, { 0x00, 0x07 }),
+  -- A powered-off device is rejected, not failed, so the daemon re-registers it
+  -- silently once it wakes. An off PRO X headset still enumerates through its
+  -- dongle and only errors (0x05) once a read needs the headset itself; a
+  -- receiver child that is off instead answers nothing at all. Neither may raise.
+  local asleep_headset = h:open({ pid = 0x0aba, reads = {
+    report(0x11, 0xff, 0x00, 0x01, { 2 }),          -- ROOT -> FEATURE_SET index
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),          -- FEATURE_SET count
+    report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x00 }), -- feature[1] = SIDETONE
+    -- [report, devnum, 0xff, feature_idx=1, func_byte=0x00, err_code=0x05]
+    report(0x11, 0xff, 0xff, 0x01, { 0x00, 0x05 }),
   } })
-  local err_ok, err_msg = pcall(function() return err_dev:initialize() end)
-  h:assert(not err_ok, "an error reply fails initialization")
-  h:assert(tostring(err_msg):find("0x07"), "error reply surfaces its error code")
+  h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
+
+  local silent_child = h:open({ key = "1", reads = {
+    {}, {}, {}, {}, {}, {}, -- three ROOT attempts, two empty read windows each
+  } })
+  h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
+
+  -- A failure that is not the HID++ protocol answering is not an absent device
+  -- and must still surface.
+  local broken_dev = h:open({ reads = {} })
+  h:assert(not pcall(function() return broken_dev:initialize() end),
+    "a transport failure still fails initialization")
 
   -- A packet that arrives interleaved with a request must be handed to the
   -- event path, not dropped: the button notification queued before the ROOT

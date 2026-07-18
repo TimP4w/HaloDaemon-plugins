@@ -38,6 +38,12 @@ local function cached(dev, field, load)
 end
 
 return {
+  -- Host requirement probing checks that a usable hwmon collection exists
+  -- before this hook runs. No additional user configuration is required.
+  validate = function(_context)
+    return { ok = true }
+  end,
+
   initialize = function(dev)
     if dev.match.index == nil then
       return { ok = true, capabilities = {} }
@@ -46,7 +52,13 @@ return {
     if fan == 0 then
       return { ok = true, capabilities = { "sensors" } }
     end
-    return { ok = true, capabilities = { "fan" }, fan = { channel = fan } }
+    return {
+      ok = true,
+      capabilities = { "cooling" },
+      cooling = { channels = {
+        { id = "fan", name = dev.match.name or ("Fan " .. fan), kind = "fan", controllable = true },
+      } },
+    }
   end,
 
   enumerate_controllers = function(dev)
@@ -106,22 +118,21 @@ return {
     end)
   end,
 
-  get_rpm = function(dev)
+  get_cooling_status = function(dev, channel_id)
+    assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
     local fan = assert(dev.match.fan_index, "hwmon fan index missing")
-    return cached(dev, "rpm_cache", function()
+    local rpm = cached(dev, "rpm_cache", function()
       return number(dev, "fan" .. fan .. "_input") or 0
     end)
-  end,
-
-  get_duty = function(dev)
-    local fan = assert(dev.match.fan_index, "hwmon fan index missing")
-    return cached(dev, "duty_cache", function()
+    local duty = cached(dev, "duty_cache", function()
       local raw = math.min(number(dev, "pwm" .. fan) or 0, 255)
       return math.floor((raw * 100 + 127) / 255)
     end)
+    return { id = "fan", name = dev.match.name or ("Fan " .. fan), kind = "fan", controllable = true, rpm = rpm, duty = duty }
   end,
 
-  set_duty = function(dev, duty)
+  set_cooling_duty = function(dev, channel_id, duty)
+    assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
     local route = split_key(assert(dev.match.key, "hwmon route missing"))
     local fan = assert(dev.match.fan_index, "hwmon fan index missing")
     local enable = number(dev, "pwm" .. fan .. "_enable") or 1

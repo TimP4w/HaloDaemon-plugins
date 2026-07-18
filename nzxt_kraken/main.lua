@@ -381,8 +381,12 @@ return {
         latches = true,
         brightness = brightness, rotation = rotation,
       },
-      zones = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
-      chain = chain_channels,
+      channels = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
+      cooling = { channels = {
+        { id="pump", name="Pump", kind="pump", controllable=true },
+        { id="fan1", name="Radiator fan", kind="fan", controllable=true },
+      } },
+      division = chain_channels,
       accessories = accessories,
     }
   end,
@@ -398,11 +402,6 @@ return {
     pcall(function() dev.transport:read(REPORT) end)
   end,
 
-  -- Pump ring RGB.
-  write_frame = function(dev, zone_id, colors)
-    ring_grb = grb_from_colors(colors, RING_SLOTS)
-    send_channels(dev)
-  end,
   apply = function(dev, state)
     if state.mode == "static" then
       local fill = {}
@@ -410,7 +409,7 @@ return {
       ring_grb = grb_from_colors(fill, RING_SLOTS)
       send_channels(dev)
     elseif state.mode == "per_led" then
-      local ring_map = (state.zones or {}).ring or {}
+      local ring_map = (state.channels or {}).ring or {}
       local fill = {}
       for i = 0, RING_LEDS - 1 do
         fill[i + 1] = ring_map[tostring(i)] or {r = 0, g = 0, b = 0}
@@ -420,27 +419,42 @@ return {
     end
   end,
 
-  -- Accessory (F-fan) RGB, composited into the accessory channel by the host.
-  write_ext_frame = function(dev, channel, colors)
-    ext_grb = grb_from_colors(colors, #colors)
+  -- Direct ring and divided accessory frames share one encoded-byte callback.
+  write_frame = function(dev, channel, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    if channel == "ring" then
+      ring_grb = grb_from_colors(colors, RING_SLOTS)
+    else
+      ext_grb = grb_from_colors(colors, #colors)
+    end
     send_channels(dev)
   end,
 
-  -- Pump duty (min 20%).
-  set_duty = function(dev, duty)
-    dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
+  -- Unified cooling channels, including numeric parent channels for chained
+  -- accessories.
+  get_cooling_status = function(dev, id)
+    if id == "pump" then
+      return { id=id, name="Pump", kind="pump", controllable=true,
+        duty=(dev.status or {}).pump_duty or 0, rpm=(dev.status or {}).pump_rpm }
+    end
+    if id == "fan1" then
+      return { id=id, name="Radiator fan", kind="fan", controllable=((dev.status or {}).fan_rpm or 0) > 0,
+        duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
+    end
+    if tonumber(id) then
+      return { id=id, name="Radiator fan", kind="fan", controllable=true,
+        duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
+    end
+    error("unknown cooling channel: " .. tostring(id))
   end,
-  get_duty = function(dev) return (dev.status or {}).pump_duty or 0 end,
-  get_rpm = function(dev) return (dev.status or {}).pump_rpm end,
-
-  -- Accessory fan (routed from the child via the parent's fan hub).
-  set_fan_duty = function(dev, ch, duty)
-    dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
+  set_cooling_duty = function(dev, id, duty)
+    if id == "pump" then
+      dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
+    elseif id == "fan1" or tonumber(id) then
+      dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
+    else error("unknown cooling channel: " .. tostring(id)) end
   end,
-  fan_duty = function(dev, ch) return (dev.status or {}).fan_duty or 0 end,
-  fan_rpm = function(dev, ch) return (dev.status or {}).fan_rpm or 0 end,
-  fan_controllable = function(dev, ch) return ((dev.status or {}).fan_rpm or 0) > 0 end,
-
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
   read_status = function(dev)
     local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
@@ -490,7 +504,12 @@ return {
   -- One rendered engine frame (raw RGBA at native resolution). Pre-rotate in
   -- software (firmware rotates only its built-in display), then Q565 or raw BGR.
   lcd_stream_frame = function(dev, rgba, width, height, rotation, raw, brightness)
-    local rotated = halod.rgba_rotate_square(rgba, width, rotation)
+    -- Keep the input buffer when no rotation is requested.  The host codec's
+    -- zero-degree path is a pass-through copy, which needlessly duplicates a frame.
+    local rotated = rgba
+    if rotation % 360 ~= 0 then
+      rotated = halod.rgba_rotate_square(rgba, width, rotation)
+    end
     if raw then
       stream_raw(dev, halod.rgba_to_bgr888(rotated), brightness)
     else

@@ -10,7 +10,7 @@ license: GPL-2.0-or-later
 description: Corsair iCUE DRAM RGB (Vengeance / Dominator, DDR4 & DDR5).
 platforms: [linux, windows]
 permissions: [smbus]
-capabilities: [rgb]
+capabilities: [lighting]
 devices:
   - vendor: Corsair
     model: iCUE DRAM

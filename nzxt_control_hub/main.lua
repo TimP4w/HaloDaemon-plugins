@@ -45,7 +45,11 @@ end
 local chain_channels = {}
 for i = 0, FAN_CHANNELS - 1 do
   chain_channels[#chain_channels + 1] =
-    { id = tostring(i), name = "Channel " .. (i + 1), max_leds = MAX_CHAIN_LEDS }
+    {
+      id = tostring(i), name = "Channel " .. (i + 1),
+      led_count = 0, max_leds = MAX_CHAIN_LEDS,
+      topology = "linear", color_order = "rgb",
+    }
 end
 
 local accessories = {
@@ -67,11 +71,19 @@ return {
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
     log("NZXT Control Hub initialized")
-    return { ok = true, chain = chain_channels, accessories = accessories }
+    -- `channels` establishes the physical lighting endpoints; `division`
+    -- marks those same endpoints as attachable segment buses. The daemon merges
+    -- them by id into divisible LightingChannels when it serializes the hub.
+    return {
+      ok = true, channels = chain_channels, division = chain_channels,
+      accessories = accessories,
+    }
   end,
 
   -- RGB, routed by the host through whichever channel a chained accessory occupies.
-  write_ext_frame = function(dev, channel, colors)
+  write_frame = function(dev, channel, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     write_channel(dev, tonumber(channel), colors)
   end,
 
@@ -98,22 +110,21 @@ return {
     return prev
   end,
 
-  -- Per-channel fan telemetry/control, routed from the chained accessory's
-  -- fan capability via the parent hub.
-  fan_rpm = function(dev, ch)
-    local s = dev.status or {}
-    return (s.rpm and s.rpm[ch]) or 0
-  end,
-  fan_duty = function(dev, ch)
-    local s = dev.status or {}
-    return (s.duty and s.duty[ch]) or 0
-  end,
-  fan_controllable = function(dev, ch)
+  -- Per-channel cooling telemetry/control, routed from chained accessories.
+  get_cooling_status = function(dev, channel_id)
+    local ch = assert(tonumber(channel_id), "invalid cooling channel")
+    if ch < 0 or ch >= FAN_CHANNELS then error("unknown cooling channel: " .. tostring(channel_id)) end
     local s = dev.status or {}
     local t = s.fan_type and s.fan_type[ch]
-    return t ~= nil and t ~= 0
+    return {
+      id = tostring(ch), name = "Channel " .. (ch + 1), kind = "fan",
+      controllable = t ~= nil and t ~= 0,
+      rpm = (s.rpm and s.rpm[ch]) or 0,
+      duty = (s.duty and s.duty[ch]) or 0,
+    }
   end,
-  set_fan_duty = function(dev, ch, duty)
+  set_cooling_duty = function(dev, channel_id, duty)
+    local ch = assert(tonumber(channel_id), "invalid cooling channel")
     if ch >= FAN_CHANNELS then
       error(string.format("Control Hub: fan channel %d out of range (max %d)", ch, FAN_CHANNELS - 1))
     end

@@ -6,7 +6,7 @@ license: GPL-3.0-or-later
 description: Logitech HID++ direct devices and receivers.
 platforms: [linux, windows]
 permissions: [hid]
-capabilities: [rgb, battery, connection, dpi, controls, key_remap, keyboard_layout, onboard_profiles, pairing, equalizer]
+capabilities: [lighting, battery, connection, dpi, controls, key_remap, keyboard_layout, onboard_profiles, pairing, equalizer]
 dynamic_children: true
 devices:
   - vendor: Logitech

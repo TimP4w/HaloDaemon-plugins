@@ -19,7 +19,7 @@
 -- released OpenRGB servers. Its replies use controller indices and do not
 -- carry per-request ACK packets.
 --
--- Scope: enumerate controllers/zones and drive them via Direct/custom mode
+-- Scope: enumerate controllers/channels and drive them via Direct/custom mode
 -- (`SetCustomMode` + `UpdateZoneLEDs`). Mode switching, profiles and
 -- plugin-to-plugin messages are out of scope.
 
@@ -42,7 +42,7 @@ local MAX_ZONE_LEDS = 4096
 local MAX_CONTROLLER_LEDS = 0xFFFF
 local MAX_MODE_COLORS = 4096
 
--- Enumeration index → its zones ({ id = <zone index string>, led_count = n }).
+-- Enumeration index → its channels ({ id = <zone index string>, led_count = n }).
 -- The root and routed controller callbacks share one worker, so child
 -- initialization can publish the topology discovered during enumeration.
 local controller_zones = {}
@@ -176,12 +176,12 @@ local function ensure_custom_mode(dev, index)
   end
 end
 
--- Normalize enumeration zones and host-provided RgbZone descriptors:
--- enumeration zones carry led_count, while RgbZone carries a leds array.
+-- Normalize enumeration channels and host-provided RgbZone descriptors:
+-- enumeration channels carry led_count, while RgbZone carries a leds array.
 local function zones_for(dev, index)
-  local zones = controller_zones[index] or dev.zones or {}
+  local channels = controller_zones[index] or dev.channels or {}
   local normalized = {}
-  for i, zone in ipairs(zones) do
+  for i, zone in ipairs(channels) do
     normalized[i] = {
       id = zone.id,
       led_count = zone.led_count or #(zone.leds or {}),
@@ -191,23 +191,23 @@ local function zones_for(dev, index)
 end
 
 local function controller_buffer(dev, index)
-  local zones = zones_for(dev, index)
+  local channels = zones_for(dev, index)
   local cached = controller_colors[index]
   if not cached then
     cached = {}
-    for _, zone in ipairs(zones) do
+    for _, zone in ipairs(channels) do
       cached[zone.id] = string.rep("\0\0\0\0", zone.led_count)
     end
     controller_colors[index] = cached
   end
-  return zones, cached
+  return channels, cached
 end
 
 local function send_controller(dev, index)
-  local zones, cached = controller_buffer(dev, index)
+  local channels, cached = controller_buffer(dev, index)
   local packed = {}
   local color_count = 0
-  for i, zone in ipairs(zones) do
+  for i, zone in ipairs(channels) do
     packed[i] = cached[zone.id]
     color_count = color_count + zone.led_count
   end
@@ -221,12 +221,20 @@ local function set_zone_colors(dev, index, zone_id, colors)
 end
 
 return {
+  validate = function(context)
+    local config = context.config or {}
+    if not config.host or config.host == "" or not config.port or config.port == "" then
+      return { ok = false, reason = "The OpenRGB server host and port are required." }
+    end
+    return { ok = true }
+  end,
+
   initialize = function(dev)
     if dev.match.index ~= nil then
       return {
         ok = true,
-        capabilities = { "rgb" },
-        zones = controller_zones[dev.match.index] or {},
+        capabilities = { "lighting" },
+        channels = controller_zones[dev.match.index] or {},
       }
     end
     -- SET_CLIENT_NAME has no response. Version negotiation returns exactly
@@ -280,23 +288,23 @@ return {
       local num_zones
       num_zones, pos = read_u16(data, pos)
       check_count("zone", num_zones, MAX_ZONES)
-      local zones = {}
+      local channels = {}
       local total_leds = 0
       for z = 1, num_zones do
-        zones[z], pos = read_zone(data, pos, z - 1)
-        total_leds = total_leds + zones[z].led_count
+        channels[z], pos = read_zone(data, pos, z - 1)
+        total_leds = total_leds + channels[z].led_count
         check_count("controller LED", total_leds, MAX_CONTROLLER_LEDS)
       end
       -- LEDs/colours follow but aren't needed; the
       -- whole message was already consumed via the packet size.
 
-      controller_zones[index] = zones
+      controller_zones[index] = channels
       controllers[#controllers + 1] = {
         index = index,
         name = (name ~= "" and name) or ("Controller " .. index),
         serial = (_serial ~= "" and _serial) or nil,
         location = (_location ~= "" and _location) or nil,
-        zones = zones,
+        channels = channels,
       }
     end
     return controllers
@@ -304,26 +312,19 @@ return {
 
   -- One worker owns every controller. Each routed child has a persistent dev
   -- table whose match index is the enumeration route.
-  write_frame = function(dev, zone_id, colors)
+  write_frame = function(dev, zone_id, bytes)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     local index = assert(dev.match.index, "OpenRGB controller route missing")
     ensure_custom_mode(dev, index)
     set_zone_colors(dev, index, zone_id, colors)
     send_controller(dev, index)
   end,
 
-  write_frame_batch = function(dev, frames)
-    local index = assert(dev.match.index, "OpenRGB controller route missing")
-    ensure_custom_mode(dev, index)
-    for _, frame in ipairs(frames) do
-      set_zone_colors(dev, index, frame.zone_id, frame.colors)
-    end
-    send_controller(dev, index)
-  end,
-
   apply = function(dev, state)
     local index = assert(dev.match.index, "OpenRGB controller route missing")
-    local zones = zones_for(dev, index)
-    if not zones then
+    local channels = zones_for(dev, index)
+    if not channels then
       return
     end
 
@@ -334,7 +335,7 @@ return {
       end
       ensure_custom_mode(dev, index)
       local _, cached = controller_buffer(dev, index)
-      for _, zone in ipairs(zones) do
+      for _, zone in ipairs(channels) do
         local colors = {}
         for i = 1, zone.led_count do
           colors[i] = color
@@ -343,13 +344,13 @@ return {
       end
       send_controller(dev, index)
     elseif state.mode == "per_led" then
-      local zmap = state.zones
+      local zmap = state.channels
       if not zmap then
         return
       end
       ensure_custom_mode(dev, index)
       local _, cached = controller_buffer(dev, index)
-      for _, zone in ipairs(zones) do
+      for _, zone in ipairs(channels) do
         -- Sparse map keyed by the LED's 0-based id; unpainted LEDs fall back to
         -- black, matching `per_led_frame` on the native-driver side.
         local led_map = zmap[zone.id]

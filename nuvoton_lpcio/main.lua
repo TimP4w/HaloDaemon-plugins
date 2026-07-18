@@ -120,7 +120,12 @@ return {
     -- The matched Super-I/O is a sensor controller. Only dynamically-created
     -- `Fan 1…N` children own a PWM channel; assigning one to the root made the
     -- UI present the controller itself as a fan.
-    if dev.match.key then result.fan = { channel = channel(dev) } end
+    if dev.match.key then
+      result.capabilities = { "cooling" }
+      result.cooling = { channels = {
+        { id = "fan", name = dev.match.name or ("Fan " .. (channel(dev) + 1)), kind = "fan", controllable = not dev.info.ec },
+      } }
+    end
     return result
   end,
   enumerate_controllers = function(dev)
@@ -152,26 +157,26 @@ return {
     dev.sensor_cache = out
     return out
   end,
-  get_duty = function(dev)
-    if not keep_io_unlocked(dev) then return dev.last_duty or 0 end
-    local reg = dev.info.pwm[channel(dev) + 1]
-    dev.last_duty = reg and math.floor((read_hwm(dev, reg) * 100 + 127) / 255) or 0
-    return dev.last_duty
-  end,
-  get_rpm = function(dev)
-    if not keep_io_unlocked(dev) then return dev.last_rpm or 0 end
-    local reg = dev.info.tach[channel(dev) + 1]
-    if not reg then return 0 end
-    local high, low = read_hwm(dev, reg), read_hwm(dev, reg + 1)
-    local count = dev.info.count16 and ((high << 8) | low) or ((high << 5) | (low & 0x1f))
-    if dev.info.count16 then
-      dev.last_rpm = (count > 0 and count < 0xffff) and math.floor(1350000 / count) or 0
-    else
-      dev.last_rpm = count > 0x14 and count < 0x1fff and math.floor(1350000 / count) or 0
+  get_cooling_status = function(dev, channel_id)
+    assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
+    if keep_io_unlocked(dev) then
+      local reg = dev.info.pwm[channel(dev) + 1]
+      dev.last_duty = reg and math.floor((read_hwm(dev, reg) * 100 + 127) / 255) or 0
+      local tach = dev.info.tach[channel(dev) + 1]
+      if tach then
+        local high, low = read_hwm(dev, tach), read_hwm(dev, tach + 1)
+        local count = dev.info.count16 and ((high << 8) | low) or ((high << 5) | (low & 0x1f))
+        if dev.info.count16 then
+          dev.last_rpm = (count > 0 and count < 0xffff) and math.floor(1350000 / count) or 0
+        else
+          dev.last_rpm = count > 0x14 and count < 0x1fff and math.floor(1350000 / count) or 0
+        end
+      end
     end
-    return dev.last_rpm
+    return { id = "fan", name = dev.match.name or ("Fan " .. (channel(dev) + 1)), kind = "fan", controllable = not dev.info.ec, duty = dev.last_duty, rpm = dev.last_rpm or 0 }
   end,
-  set_duty = function(dev, duty)
+  set_cooling_duty = function(dev, channel_id, duty)
+    assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
     if not keep_io_unlocked(dev) then return end
     if dev.info.ec then error("per-channel manual control is unsafe on NCT668x shared mode") end
     local ch, mode, cmd = channel(dev) + 1, dev.info.mode[channel(dev) + 1], dev.info.cmd[channel(dev) + 1]

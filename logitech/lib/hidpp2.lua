@@ -278,21 +278,21 @@ local function send_feature_packets(dev, packets)
   end
 end
 
-local rgb = halod.require("lib.hidpp2.rgb")({
+local lighting = halod.require("lib.hidpp2.lighting")({
   bytes = bytes, packet = packet, request = request, feature = feature,
   send_feature_packets = send_feature_packets, sw_id = SW_ID,
   rgb_effects = RGB_EFFECTS, color_led_effects = COLOR_LED_EFFECTS,
   per_key_lighting_v2 = PER_KEY_LIGHTING_V2,
 })
-local select_native_effects = rgb.select_native_effects
-local apply_native_effect = rgb.apply_native_effect
-local discover_per_key_ids = rgb.discover_per_key_ids
-local rgb_static_slots = rgb.rgb_static_slots
-local color_led_zones = rgb.color_led_zones
-local write_per_key_frame = rgb.write_per_key_frame
-local write_per_key_pairs = rgb.write_per_key_pairs
-local write_rgb_zone = rgb.write_rgb_zone
-local restore_rgb_control = rgb.restore_rgb_control
+local select_native_effects = lighting.select_native_effects
+local apply_native_effect = lighting.apply_native_effect
+local discover_per_key_ids = lighting.discover_per_key_ids
+local rgb_static_slots = lighting.rgb_static_slots
+local color_led_zones = lighting.color_led_zones
+local write_per_key_frame = lighting.write_per_key_frame
+local write_per_key_pairs = lighting.write_per_key_pairs
+local write_rgb_zone = lighting.write_rgb_zone
+local restore_rgb_control = lighting.restore_rgb_control
 local function keyboard_layout(dev)
   if not dev.hidpp.features[KEYBOARD_LAYOUT_2] then return "unknown" end
   local country = feature(dev, KEYBOARD_LAYOUT_2, 0x00):byte(1)
@@ -385,7 +385,7 @@ local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
 local set_remap_active = remap.set_active
 local button_events = remap.events
-return {
+local callbacks = {
   event_source = function(event)
     local report = event.report
     if #report < 4 then return false end
@@ -523,40 +523,40 @@ return {
         local led_ids = has(features, PER_KEY_LIGHTING_V2)
           and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
         local wire = #led_ids > 0 and "per_key" or "rgb_effects"
-        dev.rgb = { wire = wire, zones = count, static_slots = static_slots, led_ids = led_ids }
-        result.zones = {}
+        dev.lighting = { wire = wire, channels = count, static_slots = static_slots, led_ids = led_ids }
+        result.channels = {}
         if #led_ids > 0 and count == 1 then
-          result.zones[1] = { id = "zone_0", name = profile.zone_name or "Lighting",
+          result.channels[1] = { id = "zone_0", name = profile.zone_name or "Lighting",
             topology = profile.topology or "linear", led_count = #led_ids, led_ids = led_ids,
             keyboard_form_factor = profile.topology == "keyboard" and "t_k_l" or nil,
             keyboard_layout = layout }
         else
-          for zone = 0, count - 1 do result.zones[#result.zones + 1] = {
+          for zone = 0, count - 1 do result.channels[#result.channels + 1] = {
             id = "zone_" .. zone, name = "Zone " .. (zone + 1), topology = "linear", led_count = 1 } end
         end
         result.native_effects = select_native_effects(profile)
         feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
-        capability("rgb")
+        capability("lighting")
       end
     elseif has(features, COLOR_LED_EFFECTS) then
       local count = request(dev, devnum, features[COLOR_LED_EFFECTS], 0x00):byte(1) or 0
       if count > 0 then
-        local zones, static_slots = color_led_zones(dev, features[COLOR_LED_EFFECTS], count)
-        dev.rgb = { wire = "color_led", zones = count, static_slots = static_slots, led_ids = {} }
-        result.zones = zones
+        local channels, static_slots = color_led_zones(dev, features[COLOR_LED_EFFECTS], count)
+        dev.lighting = { wire = "color_led", channels = count, static_slots = static_slots, led_ids = {} }
+        result.channels = channels
         feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
-        capability("rgb")
+        capability("lighting")
       end
     elseif has(features, PER_KEY_LIGHTING_V2) then
       local led_ids = discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order)
       if #led_ids > 0 then
-        dev.rgb = { wire = "per_key", zones = 1, static_slots = { 0 }, led_ids = led_ids }
-        result.zones = {{ id = "zone_0", name = profile.zone_name or "Lighting",
+        dev.lighting = { wire = "per_key", channels = 1, static_slots = { 0 }, led_ids = led_ids }
+        result.channels = {{ id = "zone_0", name = profile.zone_name or "Lighting",
           topology = profile.topology or "linear", led_count = #led_ids, led_ids = led_ids,
           keyboard_form_factor = profile.topology == "keyboard" and "t_k_l" or nil,
           keyboard_layout = layout }}
         result.native_effects = select_native_effects(profile)
-        capability("rgb")
+        capability("lighting")
       end
     end
     if has(features, SIDETONE) then
@@ -873,7 +873,7 @@ return {
   end,
   apply = function(dev, state)
     if state.mode == "native_effect" then
-      if dev.rgb and dev.hidpp.features[RGB_EFFECTS] then
+      if dev.lighting and dev.hidpp.features[RGB_EFFECTS] then
         -- Match the native driver: every explicit state apply reclaims LED
         -- control. Onboard mode, reconnects, and prior effects can make the
         -- firmware silently ignore otherwise-valid per-key packets.
@@ -887,13 +887,13 @@ return {
       end
       return
     end
-    if not dev.rgb then return end
+    if not dev.lighting then return end
     pcall(restore_rgb_control, dev)
     if state.mode == "per_led" then
-      if dev.rgb.wire == "per_key" then
-        write_per_key_pairs(dev, state.zones)
+      if dev.lighting.wire == "per_key" then
+        write_per_key_pairs(dev, state.channels)
       else
-        for zone_id, led_colors in pairs(state.zones or {}) do
+        for zone_id, led_colors in pairs(state.channels or {}) do
           local _, color = next(led_colors)
           if color then write_rgb_zone(dev, zone_id, { color }) end
         end
@@ -902,21 +902,35 @@ return {
     end
     if state.mode ~= "static" then return end
     local color = state.color or { r = 0, g = 0, b = 0 }
-    if dev.rgb.wire == "per_key" then
-      local colors = {}; for _ = 1, #dev.rgb.led_ids do colors[#colors + 1] = color end
+    if dev.lighting.wire == "per_key" then
+      local colors = {}; for _ = 1, #dev.lighting.led_ids do colors[#colors + 1] = color end
       write_per_key_frame(dev, colors)
     else
-      for zone = 0, dev.rgb.zones - 1 do write_rgb_zone(dev, "zone_" .. zone, { color }) end
+      for zone = 0, dev.lighting.channels - 1 do write_rgb_zone(dev, "zone_" .. zone, { color }) end
     end
   end,
-  write_frame = function(dev, zone_id, colors, led_ids)
+  write_frame = function(dev, zone_id, bytes, led_ids)
+  local colors = {}
+  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     write_rgb_zone(dev, zone_id, colors, led_ids)
-  end,
-  write_frame_batch = function(dev, frames)
-    for _, frame in ipairs(frames) do
-      write_rgb_zone(dev, frame.zone_id, frame.colors, frame.led_ids)
-    end
   end,
   close = function(_dev) end,
 }
+
+-- A powered-off device stays enumerated (its dongle answers ROOT from cache)
+-- and only fails once a request needs the hardware.
+local describe_device = callbacks.initialize
+callbacks.initialize = function(dev)
+  local ok, result = pcall(describe_device, dev)
+  if ok then return result end
+  local text = tostring(result)
+  if not (text:find("HID++ error response", 1, true)
+      or text:find("HID++ response did not arrive", 1, true)) then
+    error(result)
+  end
+  log("logitech: device is not powered on: " .. text, "trace")
+  return { ok = false }
+end
+
+return callbacks
 end

@@ -8,7 +8,7 @@ version: 1.0.0
 license: GPL-2.0-or-later
 description: ASUS Aura USB motherboard RGB — per-LED direct control of the on-board zones and ARGB headers, plus the on-board native effects.
 permissions: [hid]
-capabilities: [rgb, chain]
+capabilities: [lighting, lighting_division]
 devices:
   - vendor: ASUS
     model: ASUS Aura Motherboard
