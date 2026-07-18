@@ -123,7 +123,7 @@ Master table of every operation the driver can issue. `<addr>` is the 7-bit SMBu
 
 ### Detection probe
 
-Three steps; all must pass for the controller to be considered present (`probe_corsair_dram`). On any failure the device is skipped (`initialize()` returns `Ok(false)`) before any info read.
+Three steps; all must pass for the controller to be considered present (`probe` in `main.lua`). On any failure the device is skipped (`initialize` returns `false`) before any info read.
 
 1. **ACK** — `write_quick(<addr>)`. Must return an ACK (true); otherwise abort.
 2. **Sentinel A** — read register `0x43`. Accept only `0x1A`, `0x1B`, or `0x1C`; any other value or a read error aborts.
@@ -131,7 +131,7 @@ Three steps; all must pass for the controller to be considered present (`probe_c
 
 ### Info-block read & parse
 
-Loads the 32-byte info block and validates it (`sync_read_device_info`).
+Loads the 32-byte info block and validates it (`read_info` in `main.lua`).
 
 1. **Request** — `0x61←0x00` (`REG_GET_DEVICE_INFO`), then `0x21←0x00` (`REG_BINARY_START`). This arms the device-info buffer.
 2. **Read body** — read register `0x40` (`REG_GET_BINARY_DATA`) 32 times, filling `data[0..32]`.

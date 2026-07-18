@@ -257,9 +257,9 @@ the plugin declares.
 | `secure_storage` | Reading this plugin's protected config values. |
 | `audio_routing` | Creating and controlling host audio sinks. |
 
-A hardware match must declare its matching permission. TCP requires `network`.
-The command transport requires `command`. A new permission requires new user
-consent.
+A hardware match must declare its matching permission. TCP and HTTP require
+`network`. The command transport requires `command`. A new permission requires
+new user consent.
 
 ## Host requirements
 
@@ -360,6 +360,45 @@ transports:
 only when the integration must connect to loopback, private, or link-local
 addresses.
 
+### HTTP
+
+A scoped HTTP client for integrations. Requires the `network` permission.
+
+```yaml
+permissions: [network]
+transports:
+  http:
+    host_key: host
+    origins: ["https://{host}", "https://api.example.com"]
+    methods: [GET, POST]
+    max_request_bytes: 65536
+    max_response_bytes: 1048576
+    max_timeout_ms: 10000
+    max_concurrency: 4
+    allow_private: false
+    tls:
+      profile: custom-ca
+      ca_der_base64: <base64 DER trust anchor>
+      verify_identity: bridge_id
+      certificate_identity: webpki
+```
+
+`origins` is an exact `scheme://host[:port]` allowlist — no wildcards. An origin
+whose address isn't known at authoring time uses the literal token `{host}`,
+resolved at runtime from the config field named by `host_key`. `methods`
+defaults to `[GET]`. The size, timeout, and concurrency ceilings default to
+`64 KiB` / `1 MiB` / `10000 ms` / `4`. Set `allow_private: true` only when the
+integration must reach loopback, private, or link-local origins.
+
+`tls.profile` is `default` (public web PKI) or `custom-ca`. `custom-ca` trusts
+exactly the plugin-shipped `ca_der_base64` DER root and **requires**
+`verify_identity` to name a non-secure config field used as the TLS server name
+while the socket still connects to the `host_key` address.
+`certificate_identity` is `webpki` (standard SAN verification, the default) or
+`subject-cn` (match one exact subject CN). Plugins cannot disable certificate
+verification. An integration declares exactly one root transport, so `http`,
+`tcp`, and `hwmon` cannot appear together.
+
 ### Command
 
 ```yaml
@@ -452,28 +491,6 @@ An integration without `setup` is considered configured immediately, but it
 still implements `validate(context)`. Halo invokes validation before every
 enable. A setup integration is enabled only after pairing and final validation
 succeed.
-
-### Hue bridge TLS
-
-The `hue-bridge` HTTP TLS profile trusts only the Signify Hue Bridge issuing
-CA and verifies the bridge certificate against the identity stored in the
-config field named by `verify_identity`:
-
-```yaml
-transports:
-  http:
-    host_key: host
-    origins: ["https://{host}"]
-    tls:
-      profile: hue-bridge
-      verify_identity: bridge_id
-```
-
-Halo connects to the configured LAN address while using `bridge_id` as the TLS
-server name. Plugins cannot disable certificate verification. Bridges whose
-certificate chains to an on-bridge root are not accepted by this profile; they
-need an explicit, host-owned trust-on-pairing design rather than a plugin flag
-that silently disables TLS verification.
 
 ## Config fields
 

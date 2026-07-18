@@ -88,7 +88,7 @@ Every device callback receives `dev` first.
 | Member | Meaning |
 |---|---|
 | `dev.transport` | Transport userdata documented below. |
-| `dev.match.transport` | Transport kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, or `tcp`. |
+| `dev.match.transport` | Transport kind: `hid`, `usb`, `smbus`, `hwmon`, `command`, `amd_smn`, `lpcio`, `tcp`, or `http`. |
 | `dev.match.vid`, `.pid` | Matched USB IDs when available. |
 | `dev.match.bus`, `.addr` | SMBus bus kind and matched address when available. |
 | `dev.match.index` | Remote controller index for an integration child. |
@@ -493,6 +493,35 @@ end)
 
 An address outside the manifest scope raises an error. The `ops` value is valid
 only inside the `batch` callback. Do not save it for later use.
+
+## Scoped HTTP requests
+
+A plugin that declares an `http` transport and holds the `network` permission
+gets `halod.http:request{…}`. It is a capability global (like `halod.publish`),
+not `dev.transport:` userdata — there is no persistent socket. Each call is a
+synchronous, bounded request validated against the declared origins before a
+socket opens.
+
+```lua
+local r = halod.http:request{
+  method = "GET",                       -- optional, defaults to GET
+  origin = "https://api.example.com",   -- required; must be a declared origin
+  path = "/v1/status",                  -- optional
+  headers = { ["accept"] = "application/json" },
+  body = "",                            -- optional string
+  timeout_ms = 3000,                    -- optional; capped by max_timeout_ms
+}
+
+print(r.status)                         -- numeric HTTP status
+print(r.headers["content-type"])        -- header names are lowercased
+if r.json then print(r.json.value) end  -- parsed JSON body when the body is JSON
+print(r.body)                           -- always the raw response body string
+```
+
+`origin` must exactly match one of the manifest's `origins`. When an origin uses
+the `{host}` placeholder, pass the resolved `scheme://host[:port]` form (the
+value substituted from the `host_key` config field). Requests that exceed the
+declared method set, size limits, timeout, or origin scope raise an error.
 
 ## Byte buffers
 
