@@ -29,6 +29,7 @@ Control-transfer parameters:
 | `wValue` | `0` |
 | `wIndex` | Target register address (16-bit) |
 | `data` | Payload: register-dependent length |
+| Timeout | 1000 ms (the companion transport's declared control-transfer limit) |
 
 ---
 

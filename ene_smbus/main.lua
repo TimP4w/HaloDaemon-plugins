@@ -313,8 +313,11 @@ return {
         elseif state.id == "off" then
           set_mode(ops, addr, MODE_OFF, SPEED.normal, 0)
         end
+      elseif state.mode == "engine" or state.mode == "direct_effect" then
+        -- Native effects disable direct mode. Re-arm it when control returns to
+        -- a host-rendered effect so subsequent streamed frames are visible.
+        set_direct_mode(ops, addr, true)
       end
-      -- "engine" / "direct_effect": the canvas engine drives write_frame.
       return true
     end)
   end,
@@ -330,15 +333,21 @@ return {
     end)
   end,
 
-  -- Canvas-engine frame: color data only (device is already in direct mode).
+  -- Canvas-engine frame. Repeat the direct/apply latch sequence so streaming
+  -- recovers if firmware or another controller cleared direct mode between
+  -- frames; writing color RAM alone is not sufficient on every ENE revision.
   write_frame = function(dev, _zone, bytes)
-  local colors = {}
-  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    local colors = {}
+    for i = 1, #bytes, 3 do
+      colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 }
+    end
     local info = dev.info
     if not info then error("ENE device used before initialize()") end
     local addr = dev.match.addr
     dev.transport:batch(function(ops)
-      write_reg_block(ops, addr, info.direct_reg, build_color_buffer(colors, info.led_count))
+      apply_direct_color_block(
+        ops, addr, info.direct_reg, build_color_buffer(colors, info.led_count)
+      )
       return true
     end)
   end,

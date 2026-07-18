@@ -29,6 +29,10 @@ local FRAME_ADDR = 0xE100
 local CONTROL_BLOCKS = { 0xE020, 0xE030 }
 local BASELINE_ADDR = 0xE020
 local FRAME_SETTLE_MS = 10 -- let a frame settle before a baseline restore
+-- Full 132-byte frame writes can take longer than the short DDC probe window.
+-- This matches the companion transport's declared control-transfer limit and
+-- preserves the timeout behavior of the pre-usb_control API.
+local AMBI_TIMEOUT_MS = 1000
 
 -- 16-byte block that hands direct frame control to the host.
 local CAPTURE_BLOCK = string.char(
@@ -248,7 +252,9 @@ local function ddc_get_info(dev, a0, a1, a2, a3)
 end
 
 local function ambiglow_write(dev, address, data)
-  dev.transport:usb_control(AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data, 0, 50, "ambiglow")
+  dev.transport:usb_control(
+    AMBI_BMREQ_OUT, AMBI_BREQ, 0x00, address, data, 0, AMBI_TIMEOUT_MS, "ambiglow"
+  )
 end
 
 -- Arm direct frame control once (idempotent until a release).
