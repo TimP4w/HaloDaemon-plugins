@@ -373,7 +373,10 @@ Byte inputs accept a Lua string or `halod.buffer`. Reads return Lua strings.
 | `:read_any(size)` | Read from either HID collection. |
 | `:defer_event(data)` | Put a report back into the HID event path. |
 | `:write_then_read(data, size)` | Write, then read a reply. |
-| `:feature_exchange(data, size)` | HID feature-report exchange. |
+| `:feature_exchange(data, size)` | HID feature-report exchange (send then get). |
+| `:send_feature_report(data)` | Send a feature report; no reply. `data[1]` is the report id. |
+| `:get_feature_report(report_id, size)` | Read a feature report for `report_id`; `size` excludes the report-id byte. |
+| `:get_input_report(report_id, size)` | Read an input report for `report_id`; `size` excludes the report-id byte. |
 | `:write_many({data, ...})` | Write several packets. |
 | `:has_companion()` | Whether a companion HID collection is open. |
 | `:write_companion(data)` | Write to the companion collection. |

@@ -199,7 +199,7 @@ Each device needs `vendor`, `model`, and exactly one nested `match` entry.
 | Match | Main fields |
 |---|---|
 | `hid` | `vid`, `pid` or `pids`; optional `usage_page`, `usage`, `interface`, `max_bytes_per_sec` |
-| `usb` | `vid` and `pid`; optional `interface` (default `0`) |
+| `usb` | `vid` and `pid` (or `pids`); optional `interface` (default `0`), `serial`, `max_bytes_per_sec` |
 | `smbus` | `bus`, `addresses`; optional `extra_addresses`, `pre_scan`, `probe`, `pci_match`, `max_bytes_per_sec` |
 | `command` | Exact executable name |
 | `amd_smn` | `any: true` |
@@ -212,7 +212,9 @@ SMBus `bus` is `chipset` or `gpu`. `probe` is `quick`, `read_byte`, or `none`.
 A GPU match also needs at least one `pci_match` entry.
 
 USB discovery keeps the bus, port path, address, interface, and serial. This
-keeps identical VID/PID devices separate.
+keeps identical VID/PID devices separate. A USB match may use `pids` for a
+device family (like `hid`), `serial` to bind to one unit, and
+`max_bytes_per_sec` to cap that device's write rate.
 
 ### Control layout
 
