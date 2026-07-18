@@ -18,12 +18,12 @@ return function(api)
   end
 
   local function receiver_children(dev, product_name, device_type)
-    if dev.match.pid ~= 0xc547 then return {} end
+    if not dev.receiver then return {} end
     -- The count is not a dense upper bound: pairing slots remain sparse after
     -- unpairing and powered-off children may not be included in it.
     pcall(read, dev, DIRECT, 0x0002)
     local out = {}
-    for slot = 1, 6 do
+    for slot = 1, dev.receiver.max_slots do
       local pair_ok, pair = pcall(read, dev, DIRECT, 0x02b5, api.bytes(0x20 + slot - 1))
       local hi, lo = pair_ok and pair:byte(4) or nil, pair_ok and pair:byte(5) or nil
       local wpid = hi and lo and ((hi << 8) | lo) or 0
@@ -38,7 +38,7 @@ return function(api)
           index = slot, key = tostring(slot), serial = serial,
           id = serial and ("logitech_" .. serial)
             or string.format("logitech_%04x_%d", wpid, slot),
-          name = product_name(nil, wpid), device_type = device_type(wpid),
+          name = product_name(nil, wpid), device_type = device_type(pair:byte(8), wpid),
           extra = { wpid = wpid },
         }
       end

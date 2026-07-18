@@ -115,7 +115,42 @@ local v1_read, v1_write = hidpp1.read, hidpp1.write
 
 local product_name
 
-local function wpid_device_type(wpid)
+-- Receiver identity is transport metadata, not a special case of one device
+-- PID. Keep the Solaar-compatible HID++ 1.x families here; Bolt and the old
+-- EX100 use protocols this plugin does not implement.
+local RECEIVERS = {
+  [0xc52b] = { name = "Logitech Unifying Receiver", max_slots = 6 },
+  [0xc532] = { name = "Logitech Unifying Receiver", max_slots = 6 },
+  [0xc518] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc51a] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc51b] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc521] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc525] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc526] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc52e] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc52f] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc531] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc534] = { name = "Logitech Nano Receiver", max_slots = 2 },
+  [0xc535] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc537] = { name = "Logitech Nano Receiver", max_slots = 6 },
+  [0xc539] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc53a] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc53d] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc53f] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc541] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc545] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc547] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+  [0xc54d] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+}
+
+local function paired_device_type(kind, wpid)
+  local kinds = {
+    [1] = "keyboard", [2] = "mouse", [3] = "keyboard", [0x0d] = "headset",
+  }
+  if kind then
+    local resolved = kinds[kind & 0x0f]
+    if resolved then return resolved end
+  end
   if wpid == 0x4099 then return "mouse" end
   if wpid == 0x40b0 then return "keyboard" end
   return "other"
@@ -145,7 +180,7 @@ end
 
 local function enumerate_features_with_retry(dev, devnum)
   local last_error
-  -- A cold direct device can take longer than one 50 ms transport window to
+  -- A cold direct device can take longer than one transport window to
   -- answer its first ROOT request. Retrying the same request is safe: HID++
   -- replies carry the same devnum, feature index, function, and software id,
   -- so a late response from the prior attempt satisfies this attempt too.
@@ -178,7 +213,7 @@ end
 product_name = function(pid, wpid)
   local names = {
     [0xc095] = "Logitech G502 X Plus", [0xc08b] = "Logitech G502 Hero",
-    [0xc352] = "Logitech G PRO X TKL", [0xc547] = "Logitech LIGHTSPEED Receiver",
+    [0xc352] = "Logitech G PRO X TKL",
     [0x0aba] = "Logitech PRO X Wireless Gaming Headset",
     [0x0af7] = "Logitech PRO X 2 LIGHTSPEED",
     [0x0ab5] = "Logitech G733 LIGHTSPEED", [0x0afe] = "Logitech G733 LIGHTSPEED",
@@ -186,11 +221,12 @@ product_name = function(pid, wpid)
     [0x0a66] = "Logitech G533",
   }
   local wireless = { [0x4099] = "Logitech G502 X Plus", [0x40b0] = "Logitech G PRO X TKL" }
-  return names[pid] or wireless[wpid] or "Logitech HID++ Device"
+  return names[pid] or (RECEIVERS[pid] and RECEIVERS[pid].name)
+    or wireless[wpid] or "Logitech HID++ Device"
 end
 
 local function receiver_children(dev)
-  return hidpp1.receiver_children(dev, product_name, wpid_device_type)
+  return hidpp1.receiver_children(dev, product_name, paired_device_type)
 end
 
 local profiles = halod.require("lib.hidpp2.profiles")(product_name)
@@ -411,17 +447,17 @@ local callbacks = {
     return children
   end,
   start_pairing = function(dev, timeout_secs)
-    if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
+    if not dev.receiver then error("pairing is receiver-only") end
     v1_write(dev, DIRECT, 0x00b2, bytes(0x01, 0, math.min(255, timeout_secs)))
     dev.pairing_state, dev.pairing_error = "listening", nil
   end,
   stop_pairing = function(dev)
-    if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
+    if not dev.receiver then error("pairing is receiver-only") end
     v1_write(dev, DIRECT, 0x00b2, bytes(0x02, 0, 0))
     dev.pairing_state, dev.pairing_error = "idle", nil
   end,
   unpair = function(dev, slot)
-    if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
+    if not dev.receiver then error("pairing is receiver-only") end
     v1_write(dev, DIRECT, 0x00b2, bytes(0x03, slot))
     dev.pairing_state = "idle"
     if dev.pairing_children then
@@ -433,21 +469,22 @@ local callbacks = {
     end
   end,
   pairing_status = function(dev)
-    if dev.match.pid ~= 0xc547 then error("pairing is receiver-only") end
+    if not dev.receiver then error("pairing is receiver-only") end
     local children = dev.pairing_children or {}
     local slots = {}
     for _, child in ipairs(children) do
       slots[#slots + 1] = { slot = child.index, device_id = child.id, name = child.name, connected = true }
     end
     return { state = dev.pairing_state or "idle", error = dev.pairing_error,
-      max_slots = 6, slots = slots }
+      max_slots = dev.receiver.max_slots, slots = slots }
   end,
   initialize = function(dev)
     -- Direct USB devices use 0xff. Receiver children are added through the
     -- controller-discovery path and carry their paired slot in dev.match.index.
     -- A receiver is only the transport root; paired slot children are the
     -- actual devices. Direct devices retain 0xff.
-    if dev.match.pid == 0xc547 and not dev.match.key then
+    dev.receiver = not dev.match.key and RECEIVERS[dev.match.pid] or nil
+    if dev.receiver then
       return { ok = true, model = product_name(dev.match.pid), capabilities = { "pairing" } }
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
@@ -644,7 +681,7 @@ local callbacks = {
   event = function(dev, event)
     if event.transport ~= "hid" then return nil end
     local report_devnum, sub = event.report:byte(2), event.report:byte(3)
-    if dev.match.pid == 0xc547 and not dev.match.key then
+    if dev.receiver then
       if sub == 0x4a then
         local open = ((event.report:byte(4) or 0) & 0x01) ~= 0
         local code = event.report:byte(5) or 0
