@@ -27,7 +27,7 @@ packages:
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 497a7d71434a9f93bdf86270b5dc6d2cf47f6b4ceb5375567c31dedc63288737
+    sha256: 85ecdd596e90f56323aeefca7e069e5a3aee7d709d904e675722c7e0193d3df4
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
@@ -79,7 +79,7 @@ packages:
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: e3e286f02446dd80d7991d7f56896a43100eaaf42131149410a95fe45ca35224
+    sha256: eb878194ec4444da1701d0cc9d2cbefca7bbe4befb28557d27f039ce0eca936f
   - id: steelseries_arctis
     path: steelseries_arctis
     version: 1.1.0
