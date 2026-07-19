@@ -3,9 +3,13 @@
 id: nzxt_control_hub
 name: NZXT RGB & Fan Controller
 author: HaloDaemon
-version: 1.0.2
+version: 1.1.1
 license: GPL-3.0-or-later
 description: NZXT Control Hub with chained RGB fan accessories.
+translations:
+  it:
+    plugin.name: Controller RGB e ventole NZXT
+    plugin.description: Hub di controllo NZXT con accessori per ventole RGB collegate.
 permissions: [hid]
 capabilities: [lighting_division, cooling]
 devices:

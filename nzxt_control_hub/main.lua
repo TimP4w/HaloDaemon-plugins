@@ -43,12 +43,18 @@ local function write_channel(dev, channel, colors)
 end
 
 local chain_channels = {}
+local cooling_channels = {}
 for i = 0, FAN_CHANNELS - 1 do
   chain_channels[#chain_channels + 1] =
     {
       id = tostring(i), name = "Channel " .. (i + 1),
       led_count = 0, max_leds = MAX_CHAIN_LEDS,
       topology = "linear", color_order = "rgb",
+    }
+  cooling_channels[#cooling_channels + 1] =
+    {
+      id = tostring(i), name = "Channel " .. (i + 1),
+      kind = "fan", controllable = true,
     }
 end
 
@@ -75,7 +81,11 @@ return {
     -- marks those same endpoints as attachable segment buses. The daemon merges
     -- them by id into divisible LightingChannels when it serializes the hub.
     return {
-      ok = true, channels = chain_channels, division = chain_channels,
+      ok = true,
+      channels = chain_channels, division = chain_channels,
+      -- The hub routes cooling but does not own a fan. Keep polling and routing
+      -- active while exposing each channel only through its accessory child.
+      cooling = { as_devices = true, channels = cooling_channels },
       accessories = accessories,
     }
   end,

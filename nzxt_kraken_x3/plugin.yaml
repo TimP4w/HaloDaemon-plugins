@@ -3,9 +3,13 @@
 id: nzxt_kraken_x3
 name: NZXT Kraken X53/X63/X73
 author: HaloDaemon
-version: 1.0.1
+version: 1.1.0
 license: GPL-3.0-or-later
 description: NZXT Kraken X-series with ring/logo RGB, telemetry, and chained accessories.
+translations:
+  it:
+    plugin.name: NZXT Kraken X53/X63/X73
+    plugin.description: Serie NZXT Kraken X con RGB dell'anello e del logo, telemetria e ventole collegate.
 permissions: [hid]
 capabilities: [lighting, sensors, lighting_division]
 devices:

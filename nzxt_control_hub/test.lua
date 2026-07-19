@@ -9,6 +9,27 @@ return function(h)
   h:assert_eq(w[1].data, { 0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03 }, "status push interval (~1000ms)")
   h:assert_eq(w[2].data, { 0x60, 0x03 }, "detect_fans")
 
+  local parent = dev:serialize()
+  local parent_has_cooling = false
+  local parent_has_lighting = false
+  for _, capability in ipairs(parent.capabilities or {}) do
+    if capability.kind == "cooling" then parent_has_cooling = true end
+    if capability.kind == "lighting" then parent_has_lighting = true end
+  end
+  h:assert(not parent_has_cooling, "hub parent does not advertise child cooling")
+  h:assert(not parent_has_lighting, "hub parent does not advertise child lighting")
+
+  local accessory = {}
+  for i = 1, 64 do accessory[i] = 0 end
+  accessory[1], accessory[2] = 0x21, 0x03
+  accessory[15], accessory[16] = 1, 19 -- one F120 RGB on channel 0
+  dev:queue_read(accessory)
+  local children = dev:enumerate_controllers()
+  h:assert_eq(#children, 1, "detected accessory is exposed as one child")
+  h:assert(children[1].has_cooling, "fan child exposes cooling")
+  h:assert(children[1].has_lighting, "fan child exposes lighting")
+  dev:clear()
+
   local function status(rpm, duty)
     local r = {}
     for i = 1, 64 do r[i] = 0 end

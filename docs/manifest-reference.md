@@ -75,9 +75,26 @@ transports:
 | `logo` | Optional filename under `assets/`. |
 | `provides` | Namespaced latest-value records published by this package. |
 | `consumes` | Records this package may read; `host.sensors.*` is the only wildcard. |
+| `translations` | Plugin-owned locale catalogs used by translatable manifest fields. |
 
 Unknown fields are rejected. A plugin manifest does not have a `compatibility`
 field or a flat device `transport` field.
+
+Translation catalogs are scoped to their package. Locale resolution tries the
+exact locale, its base language, English, then the manifest's fallback text:
+
+```yaml
+translations:
+  it:
+    plugin.name: Plugin di esempio
+    plugin.description: Descrizione localizzata del plugin.
+    widgets.date.name: Data
+```
+
+The host recognizes `plugin.name` and `plugin.description` for package cards.
+Button-based integration setup uses `setup.auth.title` and the zero-based
+`setup.auth.instructions.<index>` keys. Widget code can resolve any additional
+package key with `ctx:translate(key, fallback)`.
 
 ## Shared snapshot data
 
@@ -103,6 +120,7 @@ daemon catalog.
 |---|---|
 | `id` | Widget ID within the package. |
 | `name` | Display name shown in the widget library. |
+| `name_key` | Optional key in `translations`; `name` remains the fallback text. |
 | `icon` | Required SVG filename under `assets/`; also available to `draw_asset`. |
 | `assets` | Additional SVG filenames under `assets/` available only to this widget through `draw_asset`. |
 | `params` | Editor parameters passed to the widget callbacks. |

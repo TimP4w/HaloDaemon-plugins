@@ -6,8 +6,8 @@
 -- older X53/X63/X73 wire family (no LCD, no software pump/fan control).
 --
 -- Protocol reference: nzxt_kraken/docs/protocol.md and liquidctl's nzxt_kraken driver.
--- Verified offsets: status report 0x75; Z/Elite lighting 0x26 0x14 (GRB, ring
--- channel 0x01 / accessory channel 0x02); speed profiles 0x72. LCD control 0x30
+-- Verified offsets: status report 0x75; Z/Elite lighting 0x26 0x14 (GRB) / 0x26
+-- 0x16 (commit), ring channel 0x01 / accessory channel 0x02; speed profiles 0x72. LCD control 0x30
 -- config / 0x36 transfer (+0x37 ACK) / 0x32 0x38 buckets, image over USB bulk.
 
 local REPORT = 64
@@ -46,10 +46,26 @@ local function lighting_packet(channel_byte, grb)
   return b
 end
 
+local function lighting_commit(channel_byte)
+  local b = halod.buffer(REPORT)
+  b:set_u8(0, 0x26)
+  b:set_u8(1, 0x16)
+  b:set_u8(2, channel_byte)
+  b:set_u8(3, channel_byte)
+  b:set_bytes(4, string.char(0x01, 0x00, 0x00, 0x18, 0x00, 0x00,
+    0x80, 0x00, 0x32, 0x00, 0x00, 0x01))
+  return b
+end
+
+local function send_channel(dev, channel_byte, grb)
+  dev.transport:write(lighting_packet(channel_byte, grb))
+  dev.transport:write(lighting_commit(channel_byte))
+end
+
 local function send_channels(dev)
-  dev.transport:write(lighting_packet(0x01, ring_grb))
+  send_channel(dev, 0x01, ring_grb)
   if ext_grb then
-    dev.transport:write(lighting_packet(0x02, ext_grb))
+    send_channel(dev, 0x02, ext_grb)
   end
 end
 
@@ -370,8 +386,9 @@ return {
     local size = LCD_SIZES[dev.match.pid] or { 320, 320 }
     lcd_w, lcd_h = size[1], size[2]
     local brightness, rotation = read_lcd_state(dev)
-    log("NZXT Kraken initialized with LCD %dx%d, brightness %d%%, rotation %d°",
-      lcd_w, lcd_h, brightness, rotation)
+    log(string.format(
+      "NZXT Kraken initialized with LCD %dx%d, brightness %d%%, rotation %d°",
+      lcd_w, lcd_h, brightness, rotation))
     return {
       ok = true,
       lcd = {

@@ -4,9 +4,13 @@ id: halo_effects
 type: effect
 name: Halo Effects
 author: HaloDaemon
-version: 1.1.0
+version: 1.2.0
 license: GPL-3.0-or-later
 description: The stock library of pixmap and direct RGB effects, and the reference effect-plugin implementation.
+translations:
+  it:
+    plugin.name: Effetti Halo
+    plugin.description: Libreria standard di effetti RGB pixmap e diretti, nonché implementazione di riferimento per i plugin di effetti.
 consumes: [host.sensors.*]
 effects:
 - name: Plasma

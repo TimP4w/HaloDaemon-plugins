@@ -3,9 +3,13 @@
 id: logitech_g560
 name: Logitech G560
 author: HaloDaemon
-version: 1.0.0
+version: 1.1.0
 license: MIT
-description: Logitech G560 speaker lighting and subwoofer volume over its vendor long-report protocol.
+description: Logitech G560 speaker lighting and subwoofer volume.
+translations:
+  it:
+    plugin.name: Logitech G560
+    plugin.description: Illuminazione degli altoparlanti e volume del subwoofer Logitech G560.
 platforms: [linux, windows]
 permissions: [hid]
 capabilities: [lighting, controls]

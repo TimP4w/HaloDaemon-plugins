@@ -2,6 +2,8 @@
 -- Stock LCD widgets. Widget policy and composition live here; Rust exposes
 -- only bounded drawing primitives and host-owned data/font access.
 
+local date = halod.require("lib.date")
+
 local function color(value, fallback)
   return value or fallback
 end
@@ -73,8 +75,9 @@ local function clock_text(params, ctx)
 end
 
 local function date_text(params, ctx)
-  local now = ctx:local_time()
-  return string.format("%02d/%02d/%04d", now.day, now.month, now.year)
+  return date.format(ctx:local_time(), function(key, fallback)
+    return ctx:translate(key, fallback)
+  end)
 end
 
 local function render_clock(canvas, w, h, params, ctx)

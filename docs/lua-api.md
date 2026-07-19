@@ -622,6 +622,8 @@ All context methods are bounded to the widget canvas.
 | Method | Meaning |
 |---|---|
 | `ctx:is_preview()` | Whether the callback is producing a preview. |
+| `ctx:locale()` | Active GUI locale code, such as `en` or `it`. |
+| `ctx:translate(key, fallback)` | Resolve a key from the package `translations`, returning `fallback` when absent. |
 | `ctx:color()` | Selected widget color. |
 | `ctx:data(key)` | Read a manifest-declared immutable snapshot. |
 | `ctx:local_time()` | Host-local date and time. |
