@@ -52,6 +52,7 @@ transports:
 |---|---|
 | `id` | Required package ID. It must match the directory name. |
 | `type` | `device`, `integration`, `effect`, or `lcd`. Default: `device`. |
+| `experimental` | Marks an unfinished or not-yet-validated plugin in the GUI. Default: `false`. |
 | `name` | Display name. |
 | `author` | Plugin author. |
 | `version` | Plugin version text. |
