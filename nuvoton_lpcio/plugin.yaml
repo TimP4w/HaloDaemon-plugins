@@ -2,9 +2,13 @@
 # SPDX-FileCopyrightText: LibreHardwareMonitor contributors
 id: nuvoton_lpcio
 name: Nuvoton Super I/O
-version: 1.0.1
+version: 1.1.0
 license: MPL-2.0
 description: Nuvoton NCT67xx temperature and PWM fan control through LPCIO.
+translations:
+  it:
+    plugin.name: Super I/O Nuvoton
+    plugin.description: Temperatura e controllo PWM delle ventole Nuvoton NCT67xx tramite LPCIO.
 platforms: [windows]
 permissions: [lpcio]
 capabilities: [sensors, cooling]

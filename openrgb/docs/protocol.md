@@ -10,7 +10,7 @@ TCP protocol of OpenRGB's SDK server (default `127.0.0.1:6742`, "ORGB" on a phon
 
 TCP, little-endian throughout. HaloDaemon connects as a client through its [`tcp` plugin transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/plugins.md#stream-transport-tcp); the implementation is this repository's [`openrgb/main.lua`](../../openrgb/main.lua) integration package (not a hardware device, it connects to a host/port the user configures).
 
-**Scope implemented:** connect, name the client, enumerate controllers and their zones, and drive them in Direct/custom mode (`SetCustomMode` + `UpdateZoneLEDs`). Mode enumeration/switching beyond that, profiles, and plugin-to-plugin messages are **not** implemented; see [Notes](#notes).
+**Scope implemented:** connect, name the client, enumerate controllers and their zones, and drive them in Direct/custom mode (`SetCustomMode` + whole-controller `UpdateLEDs`). Mode enumeration/switching beyond that, profiles, and plugin-to-plugin messages are **not** implemented; see [Notes](#notes).
 
 ---
 
@@ -55,7 +55,7 @@ Every payload that starts with a `data_size` field (`REQUEST_CONTROLLER_DATA` re
 | Count controllers | `REQUEST_CONTROLLER_COUNT` (0), `device_idx = 0` | empty | u32 `count` |
 | Read controller | `REQUEST_CONTROLLER_DATA` (1), `device_idx = index` | u32 `CLIENT_PROTOCOL_VERSION` | `DeviceDescription` (§4) |
 | Claim direct mode | `RGBCONTROLLER_SETCUSTOMMODE` (1100), `device_idx = <controller>` | empty | none |
-| Write zone colors | `RGBCONTROLLER_UPDATEZONELEDS` (1051), `device_idx = <controller>` | see below | none |
+| Write controller colors | `RGBCONTROLLER_UPDATELEDS` (1050), `device_idx = <controller>` | see below | none |
 
 ### Handshake
 
@@ -67,16 +67,15 @@ Every payload that starts with a `data_size` field (`REQUEST_CONTROLLER_DATA` re
 1. `REQUEST_CONTROLLER_COUNT` (empty payload, `device_idx = 0`); reply payload is one u32 `count`.
 2. For `index` in `0..count`: `REQUEST_CONTROLLER_DATA` with `device_idx = index` and a u32 payload (`CLIENT_PROTOCOL_VERSION`); reply is a `DeviceDescription` (§4).
 
-Every zone becomes one `RgbZone` with `id` set to its **0-based ordinal position** (`"0"`, `"1"`, ...), not its name. `UPDATEZONELEDS` addresses a zone by index, so the id must round-trip back to that index; the human-readable `name` field is carried separately for display only.
+Every zone becomes one `RgbZone` with `id` set to its **0-based ordinal position** (`"0"`, `"1"`, ...), not its name. The id selects the zone's slice in the client-side whole-controller color cache; the human-readable `name` field is carried separately for display only.
 
 ### Driving LEDs (Direct mode)
 
-1. `RGBCONTROLLER_SETCUSTOMMODE`: empty payload, `device_idx = <controller>`. Puts the controller into direct/custom mode so `UPDATEZONELEDS` frames take effect instead of whatever built-in mode was previously active. Sent **once per controller per connection**, not on every frame: sending it repeatedly risks a visible reset/flicker on some controllers, and it isn't idempotent-safe to assume otherwise.
-2. `RGBCONTROLLER_UPDATEZONELEDS`: `device_idx = <controller>`, payload:
+1. `RGBCONTROLLER_SETCUSTOMMODE`: empty payload, `device_idx = <controller>`. Puts the controller into direct/custom mode so `UPDATELEDS` frames take effect instead of whatever built-in mode was previously active. Sent **once per controller per connection**, not on every frame: sending it repeatedly risks a visible reset/flicker on some controllers, and it isn't idempotent-safe to assume otherwise.
+2. `RGBCONTROLLER_UPDATELEDS`: `device_idx = <controller>`. The client caches one normalized color buffer per zone, concatenates the buffers in controller-zone order, and sends the complete controller frame on each zone update. Payload:
 
 ```text
-uint32   data_size    -- = 4 (this field) + 4 (zone_idx) + 2 (num_colors) + 4*num_colors
-uint32   zone_idx
+uint32   data_size    -- = 4 (this field) + 2 (num_colors) + 4*num_colors
 uint16   num_colors
 Color[num_colors]
 ```
@@ -93,10 +92,10 @@ Color[num_colors]
 | 1 | `REQUEST_CONTROLLER_DATA` | client request (u32 protocol version), server `DeviceDescription` reply |
 | 40 | `REQUEST_PROTOCOL_VERSION` | client request (u32), server u32 reply |
 | 50 | `SET_CLIENT_NAME` | client to server, no reply |
-| 1051 | `RGBCONTROLLER_UPDATEZONELEDS` | client to server, no reply |
+| 1050 | `RGBCONTROLLER_UPDATELEDS` | client to server, no reply |
 | 1100 | `RGBCONTROLLER_SETCUSTOMMODE` | client to server, no reply, empty payload |
 
-(OpenRGB defines many more: server info/flags, detection, profile/plugin/settings managers, `RESIZEZONE`, `UPDATELEDS`/`UPDATESINGLELED`, `UPDATEMODE`/`SAVEMODE`/`UPDATEZONEMODE`; none are used by this client.)
+(OpenRGB defines many more: server info/flags, detection, profile/plugin/settings managers, `RESIZEZONE`, `UPDATEZONELEDS`/`UPDATESINGLELED`, `UPDATEMODE`/`SAVEMODE`/`UPDATEZONEMODE`; none are used by this client.)
 
 ### Protocol version negotiation
 

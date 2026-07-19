@@ -40,6 +40,18 @@ byte 4..  G,R,B triples, 3 bytes per LED
 
 The 24-LED pump ring is always sent as a fixed 40-slot buffer (120 GRB bytes); unused slots stay zero. The accessory channel carries exactly as many triples as the chain has LEDs.
 
+### Lighting commit - `0x26 0x16`
+
+```text
+byte 0    0x26
+byte 1    0x16
+byte 2    channel (0x01 = pump ring, 0x02 = accessory chain)
+byte 3    channel repeated
+byte 4..  01 00 00 18 00 00 80 00 32 00 00 01  (fixed)
+```
+
+Each `0x26 0x14` color payload is followed by this 64-byte commit report so the firmware applies and retains the new LED state.
+
 ### LCD config frame - `0x30 0x02`
 
 ```text
@@ -91,8 +103,8 @@ byte 16..19  payload length, little-endian u32
 | Query bucket | `30 04 <idx>` | Reply `31 04`, occupancy info from byte 15 |
 | Set pump duty | `72 01 00 00 <profile[40]>` | Duty clamped to at least 20 |
 | Set fan duty | `72 02 01 01 <profile[40]>` | |
-| Set ring RGB | `26 14 01 01 <120 GRB bytes>` | |
-| Set accessory RGB | `26 14 02 02 <GRB bytes>` | Both channels are re-sent together |
+| Set ring RGB | `26 14 01 01 <120 GRB bytes>`, then `26 16 01 01 <fixed>` | Data followed by firmware commit |
+| Set accessory RGB | `26 14 02 02 <GRB bytes>`, then `26 16 02 02 <fixed>` | Both channels are re-sent and committed together |
 | Detect accessories | `20 03` | Reply `21 03`, see section 4 |
 | Bucket setup | `32 01 <idx> <idx+1> <mem> <size> 01` | Reply `33 01`; rejected setup aborts the upload |
 | Delete bucket | `32 02 <idx>` | Reply `33 02`; byte 14 = `0x01` on success |

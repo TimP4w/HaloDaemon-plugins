@@ -3,10 +3,34 @@ id: halo_lcd
 type: lcd
 name: Halo LCD Widgets
 author: HaloDaemon
-version: 1.1.1
+version: 1.2.0
 license: GPL-3.0-or-later
 description: The stock LCD widget library and reference implementation of the LCD widget API.
 consumes: [host.sensors.*, host.media.playback]
+translations:
+  it:
+    plugin.name: Widget LCD Halo
+    plugin.description: Libreria predefinita di widget LCD e implementazione di riferimento dell'API per widget LCD.
+    widgets.date.name: Data
+    date.weekday.Mon: Lun
+    date.weekday.Tue: Mar
+    date.weekday.Wed: Mer
+    date.weekday.Thu: Gio
+    date.weekday.Fri: Ven
+    date.weekday.Sat: Sab
+    date.weekday.Sun: Dom
+    date.month.Jan: Gen
+    date.month.Feb: Feb
+    date.month.Mar: Mar
+    date.month.Apr: Apr
+    date.month.May: Mag
+    date.month.Jun: Giu
+    date.month.Jul: Lug
+    date.month.Aug: Ago
+    date.month.Sep: Set
+    date.month.Oct: Ott
+    date.month.Nov: Nov
+    date.month.Dec: Dic
 widgets:
   - id: clock
     name: Clock
@@ -24,6 +48,7 @@ widgets:
         kind: { kind: enum, options: [24h, 24h_seconds, 12h] }
   - id: date
     name: Date
+    name_key: widgets.date.name
     icon: date.svg
     resize: box
     default_scale: 1.6

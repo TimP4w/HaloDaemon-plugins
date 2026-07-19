@@ -1,4 +1,4 @@
 schema: 1
 algorithm: ed25519
 key_id: halodaemon-official-2026
-signature: dgh8S8ItHVuLDSZARsXHiqgpH8QEzWpsehVtp4nlDJdXm8bVGv7zqUn1536baHvOXBFx/+2fa8qQAl3xuZTTBA==
+signature: Ef5TAhBB8/0RiuDbTL6xM4XgDmMezan93rWmYqf9SGyhe3NOhPzu2IZxtYQXmSjWBZQUlZ1Cf1x4SmsD+Q52BA==

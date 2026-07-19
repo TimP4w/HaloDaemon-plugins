@@ -3,9 +3,13 @@
 id: ene_smbus
 name: ASUS/ENE SMBus RGB
 author: HaloDaemon
-version: 1.0.0
+version: 1.1.0
 license: GPL-2.0-or-later
 description: ASUS Aura / ENE SMBus RGB for DRAM sticks and GPUs.
+translations:
+  it:
+    plugin.name: RGB SMBus ASUS/ENE
+    plugin.description: RGB ASUS Aura / ENE tramite SMBus per moduli DRAM e GPU.
 platforms: [linux, windows]
 permissions: [smbus]
 capabilities: [lighting]

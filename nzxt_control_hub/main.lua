@@ -71,11 +71,15 @@ return {
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
     log("NZXT Control Hub initialized")
-    -- `channels` establishes the physical lighting endpoints; `division`
-    -- marks those same endpoints as attachable segment buses. The daemon merges
-    -- them by id into divisible LightingChannels when it serializes the hub.
+    -- `division` establishes routing-only lighting buses. The hub has no LEDs
+    -- of its own, so advertising these as ordinary `channels` would also expose
+    -- five duplicate lighting zones on the parent.
     return {
-      ok = true, channels = chain_channels, division = chain_channels,
+      ok = true,
+      division = chain_channels,
+      -- The hub routes cooling but does not own a fan. Keep polling and routing
+      -- active while exposing cooling only through detected accessory children.
+      cooling = { as_devices = true, channels = {} },
       accessories = accessories,
     }
   end,

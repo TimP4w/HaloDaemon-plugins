@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: nvidia
 name: NVIDIA GPUs
-version: 1.0.1
+version: 1.1.0
 license: GPL-3.0-or-later
 description: NVIDIA GPU thermal sensors reported by nvidia-smi.
+translations:
+  it:
+    plugin.name: GPU NVIDIA
+    plugin.description: Sensori termici delle GPU NVIDIA rilevati da nvidia-smi.
 platforms: [linux, windows]
 permissions: [command]
 capabilities: [sensors]

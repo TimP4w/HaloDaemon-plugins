@@ -141,18 +141,13 @@ return {
     local function epoch_seed(epoch)
       return epoch % 16777213
     end
-    local function pick(seed, prev)
-      if cells <= 1 then
-        return 0
-      end
-      local idx = floor(ctx:random(seed) * cells) % cells
-      if prev ~= nil and idx == prev then
-        return (idx + 1) % cells
-      end
-      return idx
-    end
     local function pick_for_epoch(epoch)
-      return pick(epoch_seed(epoch), nil)
+      -- Adjacent epochs select from disjoint even/odd cell sets. This keeps the
+      -- effect a pure function of time while guaranteeing no back-to-back pick.
+      local parity = epoch % 2
+      local choices = floor((cells + 1 - parity) / 2)
+      local choice = floor(ctx:random(epoch_seed(epoch)) * choices) % choices
+      return parity + choice * 2
     end
 
     local epoch = floor(math.max(t, 0.0) / interval)
