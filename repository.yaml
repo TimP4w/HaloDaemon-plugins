@@ -67,7 +67,7 @@ packages:
   - id: nzxt_kraken
     path: nzxt_kraken
     version: 1.1.0
-    sha256: c0b589b8e21bd31c87c7a16cb273742140d12633493bac7b3794474331c6d477
+    sha256: 70405676c625113d6343d873f5131e455e1766ec05a5ce00653db27e9f45efe8
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
     version: 1.1.0
