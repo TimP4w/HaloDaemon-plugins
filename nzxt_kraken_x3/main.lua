@@ -137,16 +137,19 @@ return {
   -- Status stream (0x75): liquid temp only — pump/fan duty aren't
   -- software-controllable on this wire family, so nothing else is surfaced.
   read_status = function(dev)
-    local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
-    if #r < 26 or r:get_u8(0) ~= 0x75 then
-      return dev.status
+    local status = dev.status
+    for _ = 1, 64 do
+      local ok, bytes = pcall(function() return dev.transport:read_nonblocking(REPORT) end)
+      if not ok or #bytes == 0 then break end
+      local r = halod.buffer(bytes)
+      if #r >= 26 and r:get_u8(0) == 0x75
+          and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
+        local frac = r:get_u8(16)
+        if frac > 9 then frac = 9 end
+        status = { liquid_temp = r:get_u8(15) + frac / 10.0 }
+      end
     end
-    if r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF then
-      return dev.status -- firmware sentinel: no liquid-temperature reading
-    end
-    local frac = r:get_u8(16)
-    if frac > 9 then frac = 9 end
-    return { liquid_temp = r:get_u8(15) + frac / 10.0 }
+    return status
   end,
 
   get_sensors = function(dev)

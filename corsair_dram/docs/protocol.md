@@ -2,7 +2,7 @@
 
 SMBus RGB control for Corsair Vengeance / Dominator DDR4 and DDR5 memory modules, with a CRC8-protected 32-byte info block, native hardware effects, and two per-LED color paths selected by the firmware's reported protocol version.
 
-**Credits:** reference implementation from [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) (GPL-2.0-or-later): `CorsairVengeanceController` (Adam Honse / CalcProgrammer1, Erik Gilling / konkers).
+**Credits:** reference implementation from [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) (GPL-2.0-or-later): `CorsairDRAMController` (Adam Honse / CalcProgrammer1, Erik Gilling / konkers).
 
 ---
 
@@ -57,7 +57,7 @@ Read as 32 successive single-byte reads of register `0x40` into `data[0..32]`, t
 | `data[10..12]` | firmware patch | u16 little-endian |
 | `data[28]` | protocol version | byte; `>= 4` → direct, `< 4` → effect |
 
-Firmware string = `"{data[9]}.{data[8]}.{u16_le(data[10],data[11])}"`. Offsets 4–7, 12–27, 29–31 are unused.
+Firmware string = `"{data[9]}.{data[8]}.{u16_le(data[10],data[11])}"`. Offsets 4-7, 12-27, 29-31 are unused.
 
 ### Direct-mode color packet (protocol ≥ 4) - `build_direct_packet`
 
@@ -80,7 +80,7 @@ Per-LED **RGBA** with fixed `0xFF` alpha: for each LED `[R, G, B, 0xFF]`. Length
 ```
 [0]       mode        (see §3 mode table)
 [1]       speed       (see §3 speed table)
-[2]       random flag (0x00 if random, else 0x01 — inverted)
+[2]       random flag (0x00 if random, else 0x01; inverted)
 [3]       direction   (see §3 direction table)
 [4..7]    color1 R, G, B
 [7]       brightness
@@ -284,7 +284,7 @@ The UI surfaces only three of these, mapped from string IDs: `breathing` → Col
 
 ### Brightness, random, and colors
 
-In the native-effect descriptor, **brightness** is a single byte `0x00`–`0xFF` carried at both `[7]` and `[11]`; the device layer always sends `0xFF` (full). The **random flag** at `[2]` is inverted: `0x00` means random, `0x01` means not random; the device layer always sends not-random (`0x01`). `color1`/`color2` are each `R, G, B`; an unspecified color defaults to white `[0xFF, 0xFF, 0xFF]`.
+In the native-effect descriptor, **brightness** is a single byte `0x00`-`0xFF` carried at both `[7]` and `[11]`; the device layer always sends `0xFF` (full). The **random flag** at `[2]` is inverted: `0x00` means random, `0x01` means not random; the device layer always sends not-random (`0x01`). `color1`/`color2` are each `R, G, B`; an unspecified color defaults to white `[0xFF, 0xFF, 0xFF]`.
 
 ---
 
@@ -292,7 +292,7 @@ In the native-effect descriptor, **brightness** is a single byte `0x00`–`0xFF`
 
 All reads are register-addressed single bytes (`read_byte_data`); the controller returns no unsolicited data.
 
-- **Info block:** 32 bytes via repeated reads of `0x40`, followed by a CRC8 byte at `0x42` matching `crc8(data[0..32])` (the apply continues even on mismatch, §2 Info-block read).
+- **Info block:** 32 bytes via repeated reads of `0x40`, followed by a CRC8 byte at `0x42` matching `crc8(data[0..32])`. A mismatch rejects the info block and device.
 - **Detection sentinels:** read `0x43` → one of `0x1A`/`0x1B`/`0x1C`; read `0x44` → one of `0x01`/`0x03`/`0x04`. Any other value (or read error) fails detection.
 - **Streamed-buffer CRC:** after streaming a payload, read `0x42`; the commit proceeds only if it equals `crc8(payload)`.
 - **Busy-bit poll (ACK-after-commit):** after a commit (`0x82`), read `0x30` up to 5× at 10 ms; the device is ready once `(value & 0x08) == 0`. Direct block writes (`0x31`/`0x32`) have no poll; they apply on the SMBus ACK.
@@ -308,6 +308,6 @@ None; all access is host-initiated request/response. There is no interrupt or as
 ## Notes
 
 - DDR4/DDR5 behavior is keyed on firmware `protocol_version`, not the physical memory generation; a DDR4 stick on newer firmware uses the direct path.
-- CRC mismatches are non-fatal for the info-block read (logged) but **abort the apply** for streamed writes; a corrupted stream silently leaves LEDs unchanged.
+- An info-block CRC mismatch aborts initialization. A streamed-buffer CRC mismatch aborts the apply, so the LEDs remain unchanged.
 - Native effects only ever send brightness `0xFF` and `random = false`; modes beyond breathing/rainbow_wave/color_shift exist in the enum but are not issued by the device layer.
 - Requires SMBus access: plugin-derived udev rules and the `halod` group on Linux; on Windows, PawnIO through HaloDaemon's elevated broker while the daemon and Lua worker remain non-elevated (see [SMBus transport](https://github.com/TimP4w/HaloDaemon/blob/main/docs/transports/smbus.md)).

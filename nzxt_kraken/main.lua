@@ -131,7 +131,7 @@ end
 
 local function write_screen_config(dev, brightness, degrees)
   local rot = math.floor((degrees % 360) / 90) % 4
-  dev.transport:write(string.char(0x30, 0x02, 0x01, brightness, 0x00, 0x00, 0x01, rot))
+  dev.transport:write(string.char(0x30, 0x02, 0x01, math.min(brightness, 100), 0x00, 0x00, 0x01, rot))
 end
 
 -- (brightness, degrees) read back from the panel; defaults if it doesn't answer.
@@ -382,7 +382,7 @@ return {
         brightness = brightness, rotation = rotation,
       },
       channels = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
-      cooling = { channels = {
+      cooling = { as_devices = true, channels = {
         { id="pump", name="Pump", kind="pump", controllable=true },
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
@@ -457,22 +457,31 @@ return {
   end,
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
   read_status = function(dev)
-    local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
-    if #r < 26 or r:get_u8(0) ~= 0x75 then
-      return dev.status -- keep last good reading
+    local status = dev.status
+    for _ = 1, 64 do
+      local ok, bytes = pcall(function() return dev.transport:read_nonblocking(REPORT) end)
+      if not ok or #bytes == 0 then break end
+      local r = halod.buffer(bytes)
+      if #r >= 26 and r:get_u8(0) == 0x75
+          and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
+        local frac = r:get_u8(16)
+        if frac > 9 then frac = 9 end
+        status = {
+          liquid_temp = r:get_u8(15) + frac / 10.0,
+          pump_rpm = r:get_u16_le(17),
+          pump_duty = r:get_u8(19),
+          fan_rpm = r:get_u16_le(23),
+          fan_duty = r:get_u8(25),
+        }
+        status.cooling = {
+          { id="pump", name="Pump", kind="pump", controllable=true,
+            duty=status.pump_duty, rpm=status.pump_rpm },
+          { id="fan1", name="Radiator fan", kind="fan", controllable=status.fan_rpm > 0,
+            duty=status.fan_duty, rpm=status.fan_rpm },
+        }
+      end
     end
-    if r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF then
-      return dev.status -- firmware sentinel: no liquid-temperature reading
-    end
-    local frac = r:get_u8(16)
-    if frac > 9 then frac = 9 end
-    return {
-      liquid_temp = r:get_u8(15) + frac / 10.0,
-      pump_rpm = r:get_u16_le(17),
-      pump_duty = r:get_u8(19),
-      fan_rpm = r:get_u16_le(23),
-      fan_duty = r:get_u8(25),
-    }
+    return status
   end,
 
   get_sensors = function(dev)

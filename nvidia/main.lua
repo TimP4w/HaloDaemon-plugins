@@ -40,8 +40,9 @@ return {
   get_sensors = function(dev)
     local uuid = dev.match.key
     if not uuid then return {} end
-    -- Preserve the native driver's one-second poll cadence: several GUI and
-    -- engine consumers may ask for the same snapshot in one frame.
+    -- Device serialization can still request capability wire data in addition
+    -- to the host telemetry sample. Coalesce those incidental command spawns;
+    -- the authoritative bus remains responsible for publishing changes.
     local now = halod.monotonic_ms()
     if dev.sensor_cache and now < (dev.sensor_cache_until or 0) then
       return dev.sensor_cache

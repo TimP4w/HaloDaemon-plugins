@@ -28,15 +28,6 @@ local function sensor_id(dev, index)
   return "hwmon_" .. stable .. "_temp" .. index
 end
 
-local function cached(dev, field, load)
-  local now = halod.monotonic_ms()
-  local deadline = dev[field .. "_until"] or 0
-  if dev[field] ~= nil and now < deadline then return dev[field] end
-  local value = load()
-  dev[field], dev[field .. "_until"] = value, now + 1000
-  return value
-end
-
 return {
   -- Host requirement probing checks that a usable hwmon collection exists
   -- before this hook runs. No additional user configuration is required.
@@ -100,34 +91,28 @@ return {
   end,
 
   get_sensors = function(dev)
-    return cached(dev, "sensor_cache", function()
-      local sensors, index = {}, 1
-      while true do
-        local raw = number(dev, "temp" .. index .. "_input")
-        if raw == nil then break end
-        sensors[#sensors + 1] = {
-          id = sensor_id(dev, index),
-          name = read(dev, "temp" .. index .. "_label") or "",
-          value = raw / 1000,
-          unit = "celsius",
-          sensor_type = "temperature",
-        }
-        index = index + 1
-      end
-      return sensors
-    end)
+    local sensors, index = {}, 1
+    while true do
+      local raw = number(dev, "temp" .. index .. "_input")
+      if raw == nil then break end
+      sensors[#sensors + 1] = {
+        id = sensor_id(dev, index),
+        name = read(dev, "temp" .. index .. "_label") or "",
+        value = raw / 1000,
+        unit = "celsius",
+        sensor_type = "temperature",
+      }
+      index = index + 1
+    end
+    return sensors
   end,
 
   get_cooling_status = function(dev, channel_id)
     assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
     local fan = assert(dev.match.fan_index, "hwmon fan index missing")
-    local rpm = cached(dev, "rpm_cache", function()
-      return number(dev, "fan" .. fan .. "_input") or 0
-    end)
-    local duty = cached(dev, "duty_cache", function()
-      local raw = math.min(number(dev, "pwm" .. fan) or 0, 255)
-      return math.floor((raw * 100 + 127) / 255)
-    end)
+    local rpm = number(dev, "fan" .. fan .. "_input") or 0
+    local raw = math.min(number(dev, "pwm" .. fan) or 0, 255)
+    local duty = math.floor((raw * 100 + 127) / 255)
     return { id = "fan", name = dev.match.name or ("Fan " .. fan), kind = "fan", controllable = true, rpm = rpm, duty = duty }
   end,
 
@@ -141,6 +126,5 @@ return {
     end
     local raw = math.min(math.floor(duty * 255 / 100), 255)
     dev.transport:hwmon_write(route, "pwm" .. fan, tostring(raw))
-    dev.duty_cache, dev.duty_cache_until = duty, halod.monotonic_ms() + 1000
   end,
 }

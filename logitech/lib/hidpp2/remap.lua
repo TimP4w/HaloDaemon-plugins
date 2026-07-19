@@ -41,7 +41,7 @@ local function remap_buttons(dev)
   elseif features[GKEY] then
     backend = "gkey"
     local count = request(dev, devnum, features[GKEY], 0x00):byte(1) or 0
-    for i = 1, count do buttons[#buttons + 1] = { cid = i, label = "G" .. i, divertable = true, group = 0 } end
+    for i = 1, math.min(count, 16) do buttons[#buttons + 1] = { cid = i, label = "G" .. i, divertable = true, group = 0 } end
   elseif features[MOUSE_BUTTON_SPY] then
     backend = "spy"
     local labels = device_profile(dev).buttons

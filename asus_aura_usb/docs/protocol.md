@@ -137,7 +137,7 @@ Run once at device open, in this exact order:
 2. Read a reply frame matching byte 0 = `0xEC`, byte 1 = `0x30` (up to 8 read attempts).
 3. Copy `resp[4..64]` into a 60-byte config table (`config[0]` = `resp[4]`).
 4. Extract (all offsets into the 60-byte table; see §3 for exact field semantics):
-   - `argb_count = config[0x02]`
+   - `argb_count = min(config[0x02], 9)`
    - `mb_leds    = config[0x1B]`
    - for each ARGB channel `i` in `0 … argb_count-1`: `leds = config[4 + i*6 + 2]`; if `leds == 0` use the default **30**, else clamp to a max of **120**.
 
@@ -155,6 +155,7 @@ Run once at device open, in this exact order:
 | Max LEDs per direct sub-packet | 20 | 20 × 3 = 60 color bytes after the 5-byte header |
 | Default LEDs per ARGB channel | 30 | Used when the config reports 0 for a channel |
 | Max LEDs per ARGB channel | 120 | Per-channel counts are clamped to this |
+| Max ARGB channels | 9 | The reported channel count is clamped to fit the 60-byte config table |
 
 ### Command opcodes (byte 1)
 
@@ -198,7 +199,7 @@ Color is plain **R, G, B** byte order: there is no GRB/BGR swap. Each channel is
 
 | Field | Offset | Definition |
 |-------|--------|------------|
-| ARGB channel count | `0x02` | Number of 5V ARGB headers the controller exposes |
+| ARGB channel count | `0x02` | Number of 5V ARGB headers reported by the controller, clamped to 9 by the plugin |
 | Mainboard LED count | `0x1B` | Total fixed on-board LEDs, **including** 12V RGB header positions, written as one block to direct channel `0x04` |
 | Per-channel LED count | `4 + i*6 + 2` | LED count for ARGB channel `i`. The per-channel blocks start at offset `4`, are `6` bytes each, and the LED count sits at `+2` within the block. A reported `0` means "unknown" → default 30; any value is clamped to ≤ 120 |
 

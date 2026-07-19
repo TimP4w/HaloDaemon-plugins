@@ -32,7 +32,7 @@ local function ccd(raw)
   raw = raw & 0xfff
   if raw == 0 then return nil end
   local value = raw * 0.125 - 305
-  return value < 125 and value or nil
+  return value >= -55 and value < 125 and value or nil
 end
 
 return {

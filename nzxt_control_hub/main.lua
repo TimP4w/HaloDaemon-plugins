@@ -89,25 +89,44 @@ return {
 
   -- Status pushes: 0x67 0x02 (rpm+duty+fan_type for all 5 channels) or 0x61
   -- 0x03 (fan_type only, e.g. right after detect_fans). A 0x61 push updates
-  -- only fan_type, keeping the last known rpm/duty.
+  -- only fan_type, keeping the last known rpm/duty. Drain every report that is
+  -- already queued: these are unsolicited hardware pushes, so consuming only
+  -- one per host poll can make tach data trail reality by minutes.
   read_status = function(dev)
-    local prev = dev.status or { rpm = {}, duty = {}, fan_type = {} }
-    local r = halod.buffer(dev.transport:read_nonblocking(REPORT))
-    if #r < 2 then return prev end
-    if r:get_u8(0) == 0x67 and r:get_u8(1) == 0x02 and #r >= 45 then
-      local rpm, duty, fan_type = {}, {}, {}
-      for i = 0, FAN_CHANNELS - 1 do
-        rpm[i] = r:get_u16_le(24 + i * 2)
-        duty[i] = r:get_u8(40 + i)
-        fan_type[i] = r:get_u8(16 + i)
+    local status = dev.status or { rpm = {}, duty = {}, fan_type = {} }
+    -- Bound the drain so a broken/noisy device cannot monopolize the plugin
+    -- worker. The normal queue contains only a handful of 64-byte reports.
+    for _ = 1, 64 do
+      local ok, bytes = pcall(function()
+        return dev.transport:read_nonblocking(REPORT)
+      end)
+      if not ok or #bytes == 0 then break end
+      local r = halod.buffer(bytes)
+      if #r >= 45 and r:get_u8(0) == 0x67 and r:get_u8(1) == 0x02 then
+        local rpm, duty, fan_type = {}, {}, {}
+        for i = 0, FAN_CHANNELS - 1 do
+          rpm[i] = r:get_u16_le(24 + i * 2)
+          duty[i] = r:get_u8(40 + i)
+          fan_type[i] = r:get_u8(16 + i)
+        end
+        status = { rpm = rpm, duty = duty, fan_type = fan_type }
+      elseif #r >= 21 and r:get_u8(0) == 0x61 and r:get_u8(1) == 0x03 then
+        local fan_type = {}
+        for i = 0, FAN_CHANNELS - 1 do fan_type[i] = r:get_u8(16 + i) end
+        status = { rpm = status.rpm, duty = status.duty, fan_type = fan_type }
       end
-      return { rpm = rpm, duty = duty, fan_type = fan_type }
-    elseif r:get_u8(0) == 0x61 and r:get_u8(1) == 0x03 and #r >= 21 then
-      local fan_type = {}
-      for i = 0, FAN_CHANNELS - 1 do fan_type[i] = r:get_u8(16 + i) end
-      return { rpm = prev.rpm, duty = prev.duty, fan_type = fan_type }
     end
-    return prev
+    status.cooling = {}
+    for i = 0, FAN_CHANNELS - 1 do
+      local t = status.fan_type and status.fan_type[i]
+      status.cooling[#status.cooling + 1] = {
+        id = tostring(i), name = "Channel " .. (i + 1), kind = "fan",
+        controllable = t ~= nil and t ~= 0,
+        rpm = (status.rpm and status.rpm[i]) or 0,
+        duty = (status.duty and status.duty[i]) or 0,
+      }
+    end
+    return status
   end,
 
   -- Per-channel cooling telemetry/control, routed from chained accessories.
@@ -125,14 +144,14 @@ return {
   end,
   set_cooling_duty = function(dev, channel_id, duty)
     local ch = assert(tonumber(channel_id), "invalid cooling channel")
-    if ch >= FAN_CHANNELS then
+    if ch < 0 or ch >= FAN_CHANNELS then
       error(string.format("Control Hub: fan channel %d out of range (max %d)", ch, FAN_CHANNELS - 1))
     end
     local pkt = halod.buffer(11)
     pkt:set_u8(0, 0x62)
     pkt:set_u8(1, 0x01)
     pkt:set_u8(2, 1 << ch)
-    pkt:set_u8(3 + ch, duty)
+    pkt:set_u8(3 + ch, math.max(0, math.min(100, duty)))
     dev.transport:write(pkt)
   end,
 
