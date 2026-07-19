@@ -14,9 +14,29 @@ local function onboard_mode(dev)
 end
 
 local function set_onboard_mode(dev, host)
-  feature(dev, ONBOARD_PROFILES, 0x10, bytes(host and 2 or 1))
-  dev.onboard.mode = host and 2 or 1
-  if host then restore_rgb_control(dev) end
+  local target = host and 2 or 1
+  local last_error
+  for _ = 1, 3 do
+    local ok, value = pcall(feature, dev, ONBOARD_PROFILES, 0x10, bytes(target))
+    if ok then
+      dev.onboard.mode = target
+      if host then restore_rgb_control(dev) end
+      return
+    end
+    last_error = value
+    if not tostring(value):find("HID++ response did not arrive", 1, true) then error(value) end
+
+    -- Some firmware applies a mode transition but drops its acknowledgement.
+    -- Read the state back before retrying so an applied command is not reported
+    -- as a failure or sent a second time unnecessarily.
+    local read_ok, reply = pcall(feature, dev, ONBOARD_PROFILES, 0x20)
+    if read_ok and reply:byte(1) == target then
+      dev.onboard.mode = target
+      if host then restore_rgb_control(dev) end
+      return
+    end
+  end
+  error(last_error or "failed to set onboard mode")
 end
 
 local function crc16(data)

@@ -96,6 +96,30 @@ return function(h)
   h:assert_eq(#onboard_dev:writes(), 0,
     "state serialization serves cached onboard profiles without HID writes")
 
+  -- A mode switch can take effect while its acknowledgement is lost during
+  -- the transition. Confirm the live mode before retrying or surfacing the
+  -- transport timeout.
+  local mode_switch_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
+    {}, {},                                -- setMode acknowledgement is lost
+    report(0x11, 0xff, 0x01, 0x21, { 2 }), -- getMode confirms it was applied
+  } })
+  h:assert(mode_switch_dev:initialize(), "mode-switch fixture initializes")
+  mode_switch_dev:clear()
+  mode_switch_dev:set_boolean("host_mode", true)
+  local mode_switch_writes = mode_switch_dev:writes()
+  h:assert_eq(#mode_switch_writes, 2, "lost setMode acknowledgement uses one read-back")
+  h:assert_eq(mode_switch_writes[1].data[4], 0x11, "host mode uses setMode")
+  h:assert_eq(mode_switch_writes[2].data[4], 0x21, "timed-out setMode reads mode back")
+
   -- MOUSE_BUTTON_SPY devices use the native sparse physical-button table and
   -- seed the same default DPI actions as the former native profile.
   local mapped_dev = h:open({ pid = 0xc095, reads = {
