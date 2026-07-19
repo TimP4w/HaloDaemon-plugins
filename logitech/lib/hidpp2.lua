@@ -968,15 +968,19 @@ local callbacks = {
   close = function(_dev) end,
 }
 
--- A powered-off device stays enumerated (its dongle answers ROOT from cache)
--- and only fails once a request needs the hardware.
+-- A powered-off device stays enumerated through its dongle. Linux may answer
+-- ROOT from cache and fail on a later request; Windows can reject the first
+-- write before HID++ receives the packet.
 local describe_device = callbacks.initialize
 callbacks.initialize = function(dev)
   local ok, result = pcall(describe_device, dev)
   if ok then return result end
   local text = tostring(result)
-  if not (text:find("HID++ error response", 1, true)
-      or text:find("HID++ response did not arrive", 1, true)) then
+  local unavailable = text:find("HID++ error response", 1, true)
+      or text:find("HID++ response did not arrive", 1, true)
+      or (is_long_only(dev.match.pid)
+        and text:find("HID write error", 1, true))
+  if not unavailable then
     error(result)
   end
   log("logitech: device is not powered on: " .. text, "trace")

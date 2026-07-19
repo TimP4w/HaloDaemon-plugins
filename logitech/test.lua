@@ -470,6 +470,11 @@ return function(h)
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
 
+  local windows_asleep_headset = h:open({ pid = 0x0aba,
+    write_error = "HID write error: hidapi error:" })
+  h:assert(not windows_asleep_headset:initialize(),
+    "a Windows HID write failure rejects a powered-off headset")
+
   -- A failure that is not the HID++ protocol answering is not an absent device
   -- and must still surface.
   local broken_dev = h:open({ reads = {} })

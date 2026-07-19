@@ -4,7 +4,7 @@ schema: 1
 id: halod-official
 name: Halo Official Plugins
 version: 1.6.1
-licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
+licenses_sha256: b546c525bc4590703e4dee8da68d125c55c2634fe48812268cc596ffbe8e546c
 
 signing_key:
   id: halodaemon-official-2026
@@ -23,11 +23,11 @@ packages:
   - id: asus_aura_usb
     path: asus_aura_usb
     version: 1.0.1
-    sha256: a2b7d379c2da0f0a9d3b09726ff77821083b49ed7c9f04be7b7b59e97b5572fa
+    sha256: 8d0b36ae108214cd7ab238fa18522fc0f3aa1fe334f4db8489927d52ad4caf8c
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 08a036e3a19599e413217d39fbf915f7bfbe9eddc9277fb7d344c9b924b17c3d
+    sha256: 8a2cadfb90f6953ec89351e17f646ae95e838c2e2ab2bc0d0f546c42e292bc34
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
@@ -47,7 +47,7 @@ packages:
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: 8c2067eaf2e14a68f6ec1c7cb1741358355ead765b07cc55da03ab594d05db43
+    sha256: 1d1ae66d830fa87472170a584140b36daf8081738c996934bc19dc85cdfd8e2b
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0

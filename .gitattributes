@@ -3,3 +3,4 @@
 *.md text eol=lf
 *.lua text eol=lf
 *.sig text eol=lf
+.githooks/* text eol=lf
