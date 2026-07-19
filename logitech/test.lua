@@ -126,6 +126,7 @@ return function(h)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 1 }),
     report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x10 }),
+    report(0x11, 0xff, 0x01, 0x11, {}), -- first SPY enable
   } })
   h:assert(mapped_dev:initialize(), "G502 X button fixture initializes")
   local remap = mapped_dev:key_remap_status()
@@ -136,6 +137,18 @@ return function(h)
   local g8
   for _, mapping in ipairs(remap.mappings) do if mapping.cid == 2 then g8 = mapping end end
   h:assert(g8 and g8.base.type == "dpi_cycle", "G502 X G8 defaults to DPI cycle")
+
+  -- Replacing one host action with another leaves this global backend enabled;
+  -- it must not resend setSpyState and wait for a redundant acknowledgement.
+  mapped_dev:set_button_mapping({ cid = 1,
+    base = { type = "media_key", key = "play" }, shifted = { type = "native" } })
+  mapped_dev:clear()
+  mapped_dev:set_button_mapping({ cid = 1, base = { type = "macro", steps = {
+    { kind = { kind = "key_down", key = 0x41 }, delay_after_ms = 0 },
+    { kind = { kind = "key_up", key = 0x41 }, delay_after_ms = 0 },
+  } }, shifted = { type = "native" } })
+  h:assert_eq(#mapped_dev:writes(), 0,
+    "replacing a SPY mapping does not redundantly re-enable global reporting")
 
   -- Firmware ignores button divert while a mouse is in onboard mode, so remap
   -- only works in host mode. A mouse with ONBOARD_PROFILES must advertise that

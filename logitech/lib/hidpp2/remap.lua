@@ -57,16 +57,24 @@ end
 
 local function set_remap_active(dev, cid, enabled)
   local remap = assert(dev.remap, "remap unavailable")
+  local was_enabled = remap.active[cid] ~= nil
+  if was_enabled == enabled then return end
+  local had_any = next(remap.active) ~= nil
   remap.active[cid] = enabled or nil
   local any = next(remap.active) ~= nil
+  local ok, value = true, nil
   if remap.backend == "reprog" then
     local payload = { (cid >> 8) & 0xff, cid & 0xff, enabled and 1 or 0 }
     for _ = 1, 13 do payload[#payload + 1] = 0 end
-    feature(dev, REPROG_CONTROLS_V4, 0x30, bytes(table.unpack(payload)))
-  elseif remap.backend == "gkey" then
-    feature(dev, GKEY, 0x20, bytes(any and 1 or 0))
-  elseif remap.backend == "spy" then
-    feature(dev, MOUSE_BUTTON_SPY, 0x10, bytes(any and 1 or 0))
+    ok, value = pcall(feature, dev, REPROG_CONTROLS_V4, 0x30, bytes(table.unpack(payload)))
+  elseif remap.backend == "gkey" and had_any ~= any then
+    ok, value = pcall(feature, dev, GKEY, 0x20, bytes(any and 1 or 0))
+  elseif remap.backend == "spy" and had_any ~= any then
+    ok, value = pcall(feature, dev, MOUSE_BUTTON_SPY, 0x10, bytes(any and 1 or 0))
+  end
+  if not ok then
+    remap.active[cid] = was_enabled and true or nil
+    error(value)
   end
 end
 
