@@ -33,6 +33,20 @@ local function sensor_record(ctx, id)
   return nil
 end
 
+-- Sensor units use stable protocol names on the data bus. Convert those names
+-- to compact user-facing labels before drawing them on the LCD.
+local function sensor_unit_label(unit)
+  local labels = {
+    celsius = "°C",
+    fahrenheit = "°F",
+    percent = "%",
+    megahertz = "MHz",
+    hours = "h",
+    rpm = "RPM",
+  }
+  return labels[unit] or unit or ""
+end
+
 local function center_text(canvas, w, h, text, size, ctx, col, y)
   local tw, th = ctx:measure_text(text, size)
   ctx:draw_text(canvas, text, (w - tw) / 2, y or ((h - th) / 2), size, col)
@@ -82,7 +96,7 @@ local function render_sensor(canvas, w, h, params, ctx)
   local label = params.label
   if not label or label == "" then label = sensor and sensor.label or "Sensor" end
   local shown = value and string.format("%.0f", value) or "--"
-  if value and params.show_unit ~= false then shown = shown .. (sensor.unit or "") end
+  if value and params.show_unit ~= false then shown = shown .. sensor_unit_label(sensor.unit) end
   if params.show_value ~= false then center_text(canvas, w, h, shown, h * 0.30, ctx, color(params.value_color, WHITE)) end
   center_text(canvas, w, h, label, h * 0.14, ctx, color(params.label_color, MUTED), h * 0.76)
 end

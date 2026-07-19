@@ -26,7 +26,7 @@ byte 1    command opcode
 byte 2…   command-specific payload, zero-padded to 65 bytes
 ```
 
-### Direct-stream sub-packet — opcode `0x40`
+### Direct-stream sub-packet - opcode `0x40`
 
 ```
 byte 0    0xEC
@@ -40,7 +40,7 @@ byte 5…   R,G,B triples, 3 bytes per LED:
             byte 5+i*3+2 = B of LED i
 ```
 
-### SetMode frame — opcode `0x35`
+### SetMode frame - opcode `0x35`
 
 ```
 byte 0    0xEC
@@ -51,7 +51,7 @@ byte 4    0x00
 byte 5    mode byte             0xFF = direct-control mode
 ```
 
-### Effect frame — opcode `0x3B`
+### Effect frame - opcode `0x3B`
 
 ```
 byte 0    0xEC
@@ -91,16 +91,16 @@ Reply layouts are in §4.
 
 | Function | Bytes sent (65-byte frame, unlisted = `0x00`) | Params | Required sequence / notes |
 |----------|-----------------------------------------------|--------|----------------------------|
-| `stop_gen2` | `EC 52 53 00 01` | — | Single write; must be first command |
-| `get_firmware_version` | `EC 82` | — | Write then read reply `EC 02 …`; see subsection + §4 |
-| `get_config_table` | `EC B0` | — | Write then read reply `EC 30 …`; see subsection + §4 |
+| `stop_gen2` | `EC 52 53 00 01` | - | Single write; must be first command |
+| `get_firmware_version` | `EC 82` | - | Write then read reply `EC 02 …`; see subsection + §4 |
+| `get_config_table` | `EC B0` | - | Write then read reply `EC 30 …`; see subsection + §4 |
 | `set_channel_direct` | `EC 35 <effch> 00 00 FF` | `effch` (0 = mainboard) | Single write; see subsection |
 | `send_direct` | `EC 40 <dch\|apply> <off> <cnt> <r,g,b…>` | `dch`, `colors` | Multi-step chunked stream; see subsection |
 | `send_direct_mb` | identical to `send_direct` with `dch = 0x04` | `colors` | Mainboard fixed zone |
 | `send_effect_argb` | `EC 3B <effch> 00 <mode> <r> <g> <b>` | `effch`, `mode`, `r,g,b` | Single write |
 | `send_effect` | resolves `id`→mode + `params["color"]`, then `send_effect_argb` | `id`, `effch`, `params` | Thin wrapper |
 
-### `send_direct` — chunked per-LED stream
+### `send_direct` - chunked per-LED stream
 
 Streams an arbitrary-length color array to one direct channel as a sequence of sub-packets, each carrying at most **20 LEDs** (20 × 3 = 60 color bytes, which fits after the 5-byte header in a 65-byte frame). An empty color array sends nothing.
 
@@ -110,14 +110,14 @@ Streams an arbitrary-length color array to one direct channel as a sequence of s
    2. Build a 65-byte frame:
       - byte 0 = `0xEC`, byte 1 = `0x40`
       - byte 2 = `direct_channel | 0x80` if `is_last`, else `direct_channel`
-      - byte 3 = `offset`  (**must fit in a u8** — a channel with > 255 LEDs is rejected with an error)
+      - byte 3 = `offset`  (**must fit in a u8**: a channel with > 255 LEDs is rejected with an error)
       - byte 4 = `count`
       - bytes 5… = `count` R,G,B triples taken from `colors[offset .. offset+count]`
    3. Write the frame; `offset += count`.
 
 The `0x80` bit on byte 2 of the **final** sub-packet is the commit signal ("apply now"); all earlier sub-packets clear it. There is no separate apply command. A single write of ≤ 20 LEDs is its own last packet, so it always has `0x80` set.
 
-### `set_channel_direct` — claim a channel for software control
+### `set_channel_direct` - claim a channel for software control
 
 Single write `EC 35 <effch> 00 00 FF`: puts effect channel `effch` into direct-control mode (mode byte `0xFF`). During init this is issued for every channel `0 … argb_count` inclusive, where channel 0 is the mainboard and channels `1 … argb_count` are the ARGB headers.
 
@@ -126,7 +126,7 @@ Single write `EC 35 <effch> 00 00 FF`: puts effect channel `effch` into direct-c
 Run once at device open, in this exact order:
 
 1. **`stop_gen2()`** → write `EC 52 53 00 01`. Disables the controller's legacy gen-2 continuous-cycle so software can take ownership. Must precede everything.
-2. **`get_firmware_version()`** → write `EC 82`, read reply (§4). Informational only — init does **not** fail if this returns nothing.
+2. **`get_firmware_version()`** → write `EC 82`, read reply (§4). Informational only: init does **not** fail if this returns nothing.
 3. **`get_config_table()`** → write `EC B0`, read reply (§4). **Bails** if no reply arrives.
 4. **Parse config** into `(argb_count, led_counts[], mb_leds)` (see config-read subsection). **Bails** if `argb_count == 0 && mb_leds == 0`.
 5. **Claim every channel:** for `ch` in `0 ..= argb_count`, write `EC 35 <ch> 00 00 FF` (`set_channel_direct`).
@@ -180,7 +180,7 @@ The mainboard's fixed on-board LEDs (chipset, I/O cover, and any 12V RGB header 
 
 ### Color encoding
 
-Color is plain **R, G, B** byte order — there is no GRB/BGR swap. Each channel is a whole byte **0–255**. In a direct sub-packet LED `i`'s bytes are at `5+i*3` (R), `5+i*3+1` (G), `5+i*3+2` (B). Example: a single red LED `(R=0x11, G=0x22, B=0x33)` serialises to bytes `5,6,7 = 11 22 33`.
+Color is plain **R, G, B** byte order: there is no GRB/BGR swap. Each channel is a whole byte **0–255**. In a direct sub-packet LED `i`'s bytes are at `5+i*3` (R), `5+i*3+1` (G), `5+i*3+2` (B). Example: a single red LED `(R=0x11, G=0x22, B=0x33)` serialises to bytes `5,6,7 = 11 22 33`.
 
 ### Effect modes (byte 4 of the `0x3B` frame / byte 5 of `0x35`)
 
@@ -204,7 +204,7 @@ Color is plain **R, G, B** byte order — there is no GRB/BGR swap. Each channel
 
 ### Mode-byte values
 
-- `0xFF` = direct (software) control — written by `set_channel_direct`.
+- `0xFF` = direct (software) control, written by `set_channel_direct`.
 - `0x00` / `0x02` / `0x04` / `0x05` = the hardware effects in the effect-mode table above.
 
 ---
@@ -213,11 +213,11 @@ Color is plain **R, G, B** byte order — there is no GRB/BGR swap. Each channel
 
 Only the two read commands return data; every other command is write-only with no acknowledgement.
 
-### Firmware reply — byte 1 = `0x02`
+### Firmware reply - byte 1 = `0x02`
 
 After writing `EC 82`, read a frame whose byte 0 = `0xEC` and byte 1 = `0x02` (the reader retries up to 8 frames, discarding non-matching ones). The firmware version is the ASCII string in `resp[2..18]`, truncated at the first NUL byte. Returns nothing if no matching reply appears within the attempt limit.
 
-### Config-table reply — byte 1 = `0x30`
+### Config-table reply - byte 1 = `0x30`
 
 After writing `EC B0`, read a frame whose byte 0 = `0xEC` and byte 1 = `0x30` (up to 8 attempts). The 60-byte config table is `resp[4..64]`; its field offsets are listed in §3.
 
@@ -227,12 +227,12 @@ No other command requires reading an ACK before continuing.
 
 ## 5. Polling & notifications
 
-None — all access is host-initiated request/response. The device never originates packets; per-LED frames are pushed by the host on demand, and there is no periodic status report.
+None: all access is host-initiated request/response. The device never originates packets; per-LED frames are pushed by the host on demand, and there is no periodic status report.
 
 ---
 
 ## Notes
 
 - A channel reporting `0` LEDs in the config defaults to 30; per-channel counts are clamped to a maximum of 120.
-- A single direct channel cannot exceed 255 LEDs — the start-offset byte is a u8, and `send_direct` errors rather than silently wrapping.
+- A single direct channel cannot exceed 255 LEDs: the start-offset byte is a u8, and `send_direct` errors rather than silently wrapping.
 - Effect speed and direction are not encoded by this protocol; only `breathing` carries a color.

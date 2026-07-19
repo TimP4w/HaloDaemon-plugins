@@ -68,7 +68,7 @@ If `write_block_data` is unsupported/fails on the platform, it falls back to one
 
 ### Color buffer layout
 
-A color buffer is always exactly `led_count * 3` bytes. Each RGB triple is emitted in **R,B,G** order (green and blue swapped — see §3). Excess input colors are dropped; a short input is right-padded with black (`00 00 00`).
+A color buffer is always exactly `led_count * 3` bytes. Each RGB triple is emitted in **R,B,G** order (green and blue swapped, see §3). Excess input colors are dropped; a short input is right-padded with black (`00 00 00`).
 
 ---
 
@@ -78,13 +78,13 @@ All transactions use the device's I2C address `addr` and the two-stage scheme ab
 
 | Function | Transactions issued | Params | Required sequence / notes |
 |----------|---------------------|--------|----------------------------|
-| `test` | probe reads (see subsection) | — | Returns whether an ENE controller is present |
-| `build_device` | `read(0x1000+i)` ×16, `read(0x1C00+i)` ×64 | — | Reads version + config; errors if led_count = 0 |
-| `set_direct_mode(true)` | 4 writes (see subsection) | — | Enter direct (software) control |
-| `set_direct_mode(false)` | `write(0x8020,0x00)`, `write(0x80A0,0x01)` | — | Leave direct control |
+| `test` | probe reads (see subsection) | - | Returns whether an ENE controller is present |
+| `build_device` | `read(0x1000+i)` ×16, `read(0x1C00+i)` ×64 | - | Reads version + config; errors if led_count = 0 |
+| `set_direct_mode(true)` | 4 writes (see subsection) | - | Enter direct (software) control |
+| `set_direct_mode(false)` | `write(0x8020,0x00)`, `write(0x80A0,0x01)` | - | Leave direct control |
 | `apply_static_direct` | direct-colour block (see subsection) | `r,g,b` | Solid color; one atomic I2C batch |
 | `apply_colors_direct` | direct-colour block (see subsection) | `colors[]` | Per-LED frame; one atomic I2C batch |
-| `write_frame_colors` | `block(direct_reg, buf)` only | `colors[]` | No mode/apply — device must already be in direct mode |
+| `write_frame_colors` | `block(direct_reg, buf)` only | `colors[]` | No mode/apply; device must already be in direct mode |
 | `set_effect_colors` | `block(effect_reg, buf)`, `write(0x80A0,0x01)` | `colors[]` | Load effect color buffer then apply |
 | `set_mode` | 4 writes (see subsection) | `mode,speed,direction` | Hardware effect |
 | `remap_dram_addresses` | quick-writes + per-stick writes (see subsection) | candidate addr list | DRAM address assignment, pre-scan |
@@ -93,8 +93,8 @@ Each protocol method runs all its transactions inside one blocking batch so the 
 
 ### Two-stage register read (`read_reg`)
 
-1. `write_word_data(addr, 0x00, byteswap(reg))` — point the controller at register `reg`.
-2. `read_byte_data(addr, 0x81)` — read and return the data byte.
+1. `write_word_data(addr, 0x00, byteswap(reg))` - point the controller at register `reg`.
+2. `read_byte_data(addr, 0x81)` - read and return the data byte.
 
 ### Two-stage register write (`write_reg` + block)
 
@@ -108,17 +108,17 @@ Multi-byte (block): split `buf` into ≤32-byte chunks. For each chunk at `offse
 1. `write_word_data(addr, 0x00, byteswap(reg + offset))`.
 2. `write_block_data(addr, 0x03, chunk)`; if that fails, fall back to looping the single-byte write above for each byte at `reg + offset + j`.
 
-### 7-step direct-colour block — `apply_static_direct` / `apply_colors_direct` (`apply_direct_color_block`)
+### 7-step direct-colour block - `apply_static_direct` / `apply_colors_direct` (`apply_direct_color_block`)
 
 The whole sequence runs as one atomic I2C batch so no concurrent transfer can interleave. Exact order:
 
-1. `write(0x8021, 0x01)` — `ENE_REG_MODE` = Static.
-2. `write(0x80A0, 0x01)` — `ENE_REG_APPLY`.
-3. `write(0x8020, 0x01)` — `ENE_REG_DIRECT` = on.
-4. `write(0x80A0, 0x01)` — `ENE_REG_APPLY`.
-5. `block(direct_reg, buf)` — the R,B,G color buffer (`direct_reg` = `0x8000` v1 or `0x8100` v2, see §3).
-6. `write(0x8020, 0x01)` — `ENE_REG_DIRECT` = on (re-assert).
-7. `write(0x80A0, 0x01)` — `ENE_REG_APPLY` (commit).
+1. `write(0x8021, 0x01)` - `ENE_REG_MODE` = Static.
+2. `write(0x80A0, 0x01)` - `ENE_REG_APPLY`.
+3. `write(0x8020, 0x01)` - `ENE_REG_DIRECT` = on.
+4. `write(0x80A0, 0x01)` - `ENE_REG_APPLY`.
+5. `block(direct_reg, buf)` - the R,B,G color buffer (`direct_reg` = `0x8000` v1 or `0x8100` v2, see §3).
+6. `write(0x8020, 0x01)` - `ENE_REG_DIRECT` = on (re-assert).
+7. `write(0x80A0, 0x01)` - `ENE_REG_APPLY` (commit).
 
 DIRECT is asserted **before** the color block (steps 3–4) because some controllers only latch direct-mode writes while DIRECT is already high; it is re-asserted after (steps 6–7) to commit the frame.
 
@@ -126,35 +126,35 @@ DIRECT is asserted **before** the color block (steps 3–4) because some control
 
 For `enable = true`:
 
-1. `write(0x8021, 0x01)` — `ENE_REG_MODE` = Static. Written first so a controller that booted in Off mode after sleep/resume exits it; otherwise `ENE_REG_DIRECT` writes are silently ignored.
-2. `write(0x80A0, 0x01)` — `ENE_REG_APPLY`.
-3. `write(0x8020, 0x01)` — `ENE_REG_DIRECT` = on.
-4. `write(0x80A0, 0x01)` — `ENE_REG_APPLY`.
+1. `write(0x8021, 0x01)` - `ENE_REG_MODE` = Static. Written first so a controller that booted in Off mode after sleep/resume exits it; otherwise `ENE_REG_DIRECT` writes are silently ignored.
+2. `write(0x80A0, 0x01)` - `ENE_REG_APPLY`.
+3. `write(0x8020, 0x01)` - `ENE_REG_DIRECT` = on.
+4. `write(0x80A0, 0x01)` - `ENE_REG_APPLY`.
 
 For `enable = false`: just `write(0x8020, 0x00)` then `write(0x80A0, 0x01)`.
 
-### `set_mode(mode, speed, direction)` — hardware effect
+### `set_mode(mode, speed, direction)` - hardware effect
 
-1. `write(0x8021, <mode>)` — `ENE_REG_MODE` (effect id, see §3).
-2. `write(0x8022, <speed>)` — `ENE_REG_SPEED`.
-3. `write(0x8023, <direction>)` — `ENE_REG_DIRECTION`.
-4. `write(0x80A0, 0x01)` — `ENE_REG_APPLY`.
+1. `write(0x8021, <mode>)` - `ENE_REG_MODE` (effect id, see §3).
+2. `write(0x8022, <speed>)` - `ENE_REG_SPEED`.
+3. `write(0x8023, <direction>)` - `ENE_REG_DIRECTION`.
+4. `write(0x80A0, 0x01)` - `ENE_REG_APPLY`.
 
 The device layer drives `breathing` / `spectrum_wave` / `off` like this:
 
 1. `set_direct_mode(false)` (for `breathing` and `spectrum_wave`; `off` skips it).
 2. For `breathing`: `set_effect_colors(colors)` to preload the effect buffer.
-3. `set_mode(<mode>, <speed>, 0)` — direction is always `0`.
+3. `set_mode(<mode>, <speed>, 0)` - direction is always `0`.
 
 ### DRAM address remap (`sync_remap_dram_addresses`)
 
 Runs as one blocking batch on the broadcast address `0x77` before the normal bus scan. DRAM sticks all power up answering `0x77`; each is moved to a unique free address from the candidate list (§3):
 
 1. For `slot` in `0..8`:
-   1. `write_quick(0x77)` — if `0x77` no longer ACKs, **stop** (no unremapped sticks left).
+   1. `write_quick(0x77)` - if `0x77` no longer ACKs, **stop** (no unremapped sticks left).
    2. Advance through the candidate address list until a candidate **NAKs** a `write_quick` (a NAK means that address is free). If the list is exhausted, return.
-   3. `write(0x80F8, <slot>)` on address `0x77` — `ENE_REG_SLOT_INDEX`.
-   4. `write(0x80F9, <target << 1>)` on address `0x77` — `ENE_REG_I2C_ADDRESS`, written in 8-bit (left-shifted) form. This moves that stick to `target`.
+   3. `write(0x80F8, <slot>)` on address `0x77` - `ENE_REG_SLOT_INDEX`.
+   4. `write(0x80F9, <target << 1>)` on address `0x77` - `ENE_REG_I2C_ADDRESS`, written in 8-bit (left-shifted) form. This moves that stick to `target`.
 
 ### Controller-detection probe (`probe_ene_controller`, via `test`)
 
@@ -198,7 +198,7 @@ Constants: apply value `0x01`; DRAM broadcast address `0x77`.
 | `0x03` | write block | Write a color chunk (≤ 32 bytes) |
 | `0x81` | read byte | Read one data byte |
 
-### Color encoding — R, B, G wire order
+### Color encoding - R, B, G wire order
 
 Color data is **not** sent as RGB. Each LED's three bytes are reordered: input `[R, G, B]` is written to the wire as `[R, B, G]` (green and blue swapped; red unchanged). Examples:
 
@@ -289,7 +289,7 @@ No color, mode, or apply write returns an ACK payload that the driver inspects.
 
 ## 5. Polling & notifications
 
-None — all access is host-initiated request/response. The controller never originates a transaction; the host sets registers and reads results on demand. There is no periodic status report.
+None; all access is host-initiated request/response. The controller never originates a transaction; the host sets registers and reads results on demand. There is no periodic status report.
 
 ---
 

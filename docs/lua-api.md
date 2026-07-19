@@ -513,7 +513,7 @@ only inside the `batch` callback. Do not save it for later use.
 
 A plugin that declares an `http` transport and holds the `network` permission
 gets `halod.http:request{…}`. It is a capability global (like `halod.publish`),
-not `dev.transport:` userdata — there is no persistent socket. Each call is a
+not `dev.transport:` userdata; there is no persistent socket. Each call is a
 synchronous, bounded request validated against the declared origins before a
 socket opens.
 
@@ -542,7 +542,7 @@ declared method set, size limits, timeout, or origin scope raise an error.
 
 A plugin that declares a `udp` transport and holds the `network` permission gets
 `halod.udp`, a capability global for exchanging datagrams with the single
-configured destination. There is no `send_to` — every datagram goes to the one
+configured destination. There is no `send_to`; every datagram goes to the one
 vetted host/port.
 
 ```lua

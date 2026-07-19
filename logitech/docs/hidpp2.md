@@ -1,10 +1,10 @@
-# HID++ 2.0 — feature protocol
+# HID++ 2.0 - feature protocol
 
 The modern, **feature-enumerated** half of [HID++](protocol.md). A device exposes a table of *features* identified by 16-bit codes; each present feature is assigned a runtime *index* discovered through the ROOT feature (`0x0000`) before any call. Used by current mice, keyboards and headsets.
 
 Code: [`main.lua`](../main.lua) contains the feature table and the battery, audio, keys, RGB, report-rate, DPI, and onboard-profile codecs. See [protocol.md](protocol.md) for the shared frame format. Historical Rust symbol names are retained below for continuity with the original notes.
 
-**Credits:** Solaar (GPL-2.0-or-later) — `hidpp20.py`, `settings_templates.py`, `settings_validator.py` by Daniel Pavel and contributors.
+**Credits:** Solaar (GPL-2.0-or-later): `hidpp20.py`, `settings_templates.py`, `settings_validator.py` by Daniel Pavel and contributors.
 
 ---
 
@@ -30,7 +30,7 @@ Every 2.0 function byte is `function | software_id`, where the function occupies
 
 In the tables below, outgoing byte templates are the full report as `build_packet` emits it: `dd` = device number, `fi` = feature index (resolved via ROOT), `··` = zero padding. So a function shown as `0x30` is sent with byte 3 = `0x31`.
 
-**Short vs long selection.** A request is **short** (`0x10`, 7 bytes) only when *both* the feature index is `0` and the payload is ≤ 3 bytes — in practice only ROOT calls. Every other feature has a non-zero index and always uses **long** (`0x11`, 20 bytes). Force-long devices (LIGHTSPEED headsets) route ROOT onto long too — see [protocol.md](protocol.md).
+**Short vs long selection.** A request is **short** (`0x10`, 7 bytes) only when *both* the feature index is `0` and the payload is ≤ 3 bytes; in practice only ROOT calls. Every other feature has a non-zero index and always uses **long** (`0x11`, 20 bytes). Force-long devices (LIGHTSPEED headsets) route ROOT onto long too; see [protocol.md](protocol.md).
 
 ---
 
@@ -38,7 +38,7 @@ In the tables below, outgoing byte templates are the full report as `build_packe
 
 > **Required sequence (all 2.0 calls):** resolve the feature's index via ROOT *before* any call to it.
 
-### ROOT (`0x0000`) — fixed index 0
+### ROOT (`0x0000`) - fixed index 0
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
@@ -46,7 +46,7 @@ In the tables below, outgoing byte templates are the full report as `build_packe
 
 Resolving ADJUSTABLE_DPI (`0x2201`) on device `0x01`: send `10 01 00 01 22 01 00`; the reply's byte 0 is the index (e.g. `04`), used as byte 2 (`fi`) in every later call to that feature.
 
-### FEATURE_SET (`0x0001`) — full enumeration
+### FEATURE_SET (`0x0001`) - full enumeration
 
 `Hidpp20::enumerate` resolves FEATURE_SET via ROOT, reads its count, then loops `getFeatureId` for each index, building the whole `code → index` map at discovery.
 
@@ -59,7 +59,7 @@ Resolving ADJUSTABLE_DPI (`0x2201`) on device `0x01`: send `10 01 00 01 22 01 00
 
 ROOT `0x0000`, FEATURE_SET `0x0001`, FIRMWARE_VERSION `0x0003`, DEVICE_NAME `0x0005`, DEVICE_FRIENDLY_NAME `0x0007`, BATTERY_VOLTAGE `0x1001`, UNIFIED_BATTERY `0x1004`, WIRELESS_DEVICE_STATUS `0x1D4B`, ADC_MEASUREMENT `0x1F20`, HIRES_WHEEL `0x2121`, ADJUSTABLE_DPI `0x2201`, K375S_FN_INVERSION `0x40A3`, KEYBOARD_LAYOUT_2 `0x4540`, REPROG_CONTROLS_V4 `0x1b04`, BRIGHTNESS_CONTROL `0x8040`, REPORT_RATE `0x8060`, EXT_REPORT_RATE `0x8061`, RGB_EFFECTS `0x8071`, PER_KEY_LIGHTING_V2 `0x8081`, GKEY `0x8010`, ONBOARD_PROFILES `0x8100`, MOUSE_BUTTON_SPY `0x8110`, SIDETONE `0x8300`, EQUALIZER `0x8310`. Declared but unused: `0x2202`, `0x1b10`, `0x1bc0`, `0x1b05`.
 
-### FIRMWARE_VERSION (`0x0003`) — `v2/firmware.rs`
+### FIRMWARE_VERSION (`0x0003`) - `v2/firmware.rs`
 
 Informational only. func `0x00` getCount returns the firmware-entity count in `reply[0]`; func `0x10` getFwInfo(`[entity]`) returns one entity. `parse_fw_entity` decodes the getFwInfo reply (Solaar `struct.unpack('!3sBBH', fw_info[1:8])`):
 
@@ -73,9 +73,9 @@ Informational only. func `0x00` getCount returns the firmware-entity count in `r
 
 `read_firmware_version` loops entities and returns the **main** (`kind == 0`) entity's version string, formatted `"{prefix}{major:02X}.{minor:02X}.B{build:04X}"` (e.g. `MPM19.02.B0016`). Surfaced in the GUI Info tab via `debug_info_extra`.
 
-### WIRELESS_DEVICE_STATUS (`0x1D4B`) — `v2/mod.rs`
+### WIRELESS_DEVICE_STATUS (`0x1D4B`) - `v2/mod.rs`
 
-Read-only V0 feature with **no getter** — the only payload is the device-initiated broadcast event (address `0x00`). `parse_wireless_status` decodes `data[0]` = status (`1` = reconnected), `data[1]` = request (`1` = host should reload config), `data[2]` = opaque reason. `handle_wireless_status_notif` gates on the feature index like `handle_fn_inversion_notif`; `reconcile_feature_notification` records the last event into device state (informational, surfaced in the Info tab) — it does **not** trigger reinit.
+Read-only V0 feature with **no getter**; the only payload is the device-initiated broadcast event (address `0x00`). `parse_wireless_status` decodes `data[0]` = status (`1` = reconnected), `data[1]` = request (`1` = host should reload config), `data[2]` = opaque reason. `handle_wireless_status_notif` gates on the feature index like `handle_fn_inversion_notif`; `reconcile_feature_notification` records the last event into device state (informational, surfaced in the Info tab); it does **not** trigger reinit.
 
 ### DEVICE_NAME (`0x0005`) / DEVICE_FRIENDLY_NAME (`0x0007`)
 
@@ -83,17 +83,17 @@ Read-only V0 feature with **no getter** — the only payload is the device-initi
 
 ---
 
-## 3. Battery — `v2/battery.rs`
+## 3. Battery - `v2/battery.rs`
 
 `Hidpp20::battery_source` resolves the source in priority order (UNIFIED preferred), then `read_battery` decodes it.
 
-### UNIFIED_BATTERY (`0x1004`) — percentage
+### UNIFIED_BATTERY (`0x1004`) - percentage
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
 | getStatus (`0x10`) | `11 dd fi 11 ··` | none | reply `[level, ?, charging, …]`: byte 0 = percent, byte 2 ≠ 0 → charging |
 
-### ADC_MEASUREMENT (`0x1F20`) / BATTERY_VOLTAGE (`0x1001`) — cell voltage
+### ADC_MEASUREMENT (`0x1F20`) / BATTERY_VOLTAGE (`0x1001`) - cell voltage
 
 LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0ABA` advertises only ADC_MEASUREMENT).
 
@@ -101,13 +101,13 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 |----------|-----------|--------|-------|
 | getVoltage (`0x00`) | `11 dd fi 01 00 ··` | `[0x00]` | reply: BE-u16 mV in bytes 0–1; byte 2 status (`0x01` discharging, `0x03` charging) |
 
-`voltage_to_percent` maps mV → 0–100% by piecewise-linear interpolation over a discharge curve. A `0` mV reading means the headset is **asleep** (dongle on, earcups off) — the same condition makes SIDETONE/EQUALIZER reads return `logitech_internal` (`0x05`); all are treated as "not yet available" and the 30 s battery poll retries. The two voltage features share this exact reply layout.
+`voltage_to_percent` maps mV → 0–100% by piecewise-linear interpolation over a discharge curve. A `0` mV reading means the headset is **asleep** (dongle on, earcups off); the same condition makes SIDETONE/EQUALIZER reads return `logitech_internal` (`0x05`); all are treated as "not yet available" and the 30 s battery poll retries. The two voltage features share this exact reply layout.
 
 ---
 
-## 4. Settings — `v2/settings/`
+## 4. Settings - `v2/settings/`
 
-### REPORT_RATE (`0x8060`) — `settings/report_rate.rs`
+### REPORT_RATE (`0x8060`) - `settings/report_rate.rs`
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
@@ -127,7 +127,7 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 
 **Host-mode dance.** A rate change is only honoured in host mode, so `ChoiceCapability::set_choice` brackets it: read mode → if onboard, `set_onboard_mode(host=true)` → `set_report_rate(wire_index, ext)` → `set_onboard_mode(host=false)` → re-enable SW RGB control (the firmware reclaims the LEDs on the onboard transition). Already-host devices skip the bracketing.
 
-### ADJUSTABLE_DPI (`0x2201`) — `settings/dpi.rs`
+### ADJUSTABLE_DPI (`0x2201`) - `settings/dpi.rs`
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
@@ -139,11 +139,11 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 
 **DPI-list range markers** (`parse_dpi_list`). `getSensorDpiList` returns BE-u16 entries terminated by `0x0000`. A u16 whose top 3 bits are all set (`value >> 13 == 0b111`) is a **range marker**: low 13 bits = step, the *next* u16 = inclusive end; the range expands from the last explicit value adding `step` while `≤ end`. E.g. `400`, marker `0xE190` (step 400), end `0x0640` → 800, 1200, 1600.
 
-### ONBOARD_PROFILES (`0x8100`) — `settings/onboard.rs`
+### ONBOARD_PROFILES (`0x8100`) - `settings/onboard.rs`
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
-| getInfo (`0x00`) | `11 dd fi 01 ··` | none | `info[4]` = ROM profile count, `info[7:9]` = sector size (BE) — `parse_onboard_caps` |
+| getInfo (`0x00`) | `11 dd fi 01 ··` | none | `info[4]` = ROM profile count, `info[7:9]` = sector size (BE), `parse_onboard_caps` |
 | setMode (`0x10`) | `11 dd fi 11 <mode> ··` | `[0x02]`=host, `[0x01]`=onboard | |
 | getMode (`0x20`) | `11 dd fi 21 ··` | none | reply byte 0: `0x02`=host, `0x01`=onboard |
 | setCurrentProfile (`0x30`) | `11 dd fi 31 00 <slot> 00 ··` | `[0x00, slot, 0x00]` | |
@@ -168,7 +168,7 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 | 13..(size−2) | button / G-button bindings | preserved verbatim on a DPI patch |
 | (size−2)..size | CRC16 | big-endian, over `bytes[0 .. size−2]` |
 
-### HIRES_WHEEL (`0x2121`) — `v2/mod.rs`
+### HIRES_WHEEL (`0x2121`) - `v2/mod.rs`
 
 Scroll-wheel resolution/direction/diversion + ratchet switch. `read_hires_wheel` reads three functions and decodes them via `parse_hires_wheel` into a `HiresWheel` struct; writes go through `set_hires_wheel_mode`, a read-modify-write of the mode byte.
 
@@ -181,7 +181,7 @@ Scroll-wheel resolution/direction/diversion + ratchet switch. `read_hires_wheel`
 
 Feature presence over-declares: a keyboard may advertise `0x2121` with no physical wheel. `read_hires_wheel` requires all three reads to succeed with ≥2 bytes, so a device that errors on getRatchet decodes to `None` and exposes no wheel controls.
 
-### K375S_FN_INVERSION (`0x40A3`) — `v2/mod.rs`
+### K375S_FN_INVERSION (`0x40A3`) - `v2/mod.rs`
 
 F-row inversion (media keys vs F1–F12) on MX Keys / Craft-class keyboards. `parse_fn_inversion` decodes the low bit of bytes 0 (current) and 1 (default) of the getState reply.
 
@@ -189,13 +189,13 @@ F-row inversion (media keys vs F1–F12) on MX Keys / Craft-class keyboards. `pa
 |----------|-----------|--------|-------|
 | getState (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 bit `0x01` = inverted, byte 1 bit `0x01` = default-inverted |
 | setState (`0x10`) | `11 dd fi 11 <0/1> ··` | `[0/1]` | `0x01` = F-keys send media by default |
-| stateChanged notif | `10 dd fi <data>` | — | `handle_fn_inversion_notif` reads **data byte 1** low bit |
+| stateChanged notif | `10 dd fi <data>` | - | `handle_fn_inversion_notif` reads **data byte 1** low bit |
 
 Version gate (`fn_inversion_version`, via FEATURE_SET getFeatureId byte 3): version ≥ 2 supports setState; version 1 is read-only, so the reported bit is echoed back into state on notification without a write.
 
-> Solaar's `K375sFnSwap` additionally sends a current-host prefix byte (from HOSTS_INFO) as a workaround for an MX Keys S firmware bug that reports the wrong host's state. HaloDaemon sends no prefix — reply byte 0 is the state directly — which is correct for tested devices; MX Keys S multi-host may need the prefix.
+> Solaar's `K375sFnSwap` additionally sends a current-host prefix byte (from HOSTS_INFO) as a workaround for an MX Keys S firmware bug that reports the wrong host's state. HaloDaemon sends no prefix (reply byte 0 is the state directly), which is correct for tested devices; MX Keys S multi-host may need the prefix.
 
-### BRIGHTNESS_CONTROL (`0x8040`) — `v2/mod.rs`
+### BRIGHTNESS_CONTROL (`0x8040`) - `v2/mod.rs`
 
 Keyboard backlight level + optional on/off. `parse_brightness_info` decodes getInfo into a `BrightnessInfo { min, max, has_on_off, steps }`.
 
@@ -209,9 +209,9 @@ Keyboard backlight level + optional on/off. `parse_brightness_info` decodes getI
 
 ---
 
-## 5. RGB — `v2/rgb/`
+## 5. RGB - `v2/rgb/`
 
-### RGB_EFFECTS (`0x8071`) — `rgb/effects.rs`
+### RGB_EFFECTS (`0x8071`) - `rgb/effects.rs`
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
@@ -222,7 +222,7 @@ Keyboard backlight level + optional on/off. `parse_brightness_info` decodes getI
 
 Zone discovery (`rgb_build_zones`) reads the global zone count, then per zone the effect count, then scans each slot's effect_id to find the **static** slot (effect_id `0x0001`).
 
-**setEffect 15-byte block** — for a static colour (`encode_set_effect_static`):
+**setEffect 15-byte block**, for a static colour (`encode_set_effect_static`):
 
 ```
 byte 0   zone index   (0xFF = all zones)
@@ -233,7 +233,7 @@ byte 5-14  0x64 0x0B 0xB8 0x64 0x00 0x00 0x00 0x01 0x00 0x00   (static preset, f
 
 For a **native firmware effect** the block is the effect's 15-byte `base` (byte 0 = zone, byte 1 = slot) with params overlaid (`NATIVE_EFFECTS`): *Color Wave* (fixed preset, no params); *Ripple* (`background` colour bytes 2–4 default `5E 5E 5E`; `rate` ms byte 9, range 2–200; `saturation` byte 5, UI 0–100 scaled ×2.55). Out-of-range values clamp before encoding.
 
-### PER_KEY_LIGHTING_V2 (`0x8081`) — `rgb/per_key.rs`
+### PER_KEY_LIGHTING_V2 (`0x8081`) - `rgb/per_key.rs`
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
@@ -243,7 +243,7 @@ For a **native firmware effect** the block is the effect's 15-byte `base` (byte 
 | setRange (`0x50`) | `11 dd fi 51 00 FF r g b ··` | `[0x00,0xFF,r,g,b]` | paints whole key range |
 | frameEnd / commit (`0x70`) | `11 dd fi 71 00 ··` | `[0x00]` | applies queued changes |
 
-**Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. (Delta-compressed funcs 0x30/0x40 are gated off — the wire layout is unverified against hardware.)
+**Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. (Delta-compressed funcs 0x30/0x40 are gated off; the wire layout is unverified against hardware.)
 
 The G502 mouse strip uses diffed `setIndividual` batches instead. Its eight LEDs
 fit in two reports, and explicit IDs avoid a firmware quirk where optimized
@@ -251,7 +251,7 @@ pixmap frames can leave one strip LED at its previous colour.
 
 **Explicit per-key writes** (`encode_individual_pairs`) batch up to four `(key, r, g, b)` per `setIndividual`, padding a short final batch with its last pair (so key 0 is never zero-keyed), then `commit`.
 
-### COLOR_LED_EFFECTS (`0x8070`) — `rgb/color_led.rs`
+### COLOR_LED_EFFECTS (`0x8070`) - `rgb/color_led.rs`
 
 The **older** LED effect-type system, used by devices that predate `0x8071` RGB_EFFECTS (e.g. G502 Hero). Zones are addressed by index; each zone advertises an effect table. Codecs live in `rgb/color_led.rs`; the typed ops in `rgb/mod.rs`.
 
@@ -274,7 +274,7 @@ The **older** LED effect-type system, used by devices that predate `0x8071` RGB_
 
 ---
 
-## 6. Keys / remap — `v2/keys.rs`
+## 6. Keys / remap - `v2/keys.rs`
 
 ### REPROG_CONTROLS_V4 (`0x1b04`)
 
@@ -294,7 +294,7 @@ The **older** LED effect-type system, used by devices that predate `0x8071` RGB_
 | GKEY enableSoftwareControl (`0x20`) | `11 dd fi 21 <enabled> ··` | `[0/1]` | **global** toggle, enabled when any mapping exists |
 | SPY setSpyState (`0x10`) | `11 dd fi 11 <enabled> ··` | `[0/1]` | **global** host-side press reporting |
 
-Both GKEY and MOUSE_BUTTON_SPY use a single **global** software-control toggle (no per-control divert, unlike REPROG_CONTROLS_V4). The MOUSE_BUTTON_SPY per-button divert (func 0x40) is intentionally **not** sent — its button-id byte is not the bitmap bit index (G HUB addresses right-click, CID 10, as id 5), so addressing by bit index diverted the wrong buttons; until the id encoding is reverse-engineered, a remapped button also fires its native action.
+Both GKEY and MOUSE_BUTTON_SPY use a single **global** software-control toggle (no per-control divert, unlike REPROG_CONTROLS_V4). The MOUSE_BUTTON_SPY per-button divert (func 0x40) is intentionally **not** sent; its button-id byte is not the bitmap bit index (G HUB addresses right-click, CID 10, as id 5), so addressing by bit index diverted the wrong buttons; until the id encoding is reverse-engineered, a remapped button also fires its native action.
 
 ### Button-event notifications
 
@@ -305,9 +305,9 @@ Both GKEY and MOUSE_BUTTON_SPY use a single **global** software-control toggle (
 
 ---
 
-## 7. Audio — `v2/audio.rs`
+## 7. Audio - `v2/audio.rs`
 
-### SIDETONE (`0x8300`) — gaming headsets
+### SIDETONE (`0x8300`) - gaming headsets
 
 Mic feedback into the earcups: a single unsigned byte, `0–100`.
 
@@ -316,7 +316,7 @@ Mic feedback into the earcups: a single unsigned byte, `0–100`.
 | get (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 = current level |
 | set (`0x10`) | `11 dd fi 11 <level> ··` | `[level]` | clamped 0–100 |
 
-### EQUALIZER (`0x8310`) — gaming headsets
+### EQUALIZER (`0x8310`) - gaming headsets
 
 A graphic equalizer of **N signed-dB bands** read from the device; no named presets (one editable custom curve). `Hidpp20::read_equalizer` returns `EqReading { info, freqs, bands }`.
 
@@ -324,19 +324,19 @@ A graphic equalizer of **N signed-dB bands** read from the device; no named pres
 |----------|-----------|--------|-------|
 | getInfo (`0x00`) | `11 dd fi 01 ··` | none | reply `[count, dbRange, _, dbMin, dbMax]` |
 | getFrequencies (`0x10`) | `11 dd fi 11 <start> ··` | start band index (`group·7`) | reply byte 0 = echo, then per-band freq BE-u16 at offset `2·b+1` |
-| getBands (`0x20`) | `11 dd fi 21 00 ··` | read-prefix `0x00` | reply has **no** echoed prefix — `count` signed `i8` dB from byte 0 |
+| getBands (`0x20`) | `11 dd fi 21 00 ··` | read-prefix `0x00` | reply has **no** echoed prefix; `count` signed `i8` dB from byte 0 |
 | setBands (`0x30`) | `11 dd fi 31 02 <b0> <b1> … ··` | `0x02` then `count` signed `i8` | write-prefix `0x02` selects the custom band set |
 
-**getInfo fix-up:** `dbMin`/`dbMax` of 0 mean "use ∓`dbRange`" — `[4, 12, 0, 0, 0]` → 4 bands spanning −12..+12 dB. **Band encoding:** the wire byte *is* the signed dB (`-12 → 0xF4`, `+6 → 0x06`), clamped to `[dbMin, dbMax]` — no bias or scale. A round-trip property test lives in `v2/audio.rs`.
+**getInfo fix-up:** `dbMin`/`dbMax` of 0 mean "use ∓`dbRange`": `[4, 12, 0, 0, 0]` → 4 bands spanning −12..+12 dB. **Band encoding:** the wire byte *is* the signed dB (`-12 → 0xF4`, `+6 → 0x06`), clamped to `[dbMin, dbMax]`; no bias or scale. A round-trip property test lives in `v2/audio.rs`.
 
-**Headset discovery & transport.** LIGHTSPEED headsets (PRO X `0x0ABA`, PRO X 2 `0x0AF7`, G733 `0x0AB5`/`0x0AFE`, G535 `0x0AC4`, G935 `0x0A87`, G533 `0x0A66`) enumerate as a **single composite USB device** — headset and dongle share one PID, no separate receiver. HID++ rides **interface 3** (vendor usage page `0xFF43`; `0` on Linux hidraw), addressed at device index `0xFF`, and the interface declares **no short report** — `open_wired` with `DirectReport::LongOnly` forces every request long. On Linux one hidraw node carries both report IDs as a single handle.
+**Headset discovery & transport.** LIGHTSPEED headsets (PRO X `0x0ABA`, PRO X 2 `0x0AF7`, G733 `0x0AB5`/`0x0AFE`, G535 `0x0AC4`, G935 `0x0A87`, G533 `0x0A66`) enumerate as a **single composite USB device**; headset and dongle share one PID, no separate receiver. HID++ rides **interface 3** (vendor usage page `0xFF43`; `0` on Linux hidraw), addressed at device index `0xFF`, and the interface declares **no short report**; `open_wired` with `DirectReport::LongOnly` forces every request long. On Linux one hidraw node carries both report IDs as a single handle.
 
 ---
 
 ## 8. Responses
 
-- **getFeature** (ROOT `0x00`) — byte 0 = the feature's runtime index; `0` = absent.
-- **Battery** (UNIFIED getStatus) — byte 0 = percent, byte 2 ≠ 0 → charging; voltage features decode BE-u16 mV + status byte.
-- **DPI** (`parse_current_dpi`) — DPI big-endian; longer replies echo the sensor in byte 0 (DPI in 1..3), shorter put DPI in 0..2. A decoded `0` reads as unknown (`None`).
-- **Error replies** — sub-ID `0x8F`/`0xFF`; see [protocol.md](protocol.md).
-- **Firmware / device name** — resolved at enumeration; firmware-string decode is not invoked.
+- **getFeature** (ROOT `0x00`) - byte 0 = the feature's runtime index; `0` = absent.
+- **Battery** (UNIFIED getStatus) - byte 0 = percent, byte 2 ≠ 0 → charging; voltage features decode BE-u16 mV + status byte.
+- **DPI** (`parse_current_dpi`) - DPI big-endian; longer replies echo the sensor in byte 0 (DPI in 1..3), shorter put DPI in 0..2. A decoded `0` reads as unknown (`None`).
+- **Error replies** - sub-ID `0x8F`/`0xFF`; see [protocol.md](protocol.md).
+- **Firmware / device name** - resolved at enumeration; firmware-string decode is not invoked.

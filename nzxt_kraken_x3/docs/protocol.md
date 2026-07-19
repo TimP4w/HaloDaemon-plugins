@@ -16,8 +16,8 @@ next command value and repeat the subcommand: `10 02` → `11 02`, `20 03` →
 
 Initialization sends, in order:
 
-1. `10 02` — firmware query.
-2. `20 03` — chained RGB accessory detection.
+1. `10 02` - firmware query.
+2. `20 03` - chained RGB accessory detection.
 
 The firmware reply stores major, minor, and patch at offsets `0x11..0x13`.
 
