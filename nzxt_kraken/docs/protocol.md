@@ -47,7 +47,7 @@ byte 0    0x26
 byte 1    0x16
 byte 2    channel (0x01 = pump ring, 0x02 = accessory chain)
 byte 3    channel repeated
-byte 4..  01 00 00 18 00 00 80 32 00 00 00 01  (fixed)
+byte 4..  01 00 00 18 00 00 80 00 32 00 00 01  (fixed)
 ```
 
 Each `0x26 0x14` color payload is followed by this 64-byte commit report so the firmware applies and retains the new LED state.

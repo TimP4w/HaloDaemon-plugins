@@ -62,7 +62,7 @@ return function(h)
   h:assert_eq(aw[2].data[3], 0x01, "commit ring channel byte")
   h:assert_eq(aw[2].data[4], 0x01, "commit ring channel byte (repeated)")
   h:assert_eq(aw[2].data[5], 0x01, "commit fixed payload")
-  h:assert_eq(aw[2].data[12], 0x32, "commit fixed timing value")
+  h:assert_eq(aw[2].data[13], 0x32, "commit fixed timing value")
   h:assert_eq(aw[2].data[16], 0x01, "commit fixed payload terminator")
   dev:clear()
 
