@@ -125,8 +125,8 @@ return {
   end,
 
   -- Pixmap: one of `cells` equal columns lights up per `interval` seconds,
-  -- decaying exponentially, deterministically picked (and never repeated
-  -- back-to-back) from the seeded host RNG — a pure function of `t`, so it
+  -- decaying exponentially and deterministically picked from the seeded host
+  -- RNG — a pure function of `t`, so it
   -- needs no persisted state across frames or worker restarts.
   render_effect_random_flash = function(buf, ctx)
     local t, params = ctx.time, ctx.params
@@ -152,11 +152,7 @@ return {
       return idx
     end
     local function pick_for_epoch(epoch)
-      local prev = nil
-      if epoch > 0 then
-        prev = pick(epoch_seed(epoch - 1), nil)
-      end
-      return pick(epoch_seed(epoch), prev)
+      return pick(epoch_seed(epoch), nil)
     end
 
     local epoch = floor(math.max(t, 0.0) / interval)
@@ -432,13 +428,13 @@ return {
       local color = { r = 0, g = 0, b = 0 }
       if state.display_value ~= nil and #sorted > 0 then
         local v = state.display_value
-        local chosen = sorted[1]
+        local chosen = nil
         for i = 1, #sorted do
           if v >= sorted[i].value then
             chosen = sorted[i]
           end
         end
-        color = chosen.color
+        if chosen then color = chosen.color end
       end
       local presence = state.presence
       local cr, cg, cb = linear_rgb(ctx, color, presence)

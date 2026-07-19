@@ -20,7 +20,7 @@
 -- carry per-request ACK packets.
 --
 -- Scope: enumerate controllers/channels and drive them via Direct/custom mode
--- (`SetCustomMode` + `UpdateZoneLEDs`). Mode switching, profiles and
+-- (`SetCustomMode` + whole-controller `UpdateLEDs`). Mode switching, profiles and
 -- plugin-to-plugin messages are out of scope.
 
 local PKT_REQUEST_CONTROLLER_COUNT = 0
@@ -216,8 +216,15 @@ local function send_controller(dev, index)
 end
 
 local function set_zone_colors(dev, index, zone_id, colors)
-  local _, cached = controller_buffer(dev, index)
-  cached[tostring(zone_id)] = pack_colors(colors)
+  local channels, cached = controller_buffer(dev, index)
+  local wanted
+  for _, zone in ipairs(channels) do
+    if zone.id == tostring(zone_id) then wanted = zone.led_count; break end
+  end
+  if not wanted then error("openrgb: unknown zone " .. tostring(zone_id)) end
+  local normalized = {}
+  for i = 1, wanted do normalized[i] = colors[i] or BLACK end
+  cached[tostring(zone_id)] = pack_colors(normalized)
 end
 
 return {

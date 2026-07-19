@@ -39,6 +39,13 @@ jobs:
 
       - name: Verify generated package index and every SHA-256
         run: |
+          for manifest in plugins/*/plugin.yaml; do
+            package="${manifest%/plugin.yaml}"
+            test -f "$package/docs/protocol.md" || {
+              echo "missing protocol documentation: $package/docs/protocol.md"
+              exit 1
+            }
+          done
           cargo run --manifest-path halodaemon/src/Cargo.toml \
             -p halod-plugin-signing -- validate plugins
           cargo run --manifest-path halodaemon/src/Cargo.toml \

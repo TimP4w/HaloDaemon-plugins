@@ -14,9 +14,6 @@ setup:
 capabilities: [lighting]
 permissions:
   - network
-requirements:
-  - kind: command
-    name: openrgb
 transports:
   tcp:
     host_key: host

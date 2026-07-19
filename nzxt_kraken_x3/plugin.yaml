@@ -3,7 +3,7 @@
 id: nzxt_kraken_x3
 name: NZXT Kraken X53/X63/X73
 author: HaloDaemon
-version: 1.0.0
+version: 1.0.1
 license: GPL-3.0-or-later
 description: NZXT Kraken X-series with ring/logo RGB, telemetry, and chained accessories.
 permissions: [hid]

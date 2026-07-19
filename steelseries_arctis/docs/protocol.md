@@ -19,7 +19,7 @@ Supported base stations: `0x1038:0x12E0` (Nova Pro Wireless), `0x1038:0x12E5` an
 
 The host polls by sending command requests and reading the device's replies; the device also emits **unsolicited notifications** (ChatMix dial, mic-volume dial). On Linux, hidapi prepends a `0x00` numbered-report byte to inbound packets, which is stripped before parsing (`strip_report_id`); a real payload always starts with `0x06`/`0x07`, so dropping a leading `0x00` is a safe no-op where it isn't added. All byte-offset maps below run on the *stripped* slice.
 
-> **ChatMix** is implemented through the daemon's `dev.audio` API: on `initialize` the plugin creates two virtual sinks (**Media** + **Chat**) looped into the headset's physical sink, and the `0x45` balance notification drives their volumes so the dial mixes game/media against chat. Sinks are host-owned (torn down on close). The `0x25` station-volume and `0x37` mic-volume dial notifications are drained and ignored.
+> **ChatMix** is implemented through the daemon's `dev.audio` API: on `initialize` the plugin creates two virtual sinks (**Media** + **Chat**) looped into the headset's physical sink, and the `0x45` balance notification drives their volumes so the dial mixes game/media against chat. Sinks are host-owned (torn down on close). Station-volume (`0x25`), microphone-volume (`0x37`), and ChatMix notifications also update the typed controls exposed to the GUI.
 
 ---
 
@@ -49,19 +49,19 @@ byte 0x02   BT powerup state  raw (X/BT variants only)
 byte 0x03   BT auto-mute      raw (X/BT variants only)
 byte 0x04   BT power status   raw (X/BT variants only)
 byte 0x05   BT connection     raw, non-zero = connected (X/BT variants only)
-byte 0x06   headset battery   raw 0–8
-byte 0x07   slot battery      raw 0–8
-byte 0x08   NC level          0–10
+byte 0x06   headset battery   raw 0-8
+byte 0x07   slot battery      raw 0-8
+byte 0x08   NC level          0-10
 byte 0x09   mic muted         non-zero = muted
 byte 0x0A   NC mode           0=off 1=transparent 2=on
-byte 0x0B   mic LED level     raw 0–10
-byte 0x0C   auto-off index    0–6
+byte 0x0B   mic LED level     raw 0-10
+byte 0x0C   auto-off index    0-6
 byte 0x0D   wireless mode     0=speed 1=range
 byte 0x0E   BT wireless pair  raw (X/BT variants only)
 byte 0x0F   power status      0x01 offline / 0x02 charging / 0x08 online
 ```
 
-The **Bluetooth status block** (bytes `0x02`–`0x05`, `0x0E`) is only meaningful on
+The **Bluetooth status block** (bytes `0x02`-`0x05`, `0x0E`) is only meaningful on
 the X/BT base stations (PIDs `0x12E5`, `0x225D`); on the non-X `0x12E0` these bytes
 are zero.
 
@@ -72,8 +72,8 @@ Requires `len ≥ 0x13`, byte 0 = `0x06`, byte 1 = `0x20`. Always carries the **
 ```text
 byte 0x04        microphone gain   0x02=high, else low
 byte 0x06        EQ preset byte    raw (see §3 preset table)
-bytes 0x07–0x10  EQ bands 0–9      one raw byte/band (raw 0x14 = 0 dB)
-byte 0x12        sidetone          0–3
+bytes 0x07-0x10  EQ bands 0-9      one raw byte/band (raw 0x14 = 0 dB)
+byte 0x12        sidetone          0-3
 ```
 
 ### ChatMix unsolicited packet (`0x07 0x45`)
@@ -83,8 +83,8 @@ Requires `len ≥ 4`, byte 0 = `0x07`, byte 1 = `0x45`.
 ```text
 byte 0   0x07
 byte 1   0x45
-byte 2   game/media volume   0–100
-byte 3   chat volume         0–100
+byte 2   game/media volume   0-100
+byte 3   chat volume         0-100
 ```
 
 ### Mic-volume notification (`0x07 0x37`)
@@ -94,7 +94,7 @@ Requires `len ≥ 3`, byte 0 = `0x07`, byte 1 = `0x37`.
 ```text
 byte 0   0x07
 byte 1   0x37
-byte 2   capture level   1–10
+byte 2   capture level   1-10
 ```
 
 Emitted when the base-station capture dial is changed.
@@ -121,16 +121,16 @@ Every write uses report ID `0x06`.
 
 | Function | Bytes sent (exact, `<param>`) | Params | Notes |
 |----------|-------------------------------|--------|-------|
-| NC mode | `06 BD <mode>` | `mode` 0–2 (`min(2)`) | shared write flow; opcode inferred. See subsection |
-| NC level | `06 B9 <level>` | `level` 0–10 (`min(10)`) | shared write flow. See subsection |
-| Sidetone | `06 39 <level>` | `level` 0–3 (`min(3)`) | shared write flow |
+| NC mode | `06 BD <mode>` | `mode` 0-2 (`min(2)`) | shared write flow; opcode inferred. See subsection |
+| NC level | `06 B9 <level>` | `level` 0-10 (`min(10)`) | shared write flow. See subsection |
+| Sidetone | `06 39 <level>` | `level` 0-3 (`min(3)`) | shared write flow |
 | Mic gain | `06 27 <raw>` | `0x02` high / `0x01` low | shared write flow |
-| Wireless mode | `06 C3 <mode>` | `mode` 0–1 (`min(1)`) | shared write flow |
-| Auto-off timeout | `06 C1 <index>` | `index` 0–6 (`min(6)`) | shared write flow |
+| Wireless mode | `06 C3 <mode>` | `mode` 0-1 (`min(1)`) | shared write flow |
+| Auto-off timeout | `06 C1 <index>` | `index` 0-6 (`min(6)`) | shared write flow |
 | Sonar EQ enable | `06 8D <en>` | `en` 0/1 | shared write flow; not read back |
 | Screen mode | `06 89 <simple>` | `simple` 0/1 | shared write flow; not read back |
-| Mic LED brightness | `06 BF <raw>` | `raw` 0–10 = `(percent/10).min(10)` | shared write flow |
-| Mic volume | `06 37 <level>` | `level` 1–10 (`clamp(1,10)`) | shared write flow; not read back |
+| Mic LED brightness | `06 BF <raw>` | `raw` 0-10 = `(percent/10).min(10)` | shared write flow |
+| Mic volume | `06 37 <level>` | `level` 1-10 (`clamp(1,10)`) | shared write flow; not read back |
 | EQ preset select | `06 2E <preset>` | raw preset byte (not clamped) | shared write flow. See *Set custom EQ* |
 | EQ band write | `06 33 <b0>…<b9>` | 10 raw band bytes | preceded by preset `0x04`; shared write flow. See *Set custom EQ* |
 | ChatMix display activate | `06 49 01` | fixed `0x01` | sent once on init; no persist |
@@ -145,7 +145,7 @@ Every user-driven setting write (`set_choice`, `set_range`, the equalizer setter
 1. **Write** the command packet, e.g. `06 39 <level>` for sidetone.
 2. **Persist** - send `06 09`, committing the value to NVRAM. Best-effort: a failure is swallowed because the hardware already holds the value.
 
-The plugin does not run a read-back suppression window. Choice/range values are **host-cached** by the daemon (seeded from the device on `initialize`, then updated on each write), so a stale poll read cannot clobber a value the user just set. Battery, mic-mute, and the equalizer are read live from the poll instead.
+The plugin does not run a read-back suppression window. Choice/range values are seeded on initialize, reflected immediately after writes, and updated from matching command replies or unsolicited hardware notifications. Battery, mic-mute, and the equalizer are also read live from the poll.
 
 `ChatMix display activate` (`06 49 01`) and the poll requests (`06 B0`, `06 20`) are not settings writes and skip this flow.
 
@@ -155,7 +155,7 @@ The plugin does not run a read-back suppression window. Choice/range values are 
 
 ### NC level / transparency (`06 B9 <level>`)
 
-`level` 0–10 (clamped with `min(10)`) sets the transparency strength used when NC mode is *transparent*. Distinct from NC mode: it has its own opcode `0xB9` (not the shared-`0x33` form, see below). Read back from the status response at byte `0x08`.
+`level` 0-10 (clamped with `min(10)`) sets the transparency strength used when NC mode is *transparent*. Distinct from NC mode: it has its own opcode `0xB9` (not the shared-`0x33` form, see below). Read back from the status response at byte `0x08`.
 
 ### Set custom EQ
 
@@ -177,9 +177,9 @@ Message ID `0x33` is disambiguated by **payload length**: a short payload is int
 
 This section defines every value, range, enum, and formula used above.
 
-### Battery level (raw 0–8 → percent)
+### Battery level (raw 0-8 → percent)
 
-The headset and slot battery bytes are a raw level **0–8** (clamped with `min(8)`), converted to a percentage as `percent = level × 100 / 8` (integer division):
+The headset and slot battery bytes are a raw level **0-8** (clamped with `min(8)`), converted to a percentage as `percent = level × 100 / 8` (integer division):
 
 | Raw | % | Raw | % | Raw | % |
 |-----|----|-----|----|-----|----|
@@ -205,7 +205,7 @@ The headset and slot battery bytes are a raw level **0–8** (clamped with `min(
 
 ### NC level (transparency)
 
-Integer **0–10**; higher = stronger transparency passthrough. UI exposes 1–10.
+Integer **0-10**; higher = stronger transparency passthrough. UI exposes 1-10.
 
 ### EQ dB encoding
 
@@ -226,7 +226,7 @@ There are **10 bands**, in this fixed frequency order:
 |-------|---|---|---|---|---|---|---|---|---|---|
 | Freq | 31 Hz | 62 Hz | 125 Hz | 250 Hz | 500 Hz | 1 kHz | 2 kHz | 4 kHz | 8 kHz | 16 kHz |
 
-On the wire the bands occupy bytes `0x07`–`0x10` of the settings response (band *i* at `0x07 + i`).
+On the wire the bands occupy bytes `0x07`-`0x10` of the settings response (band *i* at `0x07 + i`).
 
 ### EQ presets
 
@@ -262,11 +262,11 @@ Uncatalogued bytes map to the Custom slot.
 
 ### Mic volume
 
-Capture level **1–10** (`clamp(1,10)`): **1 = muted**, 10 = 100 %.
+Capture level **1-10** (`clamp(1,10)`): **1 = muted**, 10 = 100 %.
 
 ### Mic LED brightness
 
-On the wire a raw level **0–10**. The plugin encodes a percentage as `raw = (percent / 10).min(10)` and surfaces it as UI values 0–100 % in steps of 10.
+On the wire a raw level **0-10**. The plugin encodes a percentage as `raw = (percent / 10).min(10)` and surfaces it as UI values 0-100 % in steps of 10.
 
 ### Auto-off timeout
 
@@ -309,13 +309,13 @@ The byte is an index into a fixed table:
 | `0x03` | BT auto-mute | raw, surfaced as read-only boolean `!= 0` (X/BT variants only) |
 | `0x04` | BT power status | raw (X/BT variants only; encoding unconfirmed) |
 | `0x05` | BT connection | raw, surfaced as read-only boolean `!= 0` (X/BT variants only) |
-| `0x06` | Headset battery | raw 0–8 → `× 100 / 8` % (§3) |
-| `0x07` | Slot/dock battery | raw 0–8 → `× 100 / 8` % (§3) |
-| `0x08` | NC level | `min(10)` → 0–10 |
+| `0x06` | Headset battery | raw 0-8 → `× 100 / 8` % (§3) |
+| `0x07` | Slot/dock battery | raw 0-8 → `× 100 / 8` % (§3) |
+| `0x08` | NC level | `min(10)` → 0-10 |
 | `0x09` | Mic muted | non-zero = muted |
 | `0x0A` | NC mode | `min(2)`: 0=off, 1=transparent, 2=on |
 | `0x0B` | Mic LED brightness | `min(10)` → `× 10` % |
-| `0x0C` | Auto-off timeout | `min(6)` → index 0–6 |
+| `0x0C` | Auto-off timeout | `min(6)` → index 0-6 |
 | `0x0D` | Wireless mode | `min(1)`: 0=speed, 1=range |
 | `0x0E` | BT wireless pairing | raw (X/BT variants only; encoding unconfirmed) |
 | `0x0F` | Power status | `0x01` offline / `0x02` charging / `0x08` online (default offline if absent) |
@@ -326,12 +326,12 @@ The byte is an index into a fixed table:
 |--------|-------|----------|
 | `0x04` | Microphone gain | `0x02` → high, else low (default `0x01`) |
 | `0x06` | EQ preset | raw preset byte (kept raw) |
-| `0x07`–`0x10` | Custom-EQ bands 0–9 | each raw → `(raw − 20) × 0.5` dB (default `0x14` = 0 dB) |
-| `0x12` | Sidetone | `min(3)`: 0–3 |
+| `0x07`-`0x10` | Custom-EQ bands 0-9 | each raw → `(raw − 20) × 0.5` dB (default `0x14` = 0 dB) |
+| `0x12` | Sidetone | `min(3)`: 0-3 |
 
-### Writes with no readback
+### Settings absent from aggregate poll replies
 
-`sonar_eq` (`0x8D`), `screen_mode` (`0x89`), and `mic_volume` (`0x37`) appear in neither poll reply, so the device never echoes them. The plugin seeds their initial value from the manifest defaults on `initialize` and relies on the daemon's host-side cache thereafter.
+`sonar_eq` (`0x8D`), `screen_mode` (`0x89`), and `mic_volume` (`0x37`) appear in neither aggregate poll reply. The plugin retains their initial/default value, reflects host writes immediately, and decodes a matching dedicated reply or notification whenever the station emits one.
 
 ---
 
@@ -339,7 +339,7 @@ The byte is an index into a fixed table:
 
 ### Polling (250 ms)
 
-A poll pass writes the status request `06 B0` then the settings request `06 20`, then **drains** up to 32 packets: the first read blocks for a reply, the rest are non-blocking. Each drained packet is classified as status or settings; the last status/settings packet in the stream wins, and ChatMix / dial notifications are ignored. Draining (rather than request/response matching) is required because a status reply can be buried behind many streamed ChatMix packets. The pass runs on a 250 ms `poll` interval.
+A poll pass writes the status request `06 B0` then the settings request `06 20`, then **drains** up to 32 packets. Each packet is classified as aggregate status/settings, a dedicated control update, or a ChatMix/volume dial notification; the newest value in the stream wins. Draining (rather than request/response matching) is required because a status reply can be buried behind streamed dial notifications. The pass runs on a 250 ms interval.
 
 ### Host-cached controls (no suppress window)
 
@@ -351,9 +351,9 @@ On `initialize` the plugin registers two virtual audio sinks, **Media** and **Ch
 
 ### Unsolicited notifications
 
-- **ChatMix** - `07 45 <game> <chat>`, each 0–100. Drives the Media/Chat sink volumes (see above).
-- **Mic volume** - `07 37 <level>`, level 1–10. Drained and ignored.
-- **Station volume** - `07 25 <level>`, a signed dB attenuation. Drained and ignored.
+- **ChatMix** - `07 45 <game> <chat>`, each 0-100. Drives the Media/Chat sink volumes (see above).
+- **Mic volume** - `07 37 <level>`, level 1-10. Updates the microphone-volume control.
+- **Station volume** - `07 25 <level>`, a signed dB attenuation. Updates the 0-100 volume control.
 
 ---
 

@@ -102,7 +102,7 @@ Notation: `inb(cr)` / `outb(cr,v)` are config-space `superio_inb`/`superio_outb`
 | `read_duty` | `raw = rd(fan_pwm_out_regs[channel])` | `chip, channel` | trivial, returns `(raw*100+127)/255` rounded (§3) |
 | `read_ctrl_mode` | `rd(fan_ctrl_mode_regs[channel])` | `chip, channel` | trivial, saved at init; `None` for EC-family |
 | `restore_ctrl_mode` | `wr(fan_ctrl_mode_regs[channel], mode)` | `chip, channel, mode` | trivial, written back on close; no-op for EC-family |
-| `set_duty` | `keep_io_unlocked`→`wr(fan_ctrl_mode_regs[channel], 0)`→`wr(fan_pwm_cmd_regs[channel], duty*255/100)` | `chip, channel, duty 0–100` | mode-before-duty, see **set fan duty** |
+| `set_duty` | `keep_io_unlocked`→`wr(fan_ctrl_mode_regs[channel], 0)`→`wr(fan_pwm_cmd_regs[channel], duty*255/100)` | `chip, channel, duty 0-100` | mode-before-duty, see **set fan duty** |
 
 In the `read_hwm`/`write_hwm` rows, `outb_port'` denotes a write to the HWM **index** port `hwm_base + 5`; `data` is the HWM **data** port `hwm_base + 6`.
 
@@ -173,7 +173,7 @@ Switches a channel to manual PWM control and writes the duty. **Order matters: m
 1. `keep_io_unlocked` (re-open the HWM window if the chip re-locked it).
 2. If `hwm_base == 0` → no-op. If the chip is **EC-family** (NCT668x) → return an error: those chips share one control-mode register across all channels (a plain write would clobber the others), so per-channel manual control is unsupported here (see §Notes).
 3. **Enter manual control:** `wr(fan_ctrl_mode_regs[channel], 0)`, writing `0` selects manual mode.
-4. **Write duty:** `wr(fan_pwm_cmd_regs[channel], ((duty * 255 + 50) / 100) as u8)`, the 0–100 % duty is scaled to the 0–255 PWM range with rounding (§3).
+4. **Write duty:** `wr(fan_pwm_cmd_regs[channel], ((duty * 255 + 50) / 100) as u8)`, the 0-100 % duty is scaled to the 0-255 PWM range with rounding (§3).
 
 The original control-mode byte is captured at device init (`read_ctrl_mode`) and written back on `close` (`restore_ctrl_mode`) to hand the channel back to BIOS/automatic control.
 
@@ -258,7 +258,7 @@ temperature_c = value * 0.5        // valid range -55.0 ..= 125.0 °C
 | 2 | `(0x011, 0x01B, 1,   0x000)` |
 | 3 | `(0x012, 0x01B, 2,   0x000)` |
 
-(`half_bit = 0xFF` on slot 0 means no half-degree register, integer only. `source_reg = 0x000` on slots 1–3 means no source mapping.)
+(`half_bit = 0xFF` on slot 0 means no half-degree register, integer only. `source_reg = 0x000` on slots 1-3 means no source mapping.)
 
 **EC-family** variants (`NCT6683D`, `NCT6686D`, `NCT6687D`, `NCT6687DR`) return an empty slot list; their temperatures are not decoded via this path.
 
@@ -306,9 +306,9 @@ The `count` is the period of one tachometer pulse in clock ticks; `1_350_000` is
 | NCT610XD | `0x030, 0x032, 0x034` |
 | EC-family (NCT668x) | `0x140, 0x142, 0x144, 0x146, 0x148, 0x14A, 0x14C, 0x14E` |
 
-### PWM duty (0–255 ↔ 0–100%)
+### PWM duty (0-255 ↔ 0-100%)
 
-The chip stores duty as a raw byte **0–255** = 0–100 % linearly. The daemon exposes duty as a **percentage 0–100** and converts in both directions:
+The chip stores duty as a raw byte **0-255** = 0-100 % linearly. The daemon exposes duty as a **percentage 0-100** and converts in both directions:
 
 - **Read-back** (raw → percent): `percent = (raw * 100 + 127) / 255` (rounding integer division). E.g. `0xFF → 100`, `0x80 → 50`, `0x00 → 0`.
 - **Write** (percent → raw): `raw = (duty * 255 + 50) / 100` (rounding integer division). E.g. `100 → 255`, `50 → 128`, `0 → 0`.
@@ -356,7 +356,7 @@ All reads return a single `u8` from the data port; multi-byte values are assembl
 | Vendor ID | `rd(0x804F/0x80FE)`, `rd(0x004F/0x00FE)` | `(hi<<8)\|lo == 0x5CA3` ⇒ HWM unlocked |
 | Temperature | `rd(source_reg)`, `rd(int_reg)`, `rd(half_reg)` | source `& 0x1F` labels it; `(int as i8)<<1 \| half_bit`, ×0.5 → °C |
 | Fan RPM | `rd(reg)`, `rd(reg+1)` | `count=(hi<<5)\|(lo&0x1F)`; `1_350_000/count`, clamped |
-| PWM duty | `rd(fan_pwm_out_regs[ch])` | `(raw*100+127)/255` → 0–100% (rounded) |
+| PWM duty | `rd(fan_pwm_out_regs[ch])` | `(raw*100+127)/255` → 0-100% (rounded) |
 | Fan mode | `rd(fan_ctrl_mode_regs[ch])` | raw mode byte, opaque; saved for restore |
 
 On any HWM read error, or `hwm_base == 0`, RPM/duty default to `0` and temperatures to an empty list rather than surfacing an error.

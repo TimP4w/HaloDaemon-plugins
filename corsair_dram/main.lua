@@ -95,6 +95,7 @@ local function read_info(ops, addr)
   local vid = data[1] | (data[2] << 8)
   if vid ~= CORSAIR_DRAM_VID then return nil end
   local pid = data[3] | (data[4] << 8)
+  local firmware_version = string.format("%d.%d.%d", data[10], data[9], data[11] | (data[12] << 8))
   local protocol_version = data[29]
   local name, led_count, reverse = device_from_pid(pid)
   return {
@@ -102,6 +103,7 @@ local function read_info(ops, addr)
     led_count = led_count,
     reverse = reverse,
     model = name,
+    firmware_version = firmware_version,
     protocol_version = protocol_version,
   }
 end
@@ -248,6 +250,7 @@ return {
     return {
       ok = true,
       model = info.model,
+      version = info.firmware_version,
       channels = { { id = "leds", name = "LEDs", topology = "linear", led_count = info.led_count } },
     }
   end,

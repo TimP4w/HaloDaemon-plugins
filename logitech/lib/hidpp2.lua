@@ -197,12 +197,15 @@ end
 
 local function read_name(dev, devnum, features)
   local index = features[DEVICE_FRIENDLY_NAME] or features[DEVICE_NAME]
+  local echoes_offset = features[DEVICE_FRIENDLY_NAME] ~= nil
   if not index then return nil end
   local length = request(dev, devnum, index, 0x00):byte(1) or 0
   if length == 0 then return nil end
   local out, offset = {}, 0
   while offset < length do
-    local chunk = request(dev, devnum, index, 0x10, bytes(offset)):sub(1, length - offset)
+    local chunk = request(dev, devnum, index, 0x10, bytes(offset))
+    if echoes_offset then chunk = chunk:sub(2) end
+    chunk = chunk:sub(1, length - offset)
     if #chunk == 0 then break end
     out[#out + 1], offset = chunk, offset + #chunk
   end
@@ -279,7 +282,11 @@ local function dpi_list(dev, index)
     -- HID++ returns a sensor byte before the list bytes.
     local payload = reply:sub(2)
     raw[#raw + 1] = payload
-    if payload:find("\0\0", 1, true) then break end
+    local terminated = false
+    for i = 1, #payload - 1, 2 do
+      if payload:byte(i) == 0 and payload:byte(i + 1) == 0 then terminated = true; break end
+    end
+    if terminated then break end
   end
   raw = table.concat(raw)
   local out, i = {}, 1
@@ -559,7 +566,7 @@ local callbacks = {
         local static_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
         local led_ids = has(features, PER_KEY_LIGHTING_V2)
           and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
-        local wire = #led_ids > 0 and "per_key" or "rgb_effects"
+        local wire = #led_ids > 0 and count == 1 and "per_key" or "rgb_effects"
         dev.lighting = { wire = wire, channels = count, static_slots = static_slots, led_ids = led_ids }
         result.channels = {}
         if #led_ids > 0 and count == 1 then
@@ -798,10 +805,15 @@ local callbacks = {
   end,
   set_profile_enabled = function(dev, slot, enabled)
     local state = refresh_onboard(dev)
+    local found = false
+    for _, entry in ipairs(state.directory) do
+      if (entry.sector & 0xff) == slot then found = true; break end
+    end
+    if not found then error("profile slot not present in directory") end
     if enabled then restore_profile(dev, slot, true) end
     state = refresh_onboard(dev)
     local values = { state.directory_data:byte(1, state.sector_size) }
-    local found = false
+    found = false
     for _, entry in ipairs(state.directory) do
       if (entry.sector & 0xff) == slot then
         values[entry.offset + 2] = enabled and 1 or 0; found = true; break
@@ -956,15 +968,19 @@ local callbacks = {
   close = function(_dev) end,
 }
 
--- A powered-off device stays enumerated (its dongle answers ROOT from cache)
--- and only fails once a request needs the hardware.
+-- A powered-off device stays enumerated through its dongle. Linux may answer
+-- ROOT from cache and fail on a later request; Windows can reject the first
+-- write before HID++ receives the packet.
 local describe_device = callbacks.initialize
 callbacks.initialize = function(dev)
   local ok, result = pcall(describe_device, dev)
   if ok then return result end
   local text = tostring(result)
-  if not (text:find("HID++ error response", 1, true)
-      or text:find("HID++ response did not arrive", 1, true)) then
+  local unavailable = text:find("HID++ error response", 1, true)
+      or text:find("HID++ response did not arrive", 1, true)
+      or (is_long_only(dev.match.pid)
+        and text:find("HID write error", 1, true))
+  if not unavailable then
     error(result)
   end
   log("logitech: device is not powered on: " .. text, "trace")

@@ -23,12 +23,14 @@ local REPORT_NOTIFY = 0x07 -- unsolicited device→host notification
 -- Message IDs (packet byte 1).
 local MSG_PERSIST = 0x09
 local MSG_SETTINGS = 0x20
+local MSG_VOLUME = 0x25
 local MSG_MIC_GAIN = 0x27
 local MSG_EQ_PRESET = 0x2e
 local MSG_EQ_BANDS = 0x33
 local MSG_MIC_VOLUME = 0x37
 local MSG_SIDETONE = 0x39
 local MSG_CHATMIX = 0x45
+local MSG_CHATMIX_SET = 0x47
 local MSG_CHATMIX_DISPLAY = 0x49
 local MSG_SCREEN_MODE = 0x89
 local MSG_SONAR_EQ = 0x8d
@@ -136,6 +138,8 @@ local state = {
   sonar_eq = 0,
   mic_led_brightness = 100,
   mic_volume = 10,
+  volume = 100,
+  chatmix = 0,
   eq_preset = 0,
   eq_bands = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
   bt_connection = 0,
@@ -174,11 +178,57 @@ local function apply_settings(s)
   return true
 end
 
+local function signed_byte(raw)
+  return raw >= 0x80 and raw - 0x100 or raw
+end
+
+-- The station reports output volume as attenuation: 0 dB is full volume and
+-- -56 dB is the dial floor. The UI uses the conventional 0..100 scale.
+local function attenuation_to_percent(raw)
+  local db = clamp(signed_byte(raw), -56, 0)
+  return math.floor((db + 56) * 100 / 56 + 0.5)
+end
+
+local function percent_to_attenuation(percent)
+  local db = math.floor(-56 + clamp(percent, 0, 100) * 56 / 100 + 0.5)
+  return db & 0xff
+end
+
+-- Fold both command replies and unsolicited notifications into the same state.
+-- Hardware-originated changes then flow through the normal typed range/choice
+-- caches returned by read_status().
+local function apply_control_packet(s)
+  if #s < 3 or (s:byte(1) ~= REPORT_CMD and s:byte(1) ~= REPORT_NOTIFY) then
+    return false
+  end
+  local msg, value = s:byte(2), s:byte(3)
+  if msg == MSG_MIC_GAIN then state.gain = value == 0x02 and 1 or 0
+  elseif msg == MSG_MIC_VOLUME then state.mic_volume = clamp(value, 1, 10)
+  elseif msg == MSG_SIDETONE then state.sidetone = clamp(value, 0, 3)
+  elseif msg == MSG_NC_MODE then state.nc_mode = clamp(value, 0, 2)
+  elseif msg == MSG_NC_LEVEL then state.nc_level = clamp(value, 1, 10)
+  elseif msg == MSG_MIC_LED then state.mic_led_brightness = clamp(value, 0, 10) * 10
+  elseif msg == MSG_AUTO_OFF then state.auto_off = clamp(value, 0, 6)
+  elseif msg == MSG_WIRELESS_MODE then state.wireless_mode = clamp(value, 0, 1)
+  elseif msg == MSG_SCREEN_MODE then state.screen_mode = clamp(value, 0, 1)
+  elseif msg == MSG_SONAR_EQ then state.sonar_eq = clamp(value, 0, 1)
+  elseif msg == MSG_EQ_PRESET then state.eq_preset = value
+  elseif msg == MSG_VOLUME then state.volume = attenuation_to_percent(value)
+  elseif msg == MSG_EQ_BANDS and #s >= 12 then
+    for i = 0, 9 do
+      state.eq_bands[i + 1] = eq_raw_to_db(s:byte(3 + i) or EQ_BASELINE)
+    end
+  else return false end
+  return true
+end
+
 -- Parse a ChatMix dial notification `07 45 <game> <chat>` (each 0–100). Emitted
 -- only when the dial actually moves.
 local function parse_chatmix(s)
   if #s >= 4 and s:byte(1) == REPORT_NOTIFY and s:byte(2) == MSG_CHATMIX then
-    return s:byte(3), s:byte(4)
+    local game, chat = s:byte(3), s:byte(4)
+    state.chatmix = clamp(game - chat, -100, 100)
+    return game, chat
   end
   return nil
 end
@@ -201,7 +251,7 @@ local function refresh(dev)
     end)
     if not ok or type(pkt) ~= "string" or #pkt == 0 then break end
     local s = strip_report_id(pkt)
-    if not apply_status(s) and not apply_settings(s) then
+    if not apply_status(s) and not apply_settings(s) and not apply_control_packet(s) then
       local g, c = parse_chatmix(s)
       if g then cm_game, cm_chat = g, c end
     end
@@ -234,7 +284,8 @@ local function batteries()
   return {
     { key = "headset", label = "Headset",
       level = headset_online() and state.headset_battery or 0, status = headset_status },
-    { key = "slot", label = "Charging Slot", level = state.slot_battery, status = "discharging" },
+    { key = "slot", label = "Charging Slot", level = state.slot_battery,
+      status = state.slot_battery > 0 and "charging" or "unknown" },
   }
 end
 
@@ -258,9 +309,12 @@ local controls = {
     { key="sonar_eq", label="Sonar EQ", category="Audio", display="toggle", options={{id="0",label="Off"},{id="1",label="On"}} },
   },
   ranges = {
+    { key="volume", label="Volume", category="Audio", min=0, max=100, step=1, default=100 },
+    { key="chatmix", label="ChatMix", category="Audio", min=-100, max=100, step=1, default=0 },
     { key="mic_volume", label="Microphone Volume", category="Microphone", min=1, max=10, step=1, default=10 },
-    { key="mic_led_brightness", label="LED Brightness", category="Microphone", min=10, max=100, step=10, default=100 },
-    { key="nc_level", label="Transparency Level", category="Noise Cancelling", min=1, max=10, step=1, default=1 },
+    { key="mic_led_brightness", label="LED Brightness", category="Microphone", min=0, max=100, step=10, default=100 },
+    { key="nc_level", label="Transparency Level", category="Noise Cancelling", min=1, max=10, step=1, default=1,
+      visible_when={ key="nc_mode", equals={1} } },
   },
   booleans = {
     { key="mic_active", label="Microphone", category="Microphone", read_only=true },
@@ -329,6 +383,7 @@ return {
         screen_mode = state.screen_mode, sonar_eq = state.sonar_eq,
       },
       ranges = {
+        volume = state.volume, chatmix = state.chatmix,
         mic_volume = state.mic_volume, mic_led_brightness = state.mic_led_brightness,
         nc_level = state.nc_level,
       },
@@ -338,7 +393,18 @@ return {
 
   read_status = function(dev)
     refresh(dev)
-    return state
+    return {
+      choices = {
+        gain = state.gain, sidetone = state.sidetone, nc_mode = state.nc_mode,
+        wireless_mode = state.wireless_mode, auto_off = state.auto_off,
+        screen_mode = state.screen_mode, sonar_eq = state.sonar_eq,
+      },
+      ranges = {
+        volume = state.volume, chatmix = state.chatmix,
+        mic_volume = state.mic_volume, mic_led_brightness = state.mic_led_brightness,
+        nc_level = state.nc_level,
+      },
+    }
   end,
 
   -- The host also tears down any sinks on close; do it explicitly so a plugin
@@ -386,12 +452,22 @@ return {
   end,
 
   set_range = function(dev, key, value)
-    if key == "mic_volume" then
+    if key == "volume" then
+      local v = clamp(value, 0, 100)
+      dev.transport:write(string.char(REPORT_CMD, MSG_VOLUME, percent_to_attenuation(v)))
+      state.volume = v
+    elseif key == "chatmix" then
+      local v = clamp(value, -100, 100)
+      local game = v >= 0 and 100 or 100 + v
+      local chat = v <= 0 and 100 or 100 - v
+      dev.transport:write(string.char(REPORT_CMD, MSG_CHATMIX_SET, game, 0x00, chat))
+      state.chatmix = v
+    elseif key == "mic_volume" then
       local v = clamp(value, 1, 10)
       dev.transport:write(string.char(REPORT_CMD, MSG_MIC_VOLUME, v))
       state.mic_volume = v
     elseif key == "mic_led_brightness" then
-      local v = clamp(value, 10, 100)
+      local v = clamp(value, 0, 100)
       dev.transport:write(string.char(REPORT_CMD, MSG_MIC_LED, math.min(v // 10, 10)))
       state.mic_led_brightness = v
     elseif key == "nc_level" then

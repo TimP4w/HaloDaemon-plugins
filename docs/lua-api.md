@@ -735,7 +735,7 @@ halod plugin-test .\openrgb
 
 | Harness API | Meaning |
 |---|---|
-| `h:open({ reads = {...}, pid = ..., companion = ... })` | Open the first declared HID, USB, or TCP device with recording transports. |
+| `h:open({ reads = {...}, pid = ..., companion = ..., write_error = ... })` | Open the first declared HID, USB, or TCP device with recording transports; `write_error` makes stream writes fail with that message. |
 | `h:open_integration({ reads = {...} })` | Open an integration root over mock TCP. |
 | `h:open_integration({ hwmon = {...} })` | Open an hwmon integration over fixture chips. |
 | `h:assert(condition, message)` | Record an assertion. |

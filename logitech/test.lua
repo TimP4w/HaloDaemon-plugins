@@ -96,12 +96,37 @@ return function(h)
   h:assert_eq(#onboard_dev:writes(), 0,
     "state serialization serves cached onboard profiles without HID writes")
 
+  -- A mode switch can take effect while its acknowledgement is lost during
+  -- the transition. Confirm the live mode before retrying or surfacing the
+  -- transport timeout.
+  local mode_switch_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
+    {}, {},                                -- setMode acknowledgement is lost
+    report(0x11, 0xff, 0x01, 0x21, { 2 }), -- getMode confirms it was applied
+  } })
+  h:assert(mode_switch_dev:initialize(), "mode-switch fixture initializes")
+  mode_switch_dev:clear()
+  mode_switch_dev:set_boolean("host_mode", true)
+  local mode_switch_writes = mode_switch_dev:writes()
+  h:assert_eq(#mode_switch_writes, 2, "lost setMode acknowledgement uses one read-back")
+  h:assert_eq(mode_switch_writes[1].data[4], 0x11, "host mode uses setMode")
+  h:assert_eq(mode_switch_writes[2].data[4], 0x21, "timed-out setMode reads mode back")
+
   -- MOUSE_BUTTON_SPY devices use the native sparse physical-button table and
   -- seed the same default DPI actions as the former native profile.
   local mapped_dev = h:open({ pid = 0xc095, reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 1 }),
     report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x10 }),
+    report(0x11, 0xff, 0x01, 0x11, {}), -- first SPY enable
   } })
   h:assert(mapped_dev:initialize(), "G502 X button fixture initializes")
   local remap = mapped_dev:key_remap_status()
@@ -112,6 +137,18 @@ return function(h)
   local g8
   for _, mapping in ipairs(remap.mappings) do if mapping.cid == 2 then g8 = mapping end end
   h:assert(g8 and g8.base.type == "dpi_cycle", "G502 X G8 defaults to DPI cycle")
+
+  -- Replacing one host action with another leaves this global backend enabled;
+  -- it must not resend setSpyState and wait for a redundant acknowledgement.
+  mapped_dev:set_button_mapping({ cid = 1,
+    base = { type = "media_key", key = "play" }, shifted = { type = "native" } })
+  mapped_dev:clear()
+  mapped_dev:set_button_mapping({ cid = 1, base = { type = "macro", steps = {
+    { kind = { kind = "key_down", key = 0x41 }, delay_after_ms = 0 },
+    { kind = { kind = "key_up", key = 0x41 }, delay_after_ms = 0 },
+  } }, shifted = { type = "native" } })
+  h:assert_eq(#mapped_dev:writes(), 0,
+    "replacing a SPY mapping does not redundantly re-enable global reporting")
 
   -- Firmware ignores button divert while a mouse is in onboard mode, so remap
   -- only works in host mode. A mouse with ONBOARD_PROFILES must advertise that
@@ -469,6 +506,11 @@ return function(h)
     {}, {}, {}, {}, {}, {}, -- three ROOT attempts, two empty read windows each
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
+
+  local windows_asleep_headset = h:open({ pid = 0x0aba,
+    write_error = "HID write error: hidapi error:" })
+  h:assert(not windows_asleep_headset:initialize(),
+    "a Windows HID write failure rejects a powered-off headset")
 
   -- A failure that is not the HID++ protocol answering is not an absent device
   -- and must still surface.

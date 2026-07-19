@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -eu
+
+halodaemon_checkout=${HALODAEMON_CHECKOUT:-../HaloDaemon}
+manifest="$halodaemon_checkout/src/Cargo.toml"
+
+if [ ! -f "$manifest" ]; then
+    echo "error: cannot verify repository.yaml; HaloDaemon checkout not found at '$halodaemon_checkout'" >&2
+    echo "set HALODAEMON_CHECKOUT to the HaloDaemon checkout path" >&2
+    exit 1
+fi
+
+cargo run --quiet --manifest-path "$manifest" \
+    -p halod-plugin-signing -- index . --check
+
+if ! git diff --quiet -- repository.yaml; then
+    echo "error: repository.yaml was regenerated but is not staged" >&2
+    echo "run the index command from AGENTS.md, then stage repository.yaml" >&2
+    exit 1
+fi

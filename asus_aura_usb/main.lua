@@ -33,6 +33,18 @@ local CT_CH_LEDS_OFF = 2    -- LED-count offset within each block
 
 -- Native effect id → mode byte.
 local MODES = { off = 0x00, breathing = 0x02, spectrum_cycle = 0x04, rainbow_wave = 0x05 }
+local COLOR_PARAM = {
+  id = "color",
+  label = "Color",
+  kind = { kind = "color" },
+  default = { r = 255, g = 255, b = 255 },
+}
+local NATIVE_EFFECTS = {
+  { id = "off", name = "Off", params = {} },
+  { id = "breathing", name = "Breathing", params = { COLOR_PARAM } },
+  { id = "spectrum_cycle", name = "Spectrum Cycle", params = {} },
+  { id = "rainbow_wave", name = "Rainbow Wave", params = {} },
+}
 
 -- Per-board display name (overrides identity.model once we know the pid).
 local MODELS = {
@@ -52,9 +64,6 @@ local NAMED_ZONES = {
 local st = {
   -- Fixed on-board channels (the mainboard LEDs and any board-specific named zone
   -- like the ROG logo): { id, name, led_count, direct_channel }.
-  channels = {},
-  -- Chainable ARGB headers: { id, name, direct_channel }. The user attaches
-  -- strips of their own length; the host composes and calls write_frame.
   channels = {},
   -- Effect (hardware) channels for the native effects — every ARGB header,
   -- 1..argb_count. The on-board mainboard channel (0) is not an effect channel.
@@ -184,7 +193,7 @@ return {
       return { ok = false }
     end
 
-    local argb_count = cfg:get_u8(4 + CT_ARGB_CH)
+    local argb_count = math.min(cfg:get_u8(4 + CT_ARGB_CH), 9)
     local mb_leds = cfg:get_u8(4 + CT_MB_LEDS)
 
     local led_counts = {}
@@ -215,7 +224,6 @@ return {
     -- named header (e.g. the ROG logo) are fixed RGB channels; every other ARGB
     -- header is a chainable channel the user attaches a strip to. Every ARGB
     -- header (0..argb_count-1) is also a native-effect channel (effect_channel = i+1).
-    st.channels = {}
     st.channels = {}
     st.effect_channels = {}
     local zones_out = {}
@@ -248,7 +256,13 @@ return {
       end
     end
 
-    return { ok = true, model = MODELS[pid], channels = zones_out, division = chain_out }
+    return {
+      ok = true,
+      model = MODELS[pid],
+      channels = zones_out,
+      division = chain_out,
+      native_effects = NATIVE_EFFECTS,
+    }
   end,
 
   -- User-driven mode change. Static/per-led touch only the fixed on-board channels;

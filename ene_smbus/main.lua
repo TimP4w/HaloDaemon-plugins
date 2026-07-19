@@ -254,10 +254,16 @@ local NATIVE_EFFECTS = {
 
 return {
   pre_scan = function(dev)
-    dev.transport:batch(function(ops)
+    local ok, err = pcall(function() dev.transport:batch(function(ops)
       remap_dram(ops)
       return true
-    end)
+    end) end)
+    if not ok then
+      pcall(function()
+        dev.transport:batch(function(ops) set_direct_mode(ops, addr, true); return true end)
+      end)
+      error(err)
+    end
   end,
 
   initialize = function(dev)

@@ -3,7 +3,8 @@
 id: nzxt_kraken
 name: NZXT Kraken Z/Elite
 author: HaloDaemon
-version: 1.0.2
+version: 1.0.5
+poll_interval_ms: 250
 license: GPL-3.0-or-later
 description: NZXT Kraken Z/Elite family with RGB, pump, telemetry, LCD, and chained fans.
 permissions: [hid, usb]

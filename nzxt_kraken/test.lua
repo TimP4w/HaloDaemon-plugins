@@ -15,6 +15,27 @@ return function(h)
   h:assert_eq(w[4].data, { 0x30, 0x01 }, "LCD state query")
   dev:clear()
 
+  local accessory = {}
+  for i = 1, 64 do accessory[i] = 0 end
+  accessory[1], accessory[2], accessory[16] = 0x21, 0x03, 19
+  dev:queue_read(accessory)
+  local children = dev:enumerate_controllers()
+  local discovery_writes = dev:writes()
+  h:assert_eq(#discovery_writes, 1, "accessory discovery command sent")
+  h:assert_eq(discovery_writes[1].data, { 0x20, 0x03 }, "accessory discovery opcode")
+  h:assert_eq(#children, 2, "pump and RGB radiator fan are separate connected devices")
+  h:assert_eq(children[1].name, "Pump", "pump child name")
+  h:assert_eq(children[2].name, "F120 RGB", "detected radiator fan model")
+  h:assert(children[2].has_cooling, "radiator fan exposes cooling")
+  h:assert(children[2].has_lighting, "radiator fan exposes lighting")
+  local parent = dev:serialize()
+  local parent_has_cooling = false
+  for _, capability in ipairs(parent.capabilities or {}) do
+    if capability.kind == "cooling" then parent_has_cooling = true end
+  end
+  h:assert(not parent_has_cooling, "controller does not duplicate child cooling channels")
+  dev:clear()
+
   local status = {}
   for i = 1, 26 do status[i] = 0 end
   status[1], status[16], status[17] = 0x75, 30, 5

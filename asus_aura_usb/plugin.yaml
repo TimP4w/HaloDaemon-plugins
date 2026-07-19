@@ -4,7 +4,7 @@
 id: asus_aura_usb
 name: ASUS Aura USB
 author: HaloDaemon
-version: 1.0.0
+version: 1.0.1
 license: GPL-2.0-or-later
 description: ASUS Aura USB motherboard RGB — per-LED direct control of the on-board zones and ARGB headers, plus the on-board native effects.
 permissions: [hid]

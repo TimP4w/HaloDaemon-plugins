@@ -40,7 +40,8 @@ local function variant_info(name)
   if name == "NCT6771F" then return { fans = 4, tach = {0x656,0x658,0x65a,0x65c}, pwm = {0x001,0x003,0x011,0x013}, cmd = {0x109,0x209,0x309,0x809}, mode = {0x102,0x202,0x302,0x802}, count16 = true } end
   if name == "NCT6776F" then return { fans = 5, tach = {0x656,0x658,0x65a,0x65c,0x65e}, pwm = {0x001,0x003,0x011,0x013,0x015}, cmd = {0x109,0x209,0x309,0x809,0x909}, mode = {0x102,0x202,0x302,0x802,0x902} } end
   if name == "NCT610XD" then return { fans = 3, tach = {0x030,0x032,0x034}, pwm = {0x04a,0x04b,0x04c}, cmd = {0x119,0x129,0x139}, mode = {0x113,0x123,0x133} } end
-  if name == "NCT6797D" or name == "NCT6798D" or name == "NCT6799D" or name == "NCT5585D" then return { fans = 7, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8,0x4ba,0x4cc}, pwm = {0x001,0x003,0x011,0x013,0x015,0xa09,0xb09}, cmd = {0x109,0x209,0x309,0x809,0x909,0xa09,0xb09}, mode = {0x102,0x202,0x302,0x802,0x902,0xa02,0xb02} } end
+  if name == "NCT6779D" then return { fans = 5, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8}, pwm = {0x001,0x003,0x011,0x013,0x015}, cmd = {0x109,0x209,0x309,0x809,0x909}, mode = {0x102,0x202,0x302,0x802,0x902} } end
+  if name == "NCT6796D" or name == "NCT6796DR" or name == "NCT6797D" or name == "NCT6798D" or name == "NCT6799D" or name == "NCT5585D" then return { fans = 7, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8,0x4ba,0x4cc}, pwm = {0x001,0x003,0x011,0x013,0x015,0xa09,0xb09}, cmd = {0x109,0x209,0x309,0x809,0x909,0xa09,0xb09}, mode = {0x102,0x202,0x302,0x802,0x902,0xa02,0xb02} } end
   if name == "NCT6683D" or name == "NCT6686D" or name == "NCT6687D" or name == "NCT6687DR" then return { fans = 8, tach = {0x140,0x142,0x144,0x146,0x148,0x14a,0x14c,0x14e}, pwm = {0x160,0x161,0x162,0x163,0x164,0x165,0x166,0x167}, ec = true } end
   return { fans = 6, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8,0x4ba,0x4cc}, pwm = {0x001,0x003,0x011,0x013,0x015,0x017,0x029}, cmd = {0x109,0x209,0x309,0x809,0x909,0xa09,0xb09}, mode = {0x102,0x202,0x302,0x802,0x902,0xa02,0xb02} }
 end
@@ -114,7 +115,7 @@ return {
     dev.variant = variant_name(dev.match.chip_id, dev.match.revision)
     dev.info = variant_info(dev.variant)
     local result = {
-      ok = dev.match.hwm_base ~= nil and dev.match.hwm_base ~= 0,
+      ok = dev.variant ~= nil and dev.match.hwm_base ~= nil and dev.match.hwm_base ~= 0,
       model = dev.variant or "Nuvoton Super I/O",
     }
     -- The matched Super-I/O is a sensor controller. Only dynamically-created
@@ -131,11 +132,12 @@ return {
   enumerate_controllers = function(dev)
     if dev.match.key then return {} end
     local name = variant_name(dev.match.chip_id, dev.match.revision)
+    if not name then return {} end
     local info = variant_info(name)
     if info.ec then return {} end -- native driver rejects unsafe shared-mode writes
     local out = {}
     for ch = 0, info.fans - 1 do
-      out[#out + 1] = { index = ch, key = tostring(ch), id = string.format("superio_fan_%02x_fan%d", dev.match.chip_id, ch + 1), name = "Fan " .. (ch + 1), extra = { chip_id = dev.match.chip_id, revision = dev.match.revision, hwm_base = dev.match.hwm_base, slot = dev.match.slot } }
+      out[#out + 1] = { index = ch, key = tostring(ch), id = string.format("superio_%d_fan_%02x_fan%d", dev.match.slot or 0, dev.match.chip_id, ch + 1), name = "Fan " .. (ch + 1), extra = { chip_id = dev.match.chip_id, revision = dev.match.revision, hwm_base = dev.match.hwm_base, slot = dev.match.slot } }
     end
     return out
   end,
@@ -177,11 +179,17 @@ return {
   end,
   set_cooling_duty = function(dev, channel_id, duty)
     assert(channel_id == "fan", "unknown cooling channel: " .. tostring(channel_id))
-    if not keep_io_unlocked(dev) then return end
+    if not keep_io_unlocked(dev) then error("Nuvoton HWM register window is unavailable") end
     if dev.info.ec then error("per-channel manual control is unsafe on NCT668x shared mode") end
     local ch, mode, cmd = channel(dev) + 1, dev.info.mode[channel(dev) + 1], dev.info.cmd[channel(dev) + 1]
-    if not mode or not cmd then return end
+    if not mode or not cmd then error("fan channel has no writable PWM registers") end
+    if dev.original_ctrl_mode == nil then dev.original_ctrl_mode = read_hwm(dev, mode) end
     write_hwm(dev, mode, 0)
-    write_hwm(dev, cmd, math.min(255, math.floor(duty * 255 / 100)))
+    write_hwm(dev, cmd, math.min(255, math.floor(duty * 255 + 50) // 100))
+  end,
+  close = function(dev)
+    if dev.original_ctrl_mode == nil or not keep_io_unlocked(dev) then return end
+    local mode = dev.info.mode[channel(dev) + 1]
+    if mode then write_hwm(dev, mode, dev.original_ctrl_mode) end
   end,
 }

@@ -3,7 +3,7 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.6.1
+version: 1.7.0
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 signing_key:
@@ -19,68 +19,68 @@ packages:
   - id: amd_smn
     path: amd_smn
     version: 1.0.0
-    sha256: ec36375ee69570584ff866132d51b456bc383d022aa49545253c3e988b9ba4f1
+    sha256: 6c0aa398ee27b1987011301f49d2f9afd5d4839e74552a2e367c2e4c61bec319
   - id: asus_aura_usb
     path: asus_aura_usb
-    version: 1.0.0
-    sha256: ee81a58d62e0a50a2fcb954f72ad3781bcd94413cc1afa47c310db2cf407c7c7
+    version: 1.0.1
+    sha256: 8d0b36ae108214cd7ab238fa18522fc0f3aa1fe334f4db8489927d52ad4caf8c
   - id: corsair_dram
     path: corsair_dram
     version: 1.0.0
-    sha256: 819b1c6e462b4e9d93d1d1c7766af0aba56827415d6c23e653f634cc5552419f
+    sha256: 8a2cadfb90f6953ec89351e17f646ae95e838c2e2ab2bc0d0f546c42e292bc34
   - id: ene_smbus
     path: ene_smbus
     version: 1.0.0
-    sha256: 9eacd8befce1b4c687265bcd27ca9c4911798cc25f880d9cfa54ab1a59c76d96
+    sha256: 51aef0e530d2ba58e6974f55259390311798781160e5c0453ba59da74843f62c
   - id: halo_effects
     path: halo_effects
     version: 1.1.0
-    sha256: 67b84a76b8e9e6f785678a26cff5bbc71670bb7d8b1aadb06cd670ee5506e03e
+    sha256: efac653cdd806134acd275a9458d5864ad8525e78157ae4f57c46a17d9a6bb14
   - id: halo_lcd
     path: halo_lcd
     version: 1.1.1
-    sha256: b26d58b41f7dfac41ae2f2f7d0c0a0952cd661f7dc55a70471fc2e51dc924120
+    sha256: 4e1a324ea3b9f4c5180b0fe10ac26ec7f5a7bfde6b260337eed8b49a9c0ec6ba
   - id: hwmon
     path: hwmon
-    version: 1.0.0
-    sha256: eb2c5bc980501a00912a231c3254e6c002cf3317d4eac487c3e076d31c9f7de5
+    version: 1.0.1
+    sha256: daf915cfab7c1697cd8fa5d368ff137980513ecfe63ee64677fdef94db48f616
   - id: logitech
     path: logitech
     version: 1.0.0
-    sha256: 5a97457289e7a0950ae467f2d0c36309b612dcb24a77c069e347706ca61fe373
+    sha256: 30f30f67efd314c29bcfc2f2b99140c3e0d4435096ae4a3f0cf62b8648f7c62e
   - id: logitech_g560
     path: logitech_g560
     version: 1.0.0
-    sha256: d5adf4f32a722b623dec1768bdb0a3cc3e4207b35514ae507bf3b156e95a98f9
+    sha256: 38b5b822bec21c95ff82fc902bdb9e668e4bb1de2ae1e6023aa52ff326034cca
   - id: nuvoton_lpcio
     path: nuvoton_lpcio
-    version: 1.0.0
-    sha256: 3e69e85aac6f55455b50d7270fa3caa992fbe841742426ee91cc154669896b2a
+    version: 1.0.1
+    sha256: bc84225a544bedb4a8b4bc89c6c14636a95e3f2b5444e1856647a1892f9b26a4
   - id: nvidia
     path: nvidia
     version: 1.0.1
-    sha256: bfd67ee19fc3413eb0e16d3eb097dcecf6ff341d26bbb9a526de6d6676936b71
+    sha256: 9ddfa760a3f1da1a19fa3f48a66de7e61b5c16f59ce52dde5d81e55ef6dd8c9f
   - id: nzxt_control_hub
     path: nzxt_control_hub
-    version: 1.0.0
-    sha256: f766cd566934c820b10ab900e7383888f4ca9dd95913287acc585ec31f0ebe84
+    version: 1.0.2
+    sha256: 3ea9aaf8e99b30abe0fb316e4b717824690a23dd9b52ecc3d00cd75bef520586
   - id: nzxt_kraken
     path: nzxt_kraken
-    version: 1.0.2
-    sha256: f25cbf81fd7e6d7ced3367b8e46b1136dff8b0bc576cd76f7d99c0a661985ead
+    version: 1.0.5
+    sha256: 92d84786f620d622bbbfc02c70ec8a3f19039924f128d74f6a44b00e916ec91a
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
-    version: 1.0.0
-    sha256: ccfe37f09d32a0c671bf223f4db854d74f83653d9a8e59a963b77b2784ae4cc3
+    version: 1.0.1
+    sha256: cd9ee5f1fbe878d320f63081aaa8dc55785aff41d59fc1cfe7c67d4e193b45b8
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: 894ee7a4d59a7a8695a9a26f3e72b4bed7ab87553ddcf9b050a7d41a95d46f45
+    sha256: f60fed2808d0f3a11c81b6ae1bdd4bba58970548054fe3dcf316ca4684476a53
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0
-    sha256: e1536f14c3bca43e9b54f263552ee385d62890928018ff42327146b4715c4ea7
+    sha256: 119997725b596ad71e4ff8d2e952606f637f944606f699168a3b3b5fa51fcaf6
   - id: steelseries_arctis
     path: steelseries_arctis
-    version: 1.1.0
-    sha256: 69e1a2821904e7016603e1a438d0fca17cb0948f1b7191cdb75be59e6614908c
+    version: 1.2.0
+    sha256: e07923340e956ed0eaa21675424628007c63bddbfd1488f8081a546ee023df0b
