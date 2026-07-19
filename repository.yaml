@@ -35,7 +35,7 @@ packages:
   - id: halo_effects
     path: halo_effects
     version: 1.1.0
-    sha256: efac653cdd806134acd275a9458d5864ad8525e78157ae4f57c46a17d9a6bb14
+    sha256: 590505caa38a639f86dd67147d988dcc3ba5e76890bec0acb95c42eaeb6fbc42
   - id: halo_lcd
     path: halo_lcd
     version: 1.1.1
@@ -75,7 +75,7 @@ packages:
   - id: openrgb
     path: openrgb
     version: 1.0.0
-    sha256: f60fed2808d0f3a11c81b6ae1bdd4bba58970548054fe3dcf316ca4684476a53
+    sha256: 1a32cb5b307691bc09d2637296f2320fb05dc5ee2ef7a6cb455051c40b9f2e0e
   - id: philips_evnia
     path: philips_evnia
     version: 1.0.0

@@ -138,7 +138,7 @@ local function skip_matrix(data, pos)
 end
 
 -- Read one ZoneDescription at v3. `id` is the zone's 0-based ordinal as a string
--- (what `UpdateZoneLEDs` addresses); everything past `leds_count` is walked only
+-- (and therefore the client cache key); everything past `leds_count` is walked only
 -- to advance `pos` to the next zone.
 local function read_zone(data, pos, zero_based_index)
   local name, p = read_str(data, pos)
