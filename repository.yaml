@@ -4,7 +4,7 @@ schema: 1
 id: halod-official
 name: Halo Official Plugins
 version: 1.6.1
-licenses_sha256: b546c525bc4590703e4dee8da68d125c55c2634fe48812268cc596ffbe8e546c
+licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 signing_key:
   id: halodaemon-official-2026
