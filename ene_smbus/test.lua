@@ -22,4 +22,17 @@ return function(h)
   h:assert_eq(block.data[1], 1, "red wire byte")
   h:assert_eq(block.data[2], 3, "ENE swaps blue before green")
   h:assert_eq(block.data[3], 2, "green wire byte")
+
+  dev:apply({ mode = "direct_effect", id = "breathing", params = {} })
+  dev:clear()
+  dev:write_frame("leds", {
+    1, 2, 3, 4, 5, 6,
+    7, 8, 9, 10, 11, 12,
+  })
+  w = dev:smbus_writes()
+  h:assert_eq(#w, 4, "streamed frame uses only color block and apply latch")
+  h:assert_eq(w[1].operation, "write_word_data", "frame selects color buffer")
+  h:assert_eq(w[2].operation, "write_block_data", "frame writes colors as one block")
+  h:assert_eq(w[3].operation, "write_word_data", "frame selects apply register")
+  h:assert_eq(w[4].operation, "write_byte_data", "frame latches colors")
 end

@@ -4,7 +4,7 @@ schema: 1
 id: halod-official
 name: Halo Official Plugins
 version: 1.7.1
-licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
+licenses_sha256: b546c525bc4590703e4dee8da68d125c55c2634fe48812268cc596ffbe8e546c
 
 signing_key:
   id: halodaemon-official-2026
@@ -31,7 +31,7 @@ packages:
   - id: ene_smbus
     path: ene_smbus
     version: 1.1.0
-    sha256: ec0bc5403e064028cc22d10eae8aff924afe4595d4b6e97b9beb67bc7b30d6e3
+    sha256: 86d07e149fe11db5f88b822f54092d8a979dac707d8ea3ae62430ae9142d7d49
   - id: halo_effects
     path: halo_effects
     version: 1.2.0
