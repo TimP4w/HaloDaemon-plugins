@@ -23,17 +23,18 @@ return function(h)
   local discovery_writes = dev:writes()
   h:assert_eq(#discovery_writes, 1, "accessory discovery command sent")
   h:assert_eq(discovery_writes[1].data, { 0x20, 0x03 }, "accessory discovery opcode")
-  h:assert_eq(#children, 2, "pump and RGB radiator fan are separate connected devices")
-  h:assert_eq(children[1].name, "Pump", "pump child name")
-  h:assert_eq(children[2].name, "F120 RGB", "detected radiator fan model")
-  h:assert(children[2].has_cooling, "radiator fan exposes cooling")
-  h:assert(children[2].has_lighting, "radiator fan exposes lighting")
+  h:assert_eq(#children, 1, "only the RGB radiator fan is a connected child")
+  h:assert_eq(children[1].name, "F120 RGB", "detected radiator fan model")
+  h:assert(children[1].has_cooling, "radiator fan exposes cooling")
+  h:assert(children[1].has_lighting, "radiator fan exposes lighting")
   local parent = dev:serialize()
-  local parent_has_cooling = false
+  local parent_cooling
   for _, capability in ipairs(parent.capabilities or {}) do
-    if capability.kind == "cooling" then parent_has_cooling = true end
+    if capability.kind == "cooling" then parent_cooling = capability end
   end
-  h:assert(not parent_has_cooling, "controller does not duplicate child cooling channels")
+  h:assert(parent_cooling ~= nil, "Kraken keeps its built-in pump cooling")
+  h:assert_eq(#parent_cooling.data.channels, 1, "Kraken exposes only one built-in cooling channel")
+  h:assert_eq(parent_cooling.data.channels[1].id, "pump", "built-in cooling channel is the pump")
   dev:clear()
 
   local status = {}

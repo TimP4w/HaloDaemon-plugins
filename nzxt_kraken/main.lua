@@ -400,7 +400,7 @@ return {
       },
       channels = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
       cooling = { as_devices = true, channels = {
-        { id="pump", name="Pump", kind="pump", controllable=true },
+        { id="pump", name="Pump", kind="pump", controllable=true, builtin=true },
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
       division = chain_channels,
