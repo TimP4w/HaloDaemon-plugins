@@ -94,7 +94,6 @@ Every device callback receives `dev` first.
 | `dev.match.index` | Remote controller index for an integration child. |
 | `dev.match.key` | Optional stable route key for a dynamic child. |
 | `dev.match.name` | Optional child name returned by discovery. |
-| `dev.channels` | Host-provided static lighting-channel descriptors. |
 | `dev.status` | Latest value returned by `read_status`; set by the polling loop. |
 | `dev.audio` | Audio-routing userdata when `audio_routing` is granted. |
 
@@ -129,6 +128,11 @@ return {
     -- topology-derived layout and firmware `led_ids` ordering.
     { id = "panel", name = "Panel", topology = "grid", led_count = 2,
       leds = { { id = 0, x = 0.0, y = 0.0 }, { id = 1, x = 1.0, y = 1.0 } } },
+    -- A chain output: its content is composed from links rather than a fixed
+    -- LED layout, so it has no `led_count` and is not a paintable zone.
+    -- `cooling_channel` is the fan header this output shares (see below).
+    { id = "out1", name = "Output 1", chainable = true, max_leds = 40,
+      color_order = "rgb", cooling_channel = "fan1" },
   },
   -- Optional runtime keyboard geometry. Standard keys inherit their cells
   -- from the named base; device-specific keys provide an explicit cell.
@@ -152,7 +156,6 @@ return {
     { id = "pump", name = "Pump", kind = "pump", controllable = true },
     { id = "fan1", name = "Radiator fan", kind = "fan", controllable = true },
   } },
-  division = { { id = "out1", name = "Output 1", max_leds = 40 } },
   ranges = { brightness = 70 },
   choices = { mode = 1 }, -- option indexes are zero-based
 }
@@ -160,6 +163,21 @@ return {
 
 If `capabilities` is omitted, HaloDaemon uses the full list from the manifest.
 Plugins that support several models should return the correct subset.
+
+### Chain outputs and fan ownership
+
+A `chainable` channel models a physical output whose LED count is unknown until
+something is attached — an ARGB header, a fan chain. It needs `max_leds`
+(the header's capacity) and never appears in the lighting widget: the user
+composes it from links, and each link is its own device.
+
+Many such outputs also carry a fan header. Declaring `cooling_channel = "<id>"`
+on the chainable channel names the cooling channel that output shares. **That
+channel then exists in exactly one place at a time:** while an accessory is
+detected on the output the child owns it, and the parent stops exposing it
+anywhere — channel list, cached status, and fan curves. With nothing attached it
+stays an ordinary channel of the parent. The id must be one the same
+`initialize` declares under `cooling.channels`, or the device is rejected.
 
 ### `close(dev)`
 
@@ -187,8 +205,8 @@ host values and are commonly zero-based.
 | Cooling | `initialize` returns `cooling = { channels = {{id, name, kind = "fan"|"pump", controllable}, ...} }`; `get_cooling_status(dev, channel_id) -> {id, name, kind, controllable, duty?, rpm?}`; `set_cooling_duty(dev, channel_id, duty)` |
 | Sensor | `get_sensors(dev) -> sensors` |
 | Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
-| Lighting division | `detect_accessories(dev) -> {{channel, accessory}, ...}`; division-channel frames arrive through the same `write_frame(dev, channel_id, bytes)` |
-| Division accessory cooling | Accessory children expose their own cooling channel; the parent handles it through `get_cooling_status(dev, channel_id)` and `set_cooling_duty(dev, channel_id, duty)`. |
+| Lighting division | `initialize` marks a channel `chainable = true` with a `max_leds`; `detect_accessories(dev) -> {{channel, accessory}, ...}`; composed chain frames arrive through the same `write_frame(dev, channel_id, bytes)` |
+| Chain accessory cooling | A chainable channel names the fan it shares via `cooling_channel`. The detected child drives it through the parent's ordinary `get_cooling_status(dev, channel_id)` / `set_cooling_duty(dev, channel_id, duty)`; the parent stops exposing that channel while the child holds it. |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
 | DPI | `set_dpi(dev, dpi)` |
 | Choice | `set_choice(dev, key, selected)` |

@@ -61,7 +61,6 @@ local function write_logo(dev, color)
 end
 
 local RING_LEDS = 8
-local chain_channels = { { id="0", name="Aer/F Fan", max_leds=40 } }
 local accessories = {
   { id=19, name="F120 RGB", led_count=8, topology="ring" },
   { id=20, name="F140 RGB", led_count=8, topology="ring" },
@@ -96,8 +95,9 @@ return {
       channels = {
         { id="ring", name="Ring", topology="ring", led_count=8 },
         { id="logo", name="Logo", topology="linear", led_count=1 },
+        -- No `cooling_channel`: this wire family exposes no software fan control.
+        { id="0", name="Aer/F Fan", chainable=true, max_leds=40 },
       },
-      division = chain_channels,
       accessories = accessories,
     }
   end,

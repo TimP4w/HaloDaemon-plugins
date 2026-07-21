@@ -3,7 +3,7 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.7.1
+version: 1.8.0
 licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
 
 signing_key:
@@ -22,8 +22,8 @@ packages:
     sha256: 84078c032545e0a39cd727473cc4be4d3c80ae917119b831c28f7553f0433cc3
   - id: asus_aura_usb
     path: asus_aura_usb
-    version: 1.1.0
-    sha256: 4b6e9a20b1056ca2a18f2b60832e2383242532a0413b897d821f096f71d4058e
+    version: 1.2.0
+    sha256: 92cfd42f57129455ff4344eb5c87322d99e49460d961095a5b44ac621fbc6bb1
   - id: corsair_dram
     path: corsair_dram
     version: 1.1.0
@@ -31,7 +31,7 @@ packages:
   - id: ene_smbus
     path: ene_smbus
     version: 1.1.0
-    sha256: ec0bc5403e064028cc22d10eae8aff924afe4595d4b6e97b9beb67bc7b30d6e3
+    sha256: 86d07e149fe11db5f88b822f54092d8a979dac707d8ea3ae62430ae9142d7d49
   - id: halo_effects
     path: halo_effects
     version: 1.2.0
@@ -62,16 +62,16 @@ packages:
     sha256: 5c235edb08e9ba9c632e920f67db49ba50a144215bf01536ce21802362523acb
   - id: nzxt_control_hub
     path: nzxt_control_hub
-    version: 1.1.1
-    sha256: a6d66f158a68fc22a5bfb07efb44e5be63911f3002a6486f00392c8be25c3f2a
+    version: 1.2.0
+    sha256: 75c4cd21e5910a9fcbfbf7ee8bfaeaeabe3fb1602a996df5df6a7c72a3b9d9c2
   - id: nzxt_kraken
     path: nzxt_kraken
-    version: 1.1.0
-    sha256: 05bb7dd3a501cadf2a49c26733ba5fc628a3080d8f03c6148d37a91e4bdff361
+    version: 1.2.0
+    sha256: 9038773cce7313b42c01032feb8aefa3d5d22303e97f55f18dcd1c5d10386a32
   - id: nzxt_kraken_x3
     path: nzxt_kraken_x3
-    version: 1.1.0
-    sha256: 6db5a40544e6df59239abd32718cda46d1bc3f276aabec545a23bb3f59c5ce95
+    version: 1.2.0
+    sha256: dc83cfd461c53eb2c8c6fdc30e6b6d3544e43be15b5335115b00750ef5b18476
   - id: openrgb
     path: openrgb
     version: 1.1.0

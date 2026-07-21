@@ -227,8 +227,6 @@ return {
     st.channels = {}
     st.effect_channels = {}
     local zones_out = {}
-    local chain_out = {}
-
     if mb_leds > 0 then
       st.channels[#st.channels + 1] =
         { id = "motherboard", name = "Motherboard", led_count = mb_leds, direct_channel = MB_DIRECT_CHANNEL }
@@ -251,8 +249,9 @@ return {
         -- capacity; the user composes strips up to it.
         local id = "argb_" .. i
         st.channels[#st.channels + 1] = { id = id, name = "ARGB Header " .. (i + 1), direct_channel = i }
-        chain_out[#chain_out + 1] =
-          { id = id, name = "ARGB Header " .. (i + 1), max_leds = led_counts[i + 1] }
+        zones_out[#zones_out + 1] =
+          { id = id, name = "ARGB Header " .. (i + 1), chainable = true,
+            max_leds = led_counts[i + 1] }
       end
     end
 
@@ -260,7 +259,6 @@ return {
       ok = true,
       model = MODELS[pid],
       channels = zones_out,
-      division = chain_out,
       native_effects = NATIVE_EFFECTS,
     }
   end,

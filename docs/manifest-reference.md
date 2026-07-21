@@ -195,10 +195,13 @@ smaller set for a specific model.
 lighting channels, each with an ID, label, topology, and LED count. `apply` and
 `write_frame` drive them. There is no separate `rgb` capability.
 
-`lighting_division` lets a controller expose divisible outputs (chained ARGB
-hubs, fan headers) whose accessories are detected at runtime via
-`detect_accessories`. Frames for a division channel arrive through the same
-`write_frame(dev, channel_id, bytes)` callback.
+`lighting_division` lets a controller expose chain outputs (chained ARGB hubs,
+fan headers). It marks a channel `chainable = true` in `initialize()`; the user
+composes it from links, and hardware accessories may additionally be detected at
+runtime via `detect_accessories`. Composed frames arrive through the same
+`write_frame(dev, channel_id, bytes)` callback. A chain output that also carries
+a fan header names it with `cooling_channel` — see
+[lua-api.md](lua-api.md#chain-outputs-and-fan-ownership) for the ownership rule.
 
 `cooling` is the multi-channel cooling capability, covering both fans and pumps;
 there is no separate `fan` capability. Its runtime descriptor contains
@@ -645,8 +648,9 @@ callback names and parameters.
 ## Runtime descriptors
 
 Device details that may change by model or firmware come from `initialize()`,
-not from YAML. This includes lighting channels, controls, DPI limits, LCD size,
-cooling channels, keyboard layouts, and lighting-division accessories.
+not from YAML. This includes lighting channels (including which of them are
+chain outputs), controls, DPI limits, LCD size, cooling channels, keyboard
+layouts, and chain accessories.
 
 Set `dynamic_children: true` only when `enumerate_controllers()` creates
 separate devices, such as receiver slots or GPUs. Each child needs a stable

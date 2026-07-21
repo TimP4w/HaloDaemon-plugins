@@ -23,17 +23,29 @@ return function(h)
   local discovery_writes = dev:writes()
   h:assert_eq(#discovery_writes, 1, "accessory discovery command sent")
   h:assert_eq(discovery_writes[1].data, { 0x20, 0x03 }, "accessory discovery opcode")
-  h:assert_eq(#children, 2, "pump and RGB radiator fan are separate connected devices")
-  h:assert_eq(children[1].name, "Pump", "pump child name")
-  h:assert_eq(children[2].name, "F120 RGB", "detected radiator fan model")
-  h:assert(children[2].has_cooling, "radiator fan exposes cooling")
-  h:assert(children[2].has_lighting, "radiator fan exposes lighting")
+  h:assert_eq(#children, 1, "only the RGB radiator fan is a connected child")
+  h:assert_eq(children[1].name, "F120 RGB", "detected radiator fan model")
+  h:assert(children[1].has_cooling, "radiator fan exposes cooling")
+  h:assert(children[1].has_lighting, "radiator fan exposes lighting")
   local parent = dev:serialize()
-  local parent_has_cooling = false
+  local parent_cooling, parent_lighting
   for _, capability in ipairs(parent.capabilities or {}) do
-    if capability.kind == "cooling" then parent_has_cooling = true end
+    if capability.kind == "cooling" then parent_cooling = capability end
+    if capability.kind == "lighting" then parent_lighting = capability end
   end
-  h:assert(not parent_has_cooling, "controller does not duplicate child cooling channels")
+  -- The radiator fan moved to the child, so the Kraken keeps only the pump. A
+  -- cooling channel must never be reachable from both the parent and a child.
+  h:assert(parent_cooling ~= nil, "Kraken keeps its pump cooling")
+  h:assert_eq(#parent_cooling.data.channels, 1, "Kraken gives up the claimed fan channel")
+  h:assert_eq(parent_cooling.data.channels[1].id, "pump", "the channel it keeps is the pump")
+  -- The chainable channel is composed from its links, so it is not a plain zone.
+  local ids = {}
+  for _, channel in ipairs(parent_lighting.data.descriptor.channels) do
+    ids[#ids + 1] = channel.id
+  end
+  h:assert_eq(ids, { "ring", "0" }, "ring is a plain zone, the fan chain is divisible")
+  h:assert_eq(parent_lighting.data.descriptor.channels[2].division.max_leds, 40,
+    "the fan chain reports its header capacity")
   dev:clear()
 
   local status = {}

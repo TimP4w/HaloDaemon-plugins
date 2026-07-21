@@ -112,6 +112,11 @@ local function apply_direct_color_block(ops, addr, direct_reg, buf)
   write_reg(ops, addr, REG_APPLY, APPLY_VAL)
 end
 
+local function stream_direct_color_block(ops, addr, direct_reg, buf)
+  write_reg_block(ops, addr, direct_reg, buf)
+  write_reg(ops, addr, REG_APPLY, APPLY_VAL)
+end
+
 local function set_direct_mode(ops, addr, enable)
   if enable then
     write_reg(ops, addr, REG_MODE, MODE_STATIC)
@@ -339,9 +344,6 @@ return {
     end)
   end,
 
-  -- Canvas-engine frame. Repeat the direct/apply latch sequence so streaming
-  -- recovers if firmware or another controller cleared direct mode between
-  -- frames; writing color RAM alone is not sufficient on every ENE revision.
   write_frame = function(dev, _zone, bytes)
     local colors = {}
     for i = 1, #bytes, 3 do
@@ -351,7 +353,7 @@ return {
     if not info then error("ENE device used before initialize()") end
     local addr = dev.match.addr
     dev.transport:batch(function(ops)
-      apply_direct_color_block(
+      stream_direct_color_block(
         ops, addr, info.direct_reg, build_color_buffer(colors, info.led_count)
       )
       return true

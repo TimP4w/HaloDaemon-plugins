@@ -223,6 +223,8 @@ Every `36 01` and `36 02` must be answered by `37 01` / `37 02`. Up to 8 reports
 
 Answer to `20 03`. The channel count is at offset 14; each channel's accessory records start at `15 + channel*6`. A non-zero accessory ID byte indicates a connected accessory.
 
+The Kraken has one such output, chain channel `0`, and it shares the radiator fan header. The plugin declares it with `cooling_channel = "fan1"`, so a detected accessory becomes a child device that owns `fan1` outright; with nothing attached the Kraken exposes `fan1` itself. The pump is never part of this and always stays on the Kraken.
+
 ### Status report - `0x75`
 
 Unsolicited once enabled; observed subcommands `75 01` and `75 02`:
