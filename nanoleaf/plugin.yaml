@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: HaloDaemon
+id: nanoleaf
+type: integration
+name: Nanoleaf
+author: HaloDaemon
+version: 1.1.0
+license: GPL-3.0-or-later
+description: Controls a Nanoleaf light-panel controller over its local HTTP API (OpenAPI v1).
+translations:
+  it:
+    plugin.name: Nanoleaf
+    plugin.description: Controlla un controller Nanoleaf tramite la sua API HTTP locale (OpenAPI v1).
+    setup.auth.title: Tieni premuto il pulsante di accensione
+    setup.auth.instructions.0: Tieni premuto il pulsante di accensione/spegnimento del controller per 5–7 secondi.
+    setup.auth.instructions.1: Rilascialo quando i LED del pannello iniziano a lampeggiare in sequenza.
+capabilities: [lighting]
+permissions:
+  - network
+  - secure_storage
+transports:
+  http:
+    host_key: host
+    port_key: http_port
+    origins: ["http://{host}"]
+    methods: [GET, PUT, POST]
+    allow_private: true
+    max_timeout_ms: 3000
+  udp:
+    host_key: host
+    port_key: stream_port
+    allow_private: true
+    send_timeout_ms: 3000
+setup:
+  modes: [automatic, manual]
+  discovery:
+    mdns: ["_nanoleaf._tcp.local."]
+    ssdp: ["nanoleaf_aurora:light"]
+  auth:
+    kind: button
+    title: Hold the power button
+    instructions:
+      - Hold the controller's on/off button for 5–7 seconds.
+      - Release it when the panel LEDs begin flashing in sequence.
+config:
+  fields:
+    - key: host
+      label: Device IP
+      kind: host
+      default: "192.168.1.50"
+    - key: http_port
+      label: API port
+      kind: port
+      default: "16021"
+    - key: stream_port
+      label: Streaming port
+      kind: port
+      default: "60222"
+    - key: token
+      label: Auth token (leave empty, will be auto-filled)
+      kind: text
+      secure: true

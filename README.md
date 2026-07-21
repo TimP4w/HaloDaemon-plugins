@@ -24,6 +24,7 @@ catalog.
 | [`hwmon`](hwmon/) | Linux temperature sensors and motherboard fan headers | hwmon | [Integration behavior](hwmon/docs/protocol.md) |
 | [`logitech`](logitech/) | Declared Logitech HID++ devices and receivers | HID | [Overview](logitech/docs/protocol.md), [HID++ 1.0](logitech/docs/hidpp1.md), [HID++ 2.0](logitech/docs/hidpp2.md) |
 | [`logitech_g560`](logitech_g560/) | Logitech G560 speakers | HID | [Protocol](logitech_g560/docs/protocol.md) |
+| [`nanoleaf`](nanoleaf/) | Nanoleaf light-panel controllers | HTTP + UDP | [Protocol](nanoleaf/docs/protocol.md) |
 | [`nvidia`](nvidia/) | GPUs reported by `nvidia-smi` | Command | [Protocol](nvidia/docs/protocol.md) |
 | [`nuvoton_lpcio`](nuvoton_lpcio/) | Nuvoton NCT67xx Super I/O on Windows | LPCIO | [Protocol](nuvoton_lpcio/docs/protocol.md) |
 | [`nzxt_control_hub`](nzxt_control_hub/) | NZXT RGB & Fan Control Hub | HID | [Hub protocol](nzxt_control_hub/docs/protocol.md) |
