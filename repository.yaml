@@ -3,8 +3,8 @@
 schema: 1
 id: halod-official
 name: Halo Official Plugins
-version: 1.8.0
-licenses_sha256: d9915eb0624458f093f081f0fed1317e5cdb0127436abfff611e3e43785cf01a
+version: 1.9.0
+licenses_sha256: ae48c219254e00147b95f2db73102bded1050016bbc0758f71eddff7eb786d8f
 
 signing_key:
   id: halodaemon-official-2026
@@ -52,6 +52,10 @@ packages:
     path: logitech_g560
     version: 1.1.0
     sha256: 06d14ffdf98c08d26545ba2d9e69549fa221ec1d2e94a3a78cc429070fdce64f
+  - id: nanoleaf
+    path: nanoleaf
+    version: 1.1.0
+    sha256: d3e891d9586589b58cf56d2a4e01e8430e0cda7173b316feee65fcb01c90a5a3
   - id: nuvoton_lpcio
     path: nuvoton_lpcio
     version: 1.1.0

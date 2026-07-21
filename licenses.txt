@@ -60,6 +60,12 @@ Logitech G560 (logitech_g560)
     - MIT
       Copyright: 2021 Smasty <hello@smasty.net>
 
+Nanoleaf (nanoleaf)
+  Plugin license: GPL-3.0-or-later
+  Source SPDX licenses:
+    - GPL-3.0-or-later
+      Copyright: HaloDaemon
+
 Nuvoton Super I/O (nuvoton_lpcio)
   Plugin license: MPL-2.0
   Source SPDX licenses:
