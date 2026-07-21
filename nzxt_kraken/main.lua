@@ -362,7 +362,6 @@ local function upload_gif(dev, resized)
   run_bucket_pipeline(dev, resized, bulk_info)
 end
 
-local chain_channels = { { id="0", name="Aer/F Fan", max_leds=40 } }
 local accessories = {
   { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
   { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
@@ -398,12 +397,17 @@ return {
         latches = true,
         brightness = brightness, rotation = rotation,
       },
-      channels = { { id="ring", name="Pump Ring", topology="ring", led_count=24 } },
-      cooling = { as_devices = true, channels = {
-        { id="pump", name="Pump", kind="pump", controllable=true, builtin=true },
+      channels = {
+        { id="ring", name="Pump Ring", topology="ring", led_count=24 },
+        -- The radiator fan header carries both the accessory chain and the fan
+        -- itself; a detected accessory takes `fan1` over from the Kraken.
+        { id="0", name="Aer/F Fan", chainable=true, max_leds=40,
+          cooling_channel="fan1" },
+      },
+      cooling = { channels = {
+        { id="pump", name="Pump", kind="pump", controllable=true },
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
-      division = chain_channels,
       accessories = accessories,
     }
   end,
@@ -436,7 +440,7 @@ return {
     end
   end,
 
-  -- Direct ring and divided accessory frames share one encoded-byte callback.
+  -- The pump ring and the accessory chain share one encoded-byte callback.
   write_frame = function(dev, channel, bytes)
   local colors = {}
   for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
@@ -448,8 +452,6 @@ return {
     send_channels(dev)
   end,
 
-  -- Unified cooling channels, including numeric parent channels for chained
-  -- accessories.
   get_cooling_status = function(dev, id)
     if id == "pump" then
       return { id=id, name="Pump", kind="pump", controllable=true,
@@ -459,16 +461,12 @@ return {
       return { id=id, name="Radiator fan", kind="fan", controllable=((dev.status or {}).fan_rpm or 0) > 0,
         duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
     end
-    if tonumber(id) then
-      return { id=id, name="Radiator fan", kind="fan", controllable=true,
-        duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
-    end
     error("unknown cooling channel: " .. tostring(id))
   end,
   set_cooling_duty = function(dev, id, duty)
     if id == "pump" then
       dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
-    elseif id == "fan1" or tonumber(id) then
+    elseif id == "fan1" then
       dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
     else error("unknown cooling channel: " .. tostring(id)) end
   end,

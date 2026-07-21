@@ -42,14 +42,20 @@ local function write_channel(dev, channel, colors)
   dev.transport:write(commit)
 end
 
-local chain_channels = {}
+-- Each physical output is one channel: a chain of RGB accessories plus the fan
+-- header they sit on. `cooling_channel` hands that fan to whichever accessory
+-- is detected there, so it is never controllable from both places at once.
+local channels, cooling_channels = {}, {}
 for i = 0, FAN_CHANNELS - 1 do
-  chain_channels[#chain_channels + 1] =
-    {
-      id = tostring(i), name = "Channel " .. (i + 1),
-      led_count = 0, max_leds = MAX_CHAIN_LEDS,
-      topology = "linear", color_order = "rgb",
-    }
+  local name = "Channel " .. (i + 1)
+  channels[#channels + 1] = {
+    id = tostring(i), name = name,
+    chainable = true, max_leds = MAX_CHAIN_LEDS, color_order = "rgb",
+    cooling_channel = tostring(i),
+  }
+  cooling_channels[#cooling_channels + 1] = {
+    id = tostring(i), name = name, kind = "fan", controllable = true,
+  }
 end
 
 local accessories = {
@@ -71,15 +77,10 @@ return {
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
     log("NZXT Control Hub initialized")
-    -- `division` establishes routing-only lighting buses. The hub has no LEDs
-    -- of its own, so advertising these as ordinary `channels` would also expose
-    -- five duplicate lighting zones on the parent.
     return {
       ok = true,
-      division = chain_channels,
-      -- The hub routes cooling but does not own a fan. Keep polling and routing
-      -- active while exposing cooling only through detected accessory children.
-      cooling = { as_devices = true, channels = {} },
+      channels = channels,
+      cooling = { channels = cooling_channels },
       accessories = accessories,
     }
   end,

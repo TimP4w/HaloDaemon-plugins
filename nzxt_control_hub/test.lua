@@ -9,15 +9,18 @@ return function(h)
   h:assert_eq(w[1].data, { 0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03 }, "status push interval (~1000ms)")
   h:assert_eq(w[2].data, { 0x60, 0x03 }, "detect_fans")
 
-  local parent = dev:serialize()
-  local parent_has_cooling = false
-  local parent_has_lighting = false
-  for _, capability in ipairs(parent.capabilities or {}) do
-    if capability.kind == "cooling" then parent_has_cooling = true end
-    if capability.kind == "lighting" then parent_has_lighting = true end
+  local function cooling_ids()
+    local out = {}
+    for _, capability in ipairs(dev:serialize().capabilities or {}) do
+      if capability.kind == "cooling" then
+        for _, channel in ipairs(capability.data.channels) do out[#out + 1] = channel.id end
+      end
+    end
+    return out
   end
-  h:assert(not parent_has_cooling, "hub parent does not advertise child cooling")
-  h:assert(not parent_has_lighting, "hub parent does not advertise child lighting")
+
+  -- With nothing attached, every output's fan is an ordinary hub channel.
+  h:assert_eq(cooling_ids(), { "0", "1", "2", "3", "4" }, "all five fans start on the hub")
 
   local accessory = {}
   for i = 1, 64 do accessory[i] = 0 end
@@ -28,6 +31,8 @@ return function(h)
   h:assert_eq(#children, 1, "detected accessory is exposed as one child")
   h:assert(children[1].has_cooling, "fan child exposes cooling")
   h:assert(children[1].has_lighting, "fan child exposes lighting")
+  -- Channel 0's fan now belongs to that child alone.
+  h:assert_eq(cooling_ids(), { "1", "2", "3", "4" }, "the hub gives up the claimed fan")
   dev:clear()
 
   local function status(rpm, duty)
@@ -43,9 +48,11 @@ return function(h)
   dev:queue_read(status(1200, 50))
   dev:queue_read(status(0, 0))
   dev:poll_sensors()
-  local cooling = dev:cached_cooling()
-  h:assert_eq(cooling[1].rpm, 0, "newest queued RPM wins")
-  h:assert_eq(cooling[1].duty, 0, "newest queued duty wins")
+  local by_id = {}
+  for _, channel in ipairs(dev:cached_cooling()) do by_id[channel.id] = channel end
+  h:assert(by_id["0"] == nil, "the claimed fan is not cached on the hub either")
+  h:assert_eq(by_id["1"].rpm, 0, "newest queued RPM wins")
+  h:assert_eq(by_id["1"].duty, 0, "newest queued duty wins")
 
   dev:clear()
   dev:write_divided_frame("2", { 1, 2, 3, 4, 5, 6 })

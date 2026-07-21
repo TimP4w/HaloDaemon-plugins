@@ -109,7 +109,7 @@ Two-byte request; the reply is `21 03` (see section 4).
 
 ### Channels
 
-The hub exposes five physical channels, numbered `0..4`. Commands address a channel with the bitmask `1 << channel`. Each populated RGB channel becomes a dynamic accessory child; channels without a fan are omitted from the dynamic child list.
+The hub exposes five physical channels, numbered `0..4`. Commands address a channel with the bitmask `1 << channel`. Each channel is one output carrying both an RGB chain and a fan header, so the plugin declares channel `N` as a chain output whose `cooling_channel` is `N`. A detected accessory becomes a child device and takes that fan over; a channel with nothing attached keeps its fan on the hub itself.
 
 ### Fan types
 
