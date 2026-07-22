@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Repository version (for example 1.0.0)"
+        description: "Release version (for example 0.10.2)"
         required: true
         type: string
 
@@ -81,12 +81,23 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/generate-licenses.py
-          "$SIGNING_TOOL" index . --version "${{ inputs.version }}"
+          mapfile -t packages < <(find . -mindepth 2 -maxdepth 2 -name plugin.yaml \
+            -printf '%h\n' | sed 's#^./##' | sort)
+          SOURCE_DATE_EPOCH=0 tar --sort=name --mtime='@0' \
+            --owner=0 --group=0 --numeric-owner \
+            -czf plugins.tar.gz licenses.txt "${packages[@]}"
+          "$SIGNING_TOOL" index . \
+            --version "${{ inputs.version }}" \
+            --id halod-official \
+            --name "Halo Official Plugins"
           "$SIGNING_TOOL" sign . \
             --key-id halodaemon-official-2026 \
             --key-env HALOD_PLUGIN_SIGNING_KEY_B64
           "$SIGNING_TOOL" verify . \
             --trusted-key halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=
+          mv plugins.tar.gz "$RUNNER_TEMP/plugins.tar.gz"
+          mv release.yaml "$RUNNER_TEMP/release.yaml"
+          mv release.sig "$RUNNER_TEMP/release.sig"
 
       - name: Verify REUSE compliance of publication tree
         uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
@@ -103,3 +114,19 @@ jobs:
           git add --all
           git commit -m "release: publish plugins ${{ inputs.version }}"
           git push --atomic origin HEAD:main HEAD:develop
+
+      - name: Publish immutable plugin release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${{ inputs.version }}"
+          git tag "$tag"
+          git push origin "$tag"
+          gh release create "$tag" \
+            "$RUNNER_TEMP/release.yaml" \
+            "$RUNNER_TEMP/release.sig" \
+            "$RUNNER_TEMP/plugins.tar.gz" \
+            --title "Plugin release ${{ inputs.version }}" \
+            --generate-notes \
+            --verify-tag

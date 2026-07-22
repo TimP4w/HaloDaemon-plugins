@@ -4,7 +4,7 @@ id: hwmon
 type: integration
 name: Linux Hardware Monitoring
 author: HaloDaemon
-version: 1.1.0
+version: 1.0.0
 license: GPL-3.0-or-later
 description: Exposes Linux hwmon temperature sensors and motherboard PWM fan headers.
 translations:

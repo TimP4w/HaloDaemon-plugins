@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: logitech
 name: Logitech HID++
-version: 1.1.0
+version: 1.0.0
 license: GPL-3.0-or-later
 description: Logitech HID++ direct devices and receivers.
 translations:

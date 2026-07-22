@@ -3,7 +3,7 @@ id: halo_lcd
 type: lcd
 name: Halo LCD Widgets
 author: HaloDaemon
-version: 1.2.0
+version: 1.0.0
 license: GPL-3.0-or-later
 description: The stock LCD widget library and reference implementation of the LCD widget API.
 consumes: [host.sensors.*, host.media.playback]
