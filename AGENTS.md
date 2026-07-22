@@ -3,15 +3,13 @@
 # Repository instructions
 
 After changing any plugin package, package documentation, test fixture, or
-license notice, regenerate the repository index before finishing:
+license notice, validate an ephemeral release manifest before finishing:
 
 ```powershell
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index .
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --check
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 0.0.0 --id test-release --name "Test release"
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
+Remove-Item release.yaml
 ```
 
-Never edit package hashes in `repository.yaml` manually. Include the generated
-`repository.yaml` change with the package change. `repository.sig` is updated
-only by the signing workflow because it requires the private signing key.
-
-The tracked pre-commit hook in `.githooks/pre-commit` enforces the index check.
+Never commit `release.yaml`, `release.sig`, or `plugins.tar.gz`. The publication
+workflow generates, signs, validates, and uploads all three as release assets.

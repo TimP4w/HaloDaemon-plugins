@@ -1,1 +1,4 @@
 .vscode
+release.yaml
+release.sig
+plugins.tar.gz

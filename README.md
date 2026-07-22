@@ -66,35 +66,40 @@ enforce: HID identities, USB devices and endpoints, SMBus addresses, commands,
 or network access. Adding authority to an installed plugin requires renewed
 consent.
 
-Repository compatibility belongs only to [`repository.yaml`](repository.yaml).
-Package manifests intentionally contain no compatibility override or legacy
-transport shim.
+Each plugin is standalone. A signed release may publish one plugin or a pack of
+plugins; `release.yaml` is generated from that exact release payload during
+publication and is not committed.
+
+Plugin packages use their own semantic versions, starting at `1.0.0`. Pack
+releases follow the daemon's minor line (for example daemon `0.10` uses release
+`0.10.x`), but their patch number is independent from both the daemon patch and
+individual plugin versions.
 
 ## Testing
 
-The repository index is generated; do not edit package hashes manually. From a
-HaloDaemon checkout, refresh or verify it with:
+Release metadata is generated only for validation and publication. From a
+HaloDaemon checkout, validate it with:
 
 ```powershell
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 2026.7.1
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --check
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 0.0.0 --id test-release --name "Test release"
 python scripts/generate-licenses.py
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
+Remove-Item release.yaml
 ```
 
 Publication recomputes every package SHA-256 and the generated `licenses.txt`
-SHA-256 before signing the exact `repository.yaml` bytes. A package or license
+SHA-256 before signing the exact `release.yaml` bytes. A package or license
 notice change therefore cannot retain an old hash or signature.
 
 Third-party repositories can use the same optional trust-on-first-use format:
 `halod-plugin-signing sign` writes the Ed25519 public key and key id into the
-canonical `repository.yaml`, then signs those exact bytes as `repository.sig`.
+canonical `release.yaml`, then signs those exact bytes as `release.sig`.
 HaloDaemon pins that advertised key on first import and rejects later key
 changes. The official repository remains a special case authenticated by the
 keys built into HaloDaemon.
 
 The advertised public key is a top-level block in the repository root's
-`repository.yaml`; it does not belong in any package's `plugin.yaml`:
+`release.yaml`; it does not belong in any package's `plugin.yaml`:
 
 ```yaml
 signing_key:
@@ -105,32 +110,23 @@ signing_key:
 
 `public_key` is Base64 of the raw 32-byte Ed25519 public key, not PEM and not a
 path. Do not commit the matching private seed. Generate a key and let the tool
-populate the block and `repository.sig`:
+populate the block and `release.sig`:
 
 ```powershell
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- keygen example-repository-2026
 $env:HALOD_PLUGIN_SIGNING_KEY_B64 = '<private_seed_b64>'
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 1.2.1
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 1.2.1 --id example-plugins --name "Example plugins"
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- sign . --key-id example-repository-2026
 ```
 
-Commit `repository.yaml` and `repository.sig`. Keep the key id stable: after the
+Publish `release.yaml`, `release.sig`, and `plugins.tar.gz` as release assets. Keep the key id stable: after the
 first successful import HaloDaemon pins the advertised key, and any later key
 addition, removal, or replacement requires users to remove and re-import the
 repository.
 
-To test this locally, do not start HaloDaemon with `--dev-plugin-repo`: that is
-an intentionally unverified working-tree override and always appears as a
-development source. Run `index` and `sign`, commit the resulting
-`repository.yaml`, `repository.sig`, and package changes, then import the
-checkout through **Local Git folder**. Local Git import reads the committed
-`HEAD`, not uncommitted edits. Remove an earlier unsigned registration before
-re-importing, because HaloDaemon will not silently add or replace a repository's
-pinned first-import key.
-
-A public key block alone is never sufficient. `repository.sig` must name the
+A public key block alone is never sufficient. `release.sig` must name the
 same key id and must be produced from the matching private seed over the exact
-committed `repository.yaml` bytes. Run `halod-plugin-signing validate .` before
+`release.yaml` bytes. Run `halod-plugin-signing validate .` before
 signing; package id, version, or hash mismatches make the repository invalid.
 
 Run one package against the daemon's recording transports:

@@ -5,7 +5,7 @@
 id: corsair_dram
 name: Corsair DRAM RGB
 author: HaloDaemon
-version: 1.1.0
+version: 1.0.0
 license: GPL-2.0-or-later
 description: Corsair iCUE DRAM RGB (Vengeance / Dominator, DDR4 & DDR5).
 translations:

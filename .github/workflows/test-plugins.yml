@@ -37,7 +37,7 @@ jobs:
         run: cargo build -p halod --features plugin-test
         working-directory: halodaemon/src
 
-      - name: Verify generated package index and every SHA-256
+      - name: Validate packages and generated release metadata
         run: |
           for manifest in plugins/*/plugin.yaml; do
             package="${manifest%/plugin.yaml}"
@@ -47,9 +47,11 @@ jobs:
             }
           done
           cargo run --manifest-path halodaemon/src/Cargo.toml \
-            -p halod-plugin-signing -- validate plugins
+            -p halod-plugin-signing -- index plugins \
+            --version 0.0.0 --id test-release --name "Test release"
           cargo run --manifest-path halodaemon/src/Cargo.toml \
-            -p halod-plugin-signing -- index plugins --check
+            -p halod-plugin-signing -- validate plugins
+          rm plugins/release.yaml
           python3 plugins/scripts/generate-licenses.py \
             --output "$RUNNER_TEMP/plugin-licenses.txt"
 

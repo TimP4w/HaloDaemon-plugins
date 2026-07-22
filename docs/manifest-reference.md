@@ -3,8 +3,8 @@
 `plugin.yaml` describes a plugin without running its Lua code. HaloDaemon reads
 and validates this file before the plugin can be enabled.
 
-Repository compatibility and package hashes belong in the root
-[`repository.yaml`](../repository.yaml), not in a plugin manifest.
+Release package hashes belong in the ephemeral `release.yaml` generated during
+publication, not in a plugin manifest.
 
 ## Package layout
 
