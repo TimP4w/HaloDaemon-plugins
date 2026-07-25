@@ -30,7 +30,6 @@ local MSG_EQ_BANDS = 0x33
 local MSG_MIC_VOLUME = 0x37
 local MSG_SIDETONE = 0x39
 local MSG_CHATMIX = 0x45
-local MSG_CHATMIX_SET = 0x47
 local MSG_CHATMIX_DISPLAY = 0x49
 local MSG_SCREEN_MODE = 0x89
 local MSG_SONAR_EQ = 0x8d
@@ -50,6 +49,7 @@ local MAX_POLL_READS = 32 -- packets drained per poll pass (see protocol §5)
 local POLL_REPLY_DELAY_MS = 50 -- let requested status packets reach the HID queue
 local EQ_BASELINE = 20 -- raw 0x14 = 0 dB
 local EQ_CUSTOM_BYTE = 0x04 -- the single editable preset
+local VOLUME_STEPS = 56 -- station volume attenuation floor
 
 -- The X base stations expose the Bluetooth status block; the plain one doesn't.
 local function is_bt_variant(dev)
@@ -178,20 +178,10 @@ local function apply_settings(s)
   return true
 end
 
-local function signed_byte(raw)
-  return raw >= 0x80 and raw - 0x100 or raw
-end
-
--- The station reports output volume as attenuation: 0 dB is full volume and
--- -56 dB is the dial floor. The UI uses the conventional 0..100 scale.
+-- The station reports output volume as an unsigned attenuation step counting
+-- down from full volume: 0 is loudest, VOLUME_STEPS the dial floor.
 local function attenuation_to_percent(raw)
-  local db = clamp(signed_byte(raw), -56, 0)
-  return math.floor((db + 56) * 100 / 56 + 0.5)
-end
-
-local function percent_to_attenuation(percent)
-  local db = math.floor(-56 + clamp(percent, 0, 100) * 56 / 100 + 0.5)
-  return db & 0xff
+  return math.floor((VOLUME_STEPS - clamp(raw, 0, VOLUME_STEPS)) * 100 / VOLUME_STEPS + 0.5)
 end
 
 -- Fold both command replies and unsolicited notifications into the same state.
@@ -309,8 +299,10 @@ local controls = {
     { key="sonar_eq", label="Sonar EQ", category="Audio", display="toggle", options={{id="0",label="Off"},{id="1",label="On"}} },
   },
   ranges = {
-    { key="volume", label="Volume", category="Audio", min=0, max=100, step=1, default=100 },
-    { key="chatmix", label="ChatMix", category="Audio", min=-100, max=100, step=1, default=0 },
+    -- Both are driven by the base-station dials only: the station has no
+    -- host→device volume opcode, and ChatMix is mixed in software (see close).
+    { key="volume", label="Volume", category="Audio", min=0, max=100, step=1, default=100, read_only=true },
+    { key="chatmix", label="ChatMix", category="Audio", min=-100, max=100, step=1, default=0, read_only=true },
     { key="mic_volume", label="Microphone Volume", category="Microphone", min=1, max=10, step=1, default=10 },
     { key="mic_led_brightness", label="LED Brightness", category="Microphone", min=0, max=100, step=10, default=100 },
     { key="nc_level", label="Transparency Level", category="Noise Cancelling", min=1, max=10, step=1, default=1,
@@ -452,16 +444,8 @@ return {
   end,
 
   set_range = function(dev, key, value)
-    if key == "volume" then
-      local v = clamp(value, 0, 100)
-      dev.transport:write(string.char(REPORT_CMD, MSG_VOLUME, percent_to_attenuation(v)))
-      state.volume = v
-    elseif key == "chatmix" then
-      local v = clamp(value, -100, 100)
-      local game = v >= 0 and 100 or 100 + v
-      local chat = v <= 0 and 100 or 100 - v
-      dev.transport:write(string.char(REPORT_CMD, MSG_CHATMIX_SET, game, 0x00, chat))
-      state.chatmix = v
+    if key == "volume" or key == "chatmix" then
+      error("'" .. key .. "' is read-only on this device")
     elseif key == "mic_volume" then
       local v = clamp(value, 1, 10)
       dev.transport:write(string.char(REPORT_CMD, MSG_MIC_VOLUME, v))

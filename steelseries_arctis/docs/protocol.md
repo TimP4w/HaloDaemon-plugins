@@ -106,12 +106,13 @@ Requires `len ≥ 3`, byte 0 = `0x07`, byte 1 = `0x25`.
 ```text
 byte 0   0x07
 byte 1   0x25
-byte 2   main volume   signed dB attenuation (0x00 = full, ≈ -56 floor)
+byte 2   main volume   attenuation steps, 0x00 (full) … 0x38 (floor)
 ```
 
-Emitted when the base-station main volume dial is turned. Byte 2 is a **signed**
-dB attenuation, not a percentage: `0x00` is full volume and the dial floor is
-≈ `-56` dB (`0xC8`). The plugin drains and ignores it.
+Emitted when the base-station main volume dial is turned. Byte 2 is an
+**unsigned attenuation** counting down from full volume, not a percentage:
+`0x00` is full volume and `0x38` (56) is the dial floor. The plugin maps it to
+the 0-100 `volume` control as `percent = round((56 − raw) × 100 / 56)`.
 
 ---
 
@@ -260,6 +261,15 @@ Uncatalogued bytes map to the Custom slot.
 | 2 | Medium |
 | 3 | High |
 
+### Station volume
+
+Unsigned attenuation steps **0-56** counting down from full volume; `0` = 100 %,
+`56` = 0 %. Surfaced as a read-only 0-100 % control:
+
+```
+percent = round((56 − raw) × 100 / 56)
+```
+
 ### Mic volume
 
 Capture level **1-10** (`clamp(1,10)`): **1 = muted**, 10 = 100 %.
@@ -353,7 +363,15 @@ On `initialize` the plugin registers two virtual audio sinks, **Media** and **Ch
 
 - **ChatMix** - `07 45 <game> <chat>`, each 0-100. Drives the Media/Chat sink volumes (see above).
 - **Mic volume** - `07 37 <level>`, level 1-10. Updates the microphone-volume control.
-- **Station volume** - `07 25 <level>`, a signed dB attenuation. Updates the 0-100 volume control.
+- **Station volume** - `07 25 <level>`, unsigned attenuation steps `0x00`-`0x38`. Updates the 0-100 volume control.
+
+### Read-only controls
+
+`volume` and `chatmix` are declared `read_only`: the base station owns both.
+There is no host→device main-volume opcode, and the ChatMix balance is applied
+by the virtual sinks above rather than by writing the device's own split. Their
+values only ever come from the `07 25` / `07 45` notifications, so they stay at
+their declared default until the corresponding dial is first moved.
 
 ---
 
@@ -361,6 +379,7 @@ On `initialize` the plugin registers two virtual audio sinks, **Media** and **Ch
 
 - **NC mode opcode `0xBD` is inferred** and needs hardware confirmation.
 - **Mic mute is read-only** - no write opcode exists for it.
+- **Main volume is read-only** - no host→device opcode exists for it; `0x25` is a notification only.
 - **`0x47` sets the ChatMix balance** - the host→device frame `06 47 <game> 00 <chat>` writes the game/chat split, mirroring the `07 45` notification. The plugin does not emit it: it balances ChatMix through two virtual audio sinks (see §5) rather than the device's hardware split. Documented here for reference only.
 - **Shared `0x33`** - length-disambiguated; the plugin only emits the 10-byte EQ-band form, never the NC-level form (NC level uses `0xB9`).
 - **No checksum / ACK** - writes are fire-and-forget; `persist` failures are not surfaced.
