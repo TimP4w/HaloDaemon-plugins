@@ -55,14 +55,13 @@ return function(h)
   local batteries = dev:get_batteries()
   h:assert_eq(batteries[2].status, "charging", "charging-slot battery reports charging")
 
+  h:assert_eq(control_value(dev, "range", "volume", "read_only"), true, "station volume is read-only")
+  h:assert_eq(control_value(dev, "range", "chatmix", "read_only"), true, "ChatMix is read-only")
+
   dev:clear()
-  dev:set_range("volume", 50)
-  dev:set_range("chatmix", 25)
   dev:set_range("mic_volume", 7)
   dev:set_range("mic_led_brightness", 0)
   w = dev:writes()
-  h:assert(contains(w, { 0x06, 0x25, 0xE4 }), "50% volume encodes as -28 dB attenuation")
-  h:assert(contains(w, { 0x06, 0x47, 100, 0, 75 }), "positive ChatMix favors game/media")
   h:assert(contains(w, { 0x06, 0x37, 7 }), "microphone volume uses its dedicated command")
   h:assert(contains(w, { 0x06, 0xBF, 0 }), "microphone LED supports fully off")
 
@@ -84,7 +83,7 @@ return function(h)
   dev:queue_read({ 0x07, 0xC3, 0 })       -- maximum speed
   dev:queue_read({ 0x07, 0xC1, 6 })       -- 60 minutes
   dev:queue_read({ 0x07, 0x89, 0 })       -- detailed screen
-  dev:queue_read({ 0x07, 0x25, 0xC8 })    -- station volume floor (-56 dB)
+  dev:queue_read({ 0x07, 0x25, 0x38 })    -- station volume floor (56 steps down)
   dev:queue_read({ 0x07, 0x45, 25, 100 }) -- ChatMix favors chat
   dev:poll_sensors()
   h:assert_eq(control_value(dev, "range", "mic_volume", "value"), 4, "mic dial updates GUI cache")
@@ -95,4 +94,12 @@ return function(h)
   h:assert_eq(control_value(dev, "choice", "screen_mode", "selected"), 0, "screen notification updates GUI cache")
   h:assert_eq(control_value(dev, "range", "volume", "value"), 0, "volume dial updates GUI cache")
   h:assert_eq(control_value(dev, "range", "chatmix", "value"), -75, "ChatMix dial updates GUI cache")
+
+  -- 0 attenuation steps is full volume, not silence.
+  dev:queue_read({ 0x07, 0x25, 0x00 })
+  dev:poll_sensors()
+  h:assert_eq(control_value(dev, "range", "volume", "value"), 100, "no attenuation reads as full volume")
+  dev:queue_read({ 0x07, 0x25, 0x1C })
+  dev:poll_sensors()
+  h:assert_eq(control_value(dev, "range", "volume", "value"), 50, "half the dial range reads as 50%")
 end

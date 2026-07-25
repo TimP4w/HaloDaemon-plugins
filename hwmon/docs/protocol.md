@@ -11,7 +11,7 @@ Sysfs attribute contract between this integration and the Linux kernel's `/sys/c
 
 This is not a wire protocol: the data unit is a named sysfs attribute on an allowlisted hwmon chip. Lua receives opaque chip keys and supported attribute names; it never receives sysfs paths. Reads are limited to supported sensor, fan, and PWM attributes; writes are limited to PWM and PWM-mode attributes.
 
-Each chip becomes a sensor device. Fan headers that are both readable and PWM-controllable become separate fan child devices. All access is host-initiated: the kernel never pushes data.
+Every chip's temperatures are collected onto a single aggregate sensor device, so a host with a dozen chips gains one entry rather than a dozen single-reading ones. Fan headers that are both readable and PWM-controllable become separate fan child devices. All access is host-initiated: the kernel never pushes data.
 
 ---
 
@@ -50,7 +50,7 @@ Values are ASCII text, typically newline-terminated; the integration trims surro
 | --- | --- | --- |
 | Chip enumeration | `hwmon_list()` | Lists scoped chips with key, stable id, name, attributes, writable attributes |
 | Fan detection | attribute presence | Indexes 1 through 16: requires `fanN_input` present and `pwmN` writable; if `pwmN_enable` exists it must also be writable |
-| Temperature read | `tempN_input`, `tempN_label` | Enumeration stops at the first missing temperature index, matching the former built-in driver |
+| Temperature read | `tempN_input`, `tempN_label` | Walks every scoped chip; per chip, enumeration stops at the first missing temperature index, matching the former built-in driver |
 | Fan status read | `fanN_input`, `pwmN` | RPM from `fanN_input`; duty from `pwmN` converted to percent |
 | Duty write | `pwmN_enable`, `pwmN` | Switches `pwmN_enable` to manual mode (`1`) first when necessary, then writes the raw duty |
 
@@ -66,11 +66,11 @@ The host records and restores the original `pwmN_enable` value independently of 
 | PWM range | 0-255 | Kernel convention; mapped to 0-100 percent |
 | Manual fan mode | `pwmN_enable = 1` | Required before duty writes take effect |
 | Fan index range | 1-16 | Only these indexes are probed for fan children |
-| Device id | `hwmon_<stable-path>` | Chip sensor device, retains the former built-in form |
+| Device id | `hwmon_sensors` | The single aggregate sensor device |
 | Fan id | `hwmon_<stable-path>_fanN` | Fan child device |
-| Sensor id | `hwmon_<stable-path>_tempN` | Temperature sensor |
+| Sensor id | `hwmon_<stable-path>_tempN` | Temperature sensor, retains the former per-chip form so saved fan curves keep resolving |
 
-Display names: `tempN_label` supplies the optional temperature name; `fanN_label` supplies the fan name, falling back to `Fan N`.
+Display names: readings are named `<chip> <label>` from `tempN_label`, falling back to `<chip> tempN` — the chip name is part of the reading because every chip shares one device. `fanN_label` supplies the fan name, falling back to `Fan N`.
 
 ---
 

@@ -6,10 +6,13 @@ local function split_key(key)
   return route, stable
 end
 
+local function trim(value)
+  return value and value:match("^%s*(.-)%s*$") or nil
+end
+
 local function read(dev, attribute)
   local route = split_key(assert(dev.match.key, "hwmon route missing"))
-  local value = dev.transport:hwmon_read(route, attribute)
-  return value and value:match("^%s*(.-)%s*$") or nil
+  return trim(dev.transport:hwmon_read(route, attribute))
 end
 
 local function number(dev, attribute)
@@ -23,9 +26,24 @@ local function has(attributes, name)
   return false
 end
 
-local function sensor_id(dev, index)
-  local _, stable = split_key(dev.match.key)
-  return "hwmon_" .. stable .. "_temp" .. index
+-- Every chip's temperatures land on one aggregate device, so a reading carries
+-- its chip name; the bare `tempN_label` alone would not say which chip it came
+-- from. Ids keep the per-chip form so saved fan curves still resolve.
+local function chip_sensors(dev, chip, out)
+  local index = 1
+  while true do
+    local raw = tonumber(trim(dev.transport:hwmon_read(chip.key, "temp" .. index .. "_input")))
+    if raw == nil then break end
+    local label = trim(dev.transport:hwmon_read(chip.key, "temp" .. index .. "_label")) or ""
+    out[#out + 1] = {
+      id = "hwmon_" .. chip.stable_id .. "_temp" .. index,
+      name = chip.name .. " " .. (label ~= "" and label or ("temp" .. index)),
+      value = raw / 1000,
+      unit = "celsius",
+      sensor_type = "temperature",
+    }
+    index = index + 1
+  end
 end
 
 return {
@@ -53,18 +71,19 @@ return {
   end,
 
   enumerate_controllers = function(dev)
-    local controllers, index = {}, 0
+    -- One device for every chip's temperatures, rather than a device per chip:
+    -- a dozen single-reading entries would bury the real peripherals.
+    local controllers = { {
+      index = 0,
+      id = "hwmon_sensors",
+      key = "",
+      name = "Linux Hardware Monitoring",
+      device_type = "motherboard",
+      extra = { fan_index = 0 },
+    } }
+    local index = 1
     for _, chip in ipairs(dev.transport:hwmon_list()) do
       local route = chip.key .. ":" .. chip.stable_id
-      controllers[#controllers + 1] = {
-        index = index,
-        id = "hwmon_" .. chip.stable_id,
-        key = route,
-        name = chip.name,
-        device_type = "sensor",
-        extra = { fan_index = 0 },
-      }
-      index = index + 1
       for fan = 1, 16 do
         local pwm = "pwm" .. fan
         local enable = pwm .. "_enable"
@@ -91,18 +110,9 @@ return {
   end,
 
   get_sensors = function(dev)
-    local sensors, index = {}, 1
-    while true do
-      local raw = number(dev, "temp" .. index .. "_input")
-      if raw == nil then break end
-      sensors[#sensors + 1] = {
-        id = sensor_id(dev, index),
-        name = read(dev, "temp" .. index .. "_label") or "",
-        value = raw / 1000,
-        unit = "celsius",
-        sensor_type = "temperature",
-      }
-      index = index + 1
+    local sensors = {}
+    for _, chip in ipairs(dev.transport:hwmon_list()) do
+      chip_sensors(dev, chip, sensors)
     end
     return sensors
   end,
