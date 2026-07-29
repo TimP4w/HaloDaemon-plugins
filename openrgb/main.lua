@@ -117,6 +117,20 @@ local function read_str(data, pos)
   return value, p + len
 end
 
+-- OpenRGB reports a free-form location string; map it onto the host's
+-- structured location so the daemon never parses this protocol's encoding.
+local function parse_location(value)
+  value = (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if value == "" then
+    return nil
+  end
+  local path = value:match("^[Hh][Ii][Dd]:%s*(.+)$") or value
+  if path:match("^/dev/hidraw") or path:match("^\\\\%?\\[Hh][Ii][Dd]#") then
+    return { kind = "hid_path", path = path }
+  end
+  return { kind = "opaque", value = value }
+end
+
 -- Skip one ModeDescription at protocol v3: name, then 12 u32 fields (`value`
 -- is present below v6; brightness_min/max/brightness are present at v3), then a
 -- length-prefixed colour array.
@@ -310,7 +324,7 @@ return {
         index = index,
         name = (name ~= "" and name) or ("Controller " .. index),
         serial = (_serial ~= "" and _serial) or nil,
-        location = (_location ~= "" and _location) or nil,
+        location = parse_location(_location),
         channels = channels,
       }
     end
