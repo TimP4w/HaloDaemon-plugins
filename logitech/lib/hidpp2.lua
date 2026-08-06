@@ -67,14 +67,20 @@ local function send(dev, wire)
 end
 
 -- Read replies until the one answering `(devnum, sub)` arrives, mirroring the
--- native messenger's dispatch.
+-- native messenger's dispatch. Both bounds are needed: a receiver relays every
+-- paired device's traffic onto this handle, so an active sibling exhausts a
+-- report count while a waking device outlasts a short run of empty windows.
+local DISPATCH_BUDGET_MS = 1000
+local MAX_EMPTY_WINDOWS = 4
+
 local function dispatch(dev, devnum, sub, address, check_func)
+  local deadline = halod.monotonic_ms() + DISPATCH_BUDGET_MS
   local empties = 0
-  for _ = 1, 64 do
+  while halod.monotonic_ms() < deadline do
     local reply = dev.transport:read_any(20)
     if #reply < 4 then
       empties = empties + 1
-      if empties >= 2 then break end
+      if empties >= MAX_EMPTY_WINDOWS then break end
     else
       empties = 0
       local rsub = reply:byte(3)
@@ -164,7 +170,9 @@ end
 
 local function enumerate_features(dev, devnum)
   local fs = feature_index(dev, devnum, FEATURE_SET)
-  if not fs then return {} end
+  -- A receiver answers ROOT for a sleeping slot with a zeroed record, not an
+  -- error; accepting it would publish a capability-less device.
+  if not fs then error("HID++ feature set unavailable") end
   local count = request(dev, devnum, fs, 0x00):byte(1) or 0
   local features = { [0] = 0, [FEATURE_SET] = fs }
   for i = 1, count do
@@ -188,7 +196,9 @@ local function enumerate_features_with_retry(dev, devnum)
     local ok, value = pcall(enumerate_features, dev, devnum)
     if ok then return value end
     last_error = value
-    if not tostring(value):find("HID++ response did not arrive", 1, true) then
+    local text = tostring(value)
+    if not text:find("HID++ response did not arrive", 1, true)
+        and not text:find("HID++ feature set unavailable", 1, true) then
       error(value)
     end
   end
@@ -927,8 +937,9 @@ local callbacks = {
       if dev.lighting and dev.hidpp.features[RGB_EFFECTS] then
         -- Match the native driver: every explicit state apply reclaims LED
         -- control. Onboard mode, reconnects, and prior effects can make the
-        -- firmware silently ignore otherwise-valid per-key packets.
-        pcall(restore_rgb_control, dev)
+        -- firmware silently ignore otherwise-valid per-key packets. It is also
+        -- the only acknowledged call here, so its failure must not be swallowed.
+        restore_rgb_control(dev)
         local allowed = false
         for _, id in ipairs((dev.profile and dev.profile.native_effects) or {}) do
           if id == state.id then allowed = true; break end
@@ -939,7 +950,7 @@ local callbacks = {
       return
     end
     if not dev.lighting then return end
-    pcall(restore_rgb_control, dev)
+    restore_rgb_control(dev)
     if state.mode == "per_led" then
       if dev.lighting.wire == "per_key" then
         write_per_key_pairs(dev, state.channels)
@@ -978,6 +989,7 @@ callbacks.initialize = function(dev)
   local text = tostring(result)
   local unavailable = text:find("HID++ error response", 1, true)
       or text:find("HID++ response did not arrive", 1, true)
+      or text:find("HID++ feature set unavailable", 1, true)
       or (is_long_only(dev.match.pid)
         and text:find("HID write error", 1, true))
   if not unavailable then

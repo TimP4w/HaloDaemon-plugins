@@ -27,7 +27,7 @@ return function(h)
   h:assert_eq(writes[3].data[4], 0x11, "FEATURE_SET getFeature function with software id")
 
   local waking_dev = h:open({ pid = 0xc095, reads = {
-    {}, {}, -- first ROOT attempt exhausts its two empty read windows
+    {}, {}, {}, {}, -- first ROOT attempt exhausts its empty read windows
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 0 }),
   } })
@@ -109,7 +109,7 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
     report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
-    {}, {},                                -- setMode acknowledgement is lost
+    {}, {}, {}, {},                        -- setMode acknowledgement is lost
     report(0x11, 0xff, 0x01, 0x21, { 2 }), -- getMode confirms it was applied
   } })
   h:assert(mode_switch_dev:initialize(), "mode-switch fixture initializes")
@@ -352,6 +352,7 @@ return function(h)
     report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
     report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
     report(0x11, 0xff, 0x01, 0x51, {}),
+    report(0x11, 0xff, 0x02, 0x11, { 73, 0, 0 }),       -- initial battery cache fill
     report(0x11, 0xff, 0x01, 0x51, {}), -- reclaim before Paint apply
   } })
   h:assert(keyboard_dev:initialize(), "per-key TKL fixture initializes")
@@ -503,9 +504,18 @@ return function(h)
   h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
   local silent_child = h:open({ key = "1", reads = {
-    {}, {}, {}, {}, {}, {}, -- three ROOT attempts, two empty read windows each
+    -- three ROOT attempts, four empty read windows each
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
+
+  -- A zeroed ROOT record is a sleeping slot, not a featureless device.
+  local zeroed_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 0 }),
+  } })
+  h:assert(not zeroed_child:initialize(), "a zeroed ROOT reply is rejected")
 
   local windows_asleep_headset = h:open({ pid = 0x0aba,
     write_error = "HID write error: hidapi error:" })
