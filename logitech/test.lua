@@ -354,6 +354,8 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x51, {}),
     report(0x11, 0xff, 0x02, 0x11, { 73, 0, 0 }),       -- initial battery cache fill
     report(0x11, 0xff, 0x01, 0x51, {}), -- reclaim before Paint apply
+    report(0x11, 0xff, 0x01, 0x51, {}), -- reclaim before first static apply
+    report(0x11, 0xff, 0x01, 0x51, {}), -- reclaim before repeated static apply
   } })
   h:assert(keyboard_dev:initialize(), "per-key TKL fixture initializes")
   local keyboard = keyboard_dev:keyboard_layout_status()
@@ -418,6 +420,17 @@ return function(h)
   h:assert_eq(paint[2].data[8], 0x66, "Paint mode writes the selected blue value")
   h:assert_eq(paint[2].data[9], 6, "Paint mode pads with the same LED, never LED zero")
   h:assert_eq(paint[3].data[4], 0x71, "Paint mode commits the sparse edit")
+
+  keyboard_dev:clear()
+  keyboard_dev:apply({ mode = "static", color = { r = 0xa7, g = 0x8b, b = 0xfa } })
+  local first_static = keyboard_dev:writes()
+  h:assert_eq(first_static[1].data[4], 0x51, "static apply reclaims RGB software control")
+  h:assert_eq(first_static[2].data[4], 0x51, "static apply writes the frame as a range")
+  keyboard_dev:clear()
+  keyboard_dev:apply({ mode = "static", color = { r = 0xa7, g = 0x8b, b = 0xfa } })
+  local repeated = keyboard_dev:writes()
+  h:assert_eq(#repeated, #first_static, "re-applying the same colour writes the frame again")
+  h:assert_eq(repeated[2].data[7], 0xa7, "repeated static apply carries the colour, not a no-op")
 
   -- On Windows a long request is written to the companion collection and a
   -- short one to the primary, but a reply is matched wherever it lands.  With a
