@@ -362,7 +362,8 @@ enumerate_controllers = function(dev)
       name = "Keyboard",
       device_type = "keyboard", -- optional; defaults to "other"
       serial = "ABC123",       -- optional; used for conflict detection
-      location = "HID: ...",   -- optional; used for conflict detection
+      -- optional; used for conflict detection
+      location = { kind = "hid_path", path = "/dev/hidraw6" },
       channels = {
         { id = "main", name = "Main", topology = "linear", led_count = 20 },
       },
@@ -373,7 +374,19 @@ end
 
 Each record describes identity and routing. It may include `id`, `key`, `serial`,
 `location`, numeric `extra` fields, and simple `channels` data used by tests. Each
-record becomes a separate device. The child receives its index in
+record becomes a separate device.
+
+`location` is a tagged table in the host's own vocabulary; translate whatever
+your protocol reports into one of these rather than passing a raw string:
+
+| `kind` | Fields |
+|---|---|
+| `hid_path` | `path` |
+| `usb_port` | `bus`, `port_path` (array of numbers), `interface` |
+| `smbus` | `bus`, `address` |
+| `opaque` | `value` — any stable string the host only compares |
+
+The child receives its index in
 `dev.match.index` and its optional key in `dev.match.key`.
 
 Children use the normal callbacks, such as `initialize`, `apply`, and

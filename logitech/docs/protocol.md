@@ -102,6 +102,7 @@ Used by [HID++ 2.0](hidpp2.md) ONBOARD_PROFILES sector writes; documented here b
 ## 4. Responses
 
 - **Reply matching**: `dispatch_packet` matches a reply on `(devnum, sub_id/feature_index)`, or accepts an error sub-ID for the same devnum.
+- **Wait bound**: a request waits roughly 1 s for its reply — an elapsed-time budget when the line is busy, four empty read windows when it is silent. Neither bound works alone on a receiver: it relays every paired device's notifications onto the same handle, so an active sibling exhausts a report count, while a waking device outlasts a short run of empty windows.
 - **Error replies**: `0x8F` (wired) or `0xFF` (Lightspeed wireless) in byte 2 marks an error reply: `[devnum, 0x8F/0xFF, feature_idx, func_byte, err_code, ...]`. The error is surfaced to the matching request.
 - **Orphaned replies**: an orphaned HID++ 2.0 feature response (feature-index sub-ID `< 0x40` with a nonzero software-ID nibble, i.e. `address & 0x0F == HIDPP_SW_ID`) is dropped rather than broadcast. Genuine 2.0 events carry swid 0; a nonzero swid means the packet is a late reply whose caller already timed out, and rebroadcasting it as a notification would re-trigger the reconcile read that solicited it, a self-sustaining storm.
 
