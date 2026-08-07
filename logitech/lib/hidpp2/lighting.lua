@@ -281,6 +281,9 @@ end
 
 local function restore_rgb_control(dev)
   if not dev.lighting then return end
+  -- Reclaiming means the firmware owned the LEDs, so the streaming frame cache
+  -- no longer describes what is lit and must not suppress the write that follows.
+  dev.lighting.frame_cache = nil
   if dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
     feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
   elseif dev.lighting.wire == "color_led" then
