@@ -175,14 +175,19 @@ local function enumerate_features(dev, devnum)
   if not fs then error("HID++ feature set unavailable") end
   local count = request(dev, devnum, fs, 0x00):byte(1) or 0
   local features = { [0] = 0, [FEATURE_SET] = fs }
+  local discovered = 0
   for i = 1, count do
     local reply = request(dev, devnum, fs, 0x10, bytes(i))
     local high, low = reply:byte(1), reply:byte(2)
     if high and low then
       local code = (high << 8) | low
-      if code ~= 0 then features[code] = i end
+      if code ~= 0 then features[code] = i; discovered = discovered + 1 end
     end
   end
+  -- ROOT can be answered from the receiver's pairing cache while the slot
+  -- itself is still unreachable, so the zeroed record moves to the count or
+  -- the ids. A device that enumerates nothing is asleep, not featureless.
+  if discovered == 0 then error("HID++ feature set unavailable") end
   return features
 end
 

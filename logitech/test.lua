@@ -29,10 +29,11 @@ return function(h)
   local waking_dev = h:open({ pid = 0xc095, reads = {
     {}, {}, {}, {}, -- first ROOT attempt exhausts its empty read windows
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
-    report(0x11, 0xff, 0x02, 0x01, { 0 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x1d, 0x4b }), -- WIRELESS_DEVICE_STATUS
   } })
   h:assert(waking_dev:initialize(), "cold G502 retries its initial ROOT lookup")
-  h:assert_eq(#waking_dev:writes(), 3,
+  h:assert_eq(#waking_dev:writes(), 4,
     "cold-device retry repeats ROOT once before feature enumeration")
 
   -- The same UNIFIED_BATTERY feature is queried using its enumerated runtime
@@ -209,7 +210,8 @@ return function(h)
 
   local wireless_child = h:open({ key = "1", reads = {
     report(0x10, 0x01, 0x00, 0x01, { 2 }),
-    report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0x1d, 0x4b }), -- WIRELESS_DEVICE_STATUS
   } })
   h:assert(wireless_child:initialize(), "receiver child initializes")
   h:assert_eq(wireless_child:connection_status().connection_type, "wireless", "receiver child reports wireless connection")
@@ -529,6 +531,27 @@ return function(h)
     report(0x10, 0x01, 0x00, 0x01, { 0 }),
   } })
   h:assert(not zeroed_child:initialize(), "a zeroed ROOT reply is rejected")
+
+  -- ROOT resolves from the receiver's pairing cache, so a sleeping slot can get
+  -- past the index lookup and zero the enumeration instead. Both shapes leave a
+  -- table with no features and must be rejected, or the daemon registers the
+  -- device with no capabilities and nothing ever re-initializes it.
+  local empty_count_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+  } })
+  h:assert(not empty_count_child:initialize(), "a zeroed feature count is rejected")
+
+  local zeroed_ids_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+  } })
+  h:assert(not zeroed_ids_child:initialize(), "zeroed feature ids are rejected")
 
   local windows_asleep_headset = h:open({ pid = 0x0aba,
     write_error = "HID write error: hidapi error:" })

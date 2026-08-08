@@ -50,6 +50,8 @@ Resolving ADJUSTABLE_DPI (`0x2201`) on device `0x01`: send `10 01 00 01 22 01 00
 
 `Hidpp20::enumerate` resolves FEATURE_SET via ROOT, reads its count, then loops `getFeatureId` for each index, building the whole `code → index` map at discovery.
 
+A receiver answers for a sleeping slot with a zeroed record rather than an error, and it can serve the ROOT index from its pairing cache while the device itself is unreachable — so the zeros surface at the count or at the ids instead. Every device that answers ROOT reports FEATURE_SET itself in the table, so an enumeration that yields no feature means the device is asleep and the whole discovery is rejected.
+
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
 | getCount (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 = feature count |
