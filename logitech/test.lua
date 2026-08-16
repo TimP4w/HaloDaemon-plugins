@@ -209,11 +209,17 @@ return function(h)
   h:assert_eq(unifying_children[1].device_type, "mouse", "pairing-record kind supplies device type")
 
   local wireless_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), -- wake ping: live, protocol 4.5
     report(0x10, 0x01, 0x00, 0x01, { 2 }),
     report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0x1d, 0x4b }), -- WIRELESS_DEVICE_STATUS
   } })
   h:assert(wireless_child:initialize(), "receiver child initializes")
+  local child_writes = wireless_child:writes()
+  h:assert_eq(#child_writes, 4, "receiver child init is ping plus the feature walk")
+  h:assert_eq(child_writes[1].data[3], 0x00, "receiver child init opens with a ROOT request")
+  h:assert_eq(child_writes[1].data[4], 0x11, "wake ping uses getProtocolVersion with software id")
+  h:assert_eq(child_writes[1].data[7], 0x5a, "wake ping carries the echo payload byte")
   h:assert_eq(wireless_child:connection_status().connection_type, "wireless", "receiver child reports wireless connection")
 
   local rate_dev = h:open({ reads = {
@@ -519,16 +525,16 @@ return function(h)
   h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
   local silent_child = h:open({ key = "1", reads = {
-    -- three ROOT attempts, four empty read windows each
+    -- three wake-ping attempts, four empty read windows each
     {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
 
   -- A zeroed ROOT record is a sleeping slot, not a featureless device.
   local zeroed_child = h:open({ key = "1", reads = {
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
   } })
   h:assert(not zeroed_child:initialize(), "a zeroed ROOT reply is rejected")
 
@@ -537,21 +543,61 @@ return function(h)
   -- table with no features and must be rejected, or the daemon registers the
   -- device with no capabilities and nothing ever re-initializes it.
   local empty_count_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
   } })
   h:assert(not empty_count_child:initialize(), "a zeroed feature count is rejected")
 
   local zeroed_ids_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
   } })
   h:assert(not zeroed_ids_child:initialize(), "zeroed feature ids are rejected")
+
+  -- A sleeping slot can bounce the ping request back instead of answering it;
+  -- the echo carries protocol version zero, which no live device reports.
+  local echoed_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+  } })
+  h:assert(not echoed_child:initialize(), "a bounced ping echo is rejected")
+  local echoed_writes = echoed_child:writes()
+  h:assert_eq(#echoed_writes, 3, "a rejected ping is retried without starting the walk")
+  h:assert_eq(echoed_writes[3].data[4], 0x11, "every rejected attempt is the wake ping")
+
+  -- An offline slot answers the ping with a HID++ 1.0 error relayed by the
+  -- receiver: rejected immediately, without retrying the walk.
+  local offline_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x8f, 0x00, { 0x11, 0x09 }),
+  } })
+  h:assert(not offline_child:initialize(), "an offline slot's ping error rejects init")
+  h:assert_eq(#offline_child:writes(), 1,
+    "a receiver-reported offline slot is not retried and never walked")
+
+  -- A paired device this plugin does not service (only classic BATTERY_STATUS
+  -- 0x1000) that answers the ping is a real device: it keeps its
+  -- connection-only registration instead of being mistaken for a sleeping slot.
+  local office_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), -- wake ping: live
+    report(0x10, 0x01, 0x00, 0x01, { 2 }),
+    report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0x10, 0x00 }), -- BATTERY_STATUS
+  } })
+  h:assert(office_child:initialize(), "an unserviced but real feature table initializes")
+  h:assert_eq(office_child:connection_status().connection_type, "wireless",
+    "unserviced receiver child keeps its connection capability")
 
   local windows_asleep_headset = h:open({ pid = 0x0aba,
     write_error = "HID write error: hidapi error:" })

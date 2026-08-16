@@ -168,7 +168,27 @@ local function feature_index(dev, devnum, code)
   return index ~= 0 and index or nil
 end
 
+-- ROOT getProtocolVersion is the HID++ liveness ping: it echoes the payload
+-- byte and reports the protocol version. Only the live device can produce
+-- that reply — the receiver answers with a HID++ 1.0 error for an
+-- unreachable slot, and a request bounced back unanswered carries version
+-- zero.
+local PING_DATA = 0x5a
+
+local function ping(dev, devnum)
+  local reply = request(dev, devnum, 0, 0x10, bytes(0, 0, PING_DATA))
+  if (reply:byte(1) or 0) == 0 or reply:byte(3) ~= PING_DATA then
+    error("HID++ feature set unavailable")
+  end
+end
+
 local function enumerate_features(dev, devnum)
+  -- A sleeping receiver slot can get ROOT and parts of the walk answered
+  -- from the receiver's cache instead of the device, which would register a
+  -- capability-less device that nothing ever re-initializes. Prove the slot
+  -- is awake before trusting anything it enumerates; a direct device has no
+  -- relay in the path and fails hard on its own.
+  if devnum ~= DIRECT then ping(dev, devnum) end
   local fs = feature_index(dev, devnum, FEATURE_SET)
   -- A receiver answers ROOT for a sleeping slot with a zeroed record, not an
   -- error; accepting it would publish a capability-less device.
