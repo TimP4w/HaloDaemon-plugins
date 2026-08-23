@@ -88,7 +88,6 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
-    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
   } })
   h:assert(onboard_dev:initialize(), "onboard-profile fixture initializes")
   onboard_dev:clear()
@@ -96,6 +95,30 @@ return function(h)
   onboard_dev:serialize()
   h:assert_eq(#onboard_dev:writes(), 0,
     "state serialization serves cached onboard profiles without HID writes")
+
+  -- A DPI change reads the onboard mode from the same cache. Re-reading it put
+  -- a second exchange on the DPI-button path, and one late reply there aborted
+  -- the DPI change before its own write ever went out.
+  local host_dpi_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 3 }),
+    report(0x11, 0xff, 0x03, 0x01, { 2 }),
+    report(0x11, 0xff, 0x03, 0x11, { 0x81, 0x00 }),   -- ONBOARD_PROFILES
+    report(0x11, 0xff, 0x03, 0x11, { 0x22, 0x01 }),   -- ADJUSTABLE_DPI
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 2 }),            -- host mode
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
+    report(0x11, 0xff, 0x02, 0x31, {}),
+  } })
+  h:assert(host_dpi_dev:initialize(), "host-mode DPI fixture initializes")
+  host_dpi_dev:clear()
+  host_dpi_dev:set_dpi(400)
+  local host_dpi_writes = host_dpi_dev:writes()
+  h:assert_eq(#host_dpi_writes, 1, "a host-mode DPI change is one write")
+  h:assert_eq(host_dpi_writes[1].data[4], 0x31, "the write is setSensorDpi")
 
   -- A mode switch can take effect while its acknowledgement is lost during
   -- the transition. Confirm the live mode before retrying or surfacing the
@@ -109,7 +132,6 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
-    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
     {}, {}, {}, {},                        -- setMode acknowledgement is lost
     report(0x11, 0xff, 0x01, 0x21, { 2 }), -- getMode confirms it was applied
   } })
@@ -283,6 +305,28 @@ return function(h)
   h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "successful EQ write updates cached value")
   h:assert(not pcall(function() eq_dev:set_eq_bands({ 0, 0 }) end), "failed EQ write surfaces")
   h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "failed EQ write preserves cached value")
+
+  -- The receiver answers for an absent child in its own HID++ 1.0 code space,
+  -- where 0x08 is "unknown device" and not the feature-level "busy" a device
+  -- would mean by it. Only the reply class separates them.
+  local err_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x10 }),
+    report(0x11, 0xff, 0x01, 0x01, { 2, 12, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0, 31, 0, 250 }),
+    report(0x11, 0xff, 0x01, 0x21, { 0xfb, 6 }),
+    report(0x10, 0xff, 0x8f, 0x01, { 0x31, 0x08 }),
+    report(0x10, 0xff, 0xff, 0x01, { 0x31, 0x08 }),
+  } })
+  h:assert(err_dev:initialize(), "error-reply fixture initializes")
+  err_dev:get_equalizer()
+  local _, receiver_err = pcall(function() err_dev:set_eq_bands({ 0, 0 }) end)
+  h:assert(tostring(receiver_err):match("0x08 %(unknown device%) from the receiver"),
+    "a 0x8f reply decodes in the receiver's code space")
+  local _, feature_err = pcall(function() err_dev:set_eq_bands({ 0, 0 }) end)
+  h:assert(tostring(feature_err):match("0x08 %(busy%) from the device"),
+    "a 0xff reply decodes in the feature code space")
 
   local native_dev = h:open({ pid = 0xc352, reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
