@@ -73,6 +73,33 @@ end
 local DISPATCH_BUDGET_MS = 1000
 local MAX_EMPTY_WINDOWS = 4
 
+-- The two error classes share one code space with different meanings: a 0x8f
+-- reply is the receiver's own HID++ 1.0 verdict on the relayed request (the
+-- device may be off or unpaired), a 0xff reply is the device's HID++ 2.0
+-- feature error. Both carry the failed feature index at byte 4, so only the
+-- class tells them apart.
+local HIDPP1_ERRORS = {
+  [0x01] = "invalid command", [0x02] = "invalid address", [0x03] = "invalid value",
+  [0x04] = "connection failed", [0x05] = "too many devices", [0x06] = "already exists",
+  [0x07] = "busy", [0x08] = "unknown device", [0x09] = "resource error",
+  [0x0a] = "request unavailable", [0x0b] = "invalid parameter", [0x0c] = "wrong PIN",
+}
+local HIDPP2_ERRORS = {
+  [0x01] = "unknown", [0x02] = "invalid argument", [0x03] = "out of range",
+  [0x04] = "hardware error", [0x05] = "internal", [0x06] = "invalid feature index",
+  [0x07] = "invalid function id", [0x08] = "busy", [0x09] = "unsupported",
+}
+
+local function error_response(reply)
+  local receiver = reply:byte(3) == 0x8f
+  local code = reply:byte(6) or 0
+  local names = receiver and HIDPP1_ERRORS or HIDPP2_ERRORS
+  error(string.format("HID++ error 0x%02x (%s) from %s, feature index 0x%02x func 0x%02x",
+    code, names[code] or "unnamed",
+    receiver and "the receiver (HID++ 1.0)" or "the device (HID++ 2.0)",
+    reply:byte(4) or 0, reply:byte(5) or 0))
+end
+
 local function dispatch(dev, devnum, sub, address, check_func)
   local deadline = halod.monotonic_ms() + DISPATCH_BUDGET_MS
   local empties = 0
@@ -87,9 +114,7 @@ local function dispatch(dev, devnum, sub, address, check_func)
       if reply:byte(2) ~= devnum then
         dev.transport:defer_event(reply)
       elseif rsub == 0x8f or rsub == 0xff then
-        if reply:byte(4) == sub then
-          error(string.format("HID++ error response (code 0x%02x)", reply:byte(6) or 0))
-        end
+        if reply:byte(4) == sub then error_response(reply) end
         dev.transport:defer_event(reply)
       elseif rsub == sub and (not check_func or reply:byte(4) == address) then
         return reply:sub(5)
@@ -168,7 +193,27 @@ local function feature_index(dev, devnum, code)
   return index ~= 0 and index or nil
 end
 
+-- ROOT getProtocolVersion is the HID++ liveness ping: it echoes the payload
+-- byte and reports the protocol version. Only the live device can produce
+-- that reply — the receiver answers with a HID++ 1.0 error for an
+-- unreachable slot, and a request bounced back unanswered carries version
+-- zero.
+local PING_DATA = 0x5a
+
+local function ping(dev, devnum)
+  local reply = request(dev, devnum, 0, 0x10, bytes(0, 0, PING_DATA))
+  if (reply:byte(1) or 0) == 0 or reply:byte(3) ~= PING_DATA then
+    error("HID++ feature set unavailable")
+  end
+end
+
 local function enumerate_features(dev, devnum)
+  -- A sleeping receiver slot can get ROOT and parts of the walk answered
+  -- from the receiver's cache instead of the device, which would register a
+  -- capability-less device that nothing ever re-initializes. Prove the slot
+  -- is awake before trusting anything it enumerates; a direct device has no
+  -- relay in the path and fails hard on its own.
+  if devnum ~= DIRECT then ping(dev, devnum) end
   local fs = feature_index(dev, devnum, FEATURE_SET)
   -- A receiver answers ROOT for a sleeping slot with a zeroed record, not an
   -- error; accepting it would publish a capability-less device.
@@ -992,7 +1037,7 @@ callbacks.initialize = function(dev)
   local ok, result = pcall(describe_device, dev)
   if ok then return result end
   local text = tostring(result)
-  local unavailable = text:find("HID++ error response", 1, true)
+  local unavailable = text:find("HID++ error", 1, true)
       or text:find("HID++ response did not arrive", 1, true)
       or text:find("HID++ feature set unavailable", 1, true)
       or (is_long_only(dev.match.pid)

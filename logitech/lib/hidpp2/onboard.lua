@@ -6,11 +6,12 @@ local bytes, feature = api.bytes, api.feature
 local ONBOARD_PROFILES = api.feature_id
 local restore_rgb_control = api.restore_rgb_control
 
+-- Served from the same cache as `status` below: re-reading the mode per call
+-- put a HID++ exchange on the DPI-button path and two more on every serialized
+-- snapshot, and a single late reply there aborted the whole operation.
 local function onboard_mode(dev)
   if not dev.onboard then return 2 end
-  local mode = feature(dev, ONBOARD_PROFILES, 0x20):byte(1) or dev.onboard.mode
-  dev.onboard.mode = mode
-  return mode
+  return dev.onboard.mode
 end
 
 local function set_onboard_mode(dev, host)

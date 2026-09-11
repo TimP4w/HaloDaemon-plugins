@@ -88,7 +88,6 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
-    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
   } })
   h:assert(onboard_dev:initialize(), "onboard-profile fixture initializes")
   onboard_dev:clear()
@@ -96,6 +95,30 @@ return function(h)
   onboard_dev:serialize()
   h:assert_eq(#onboard_dev:writes(), 0,
     "state serialization serves cached onboard profiles without HID writes")
+
+  -- A DPI change reads the onboard mode from the same cache. Re-reading it put
+  -- a second exchange on the DPI-button path, and one late reply there aborted
+  -- the DPI change before its own write ever went out.
+  local host_dpi_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 3 }),
+    report(0x11, 0xff, 0x03, 0x01, { 2 }),
+    report(0x11, 0xff, 0x03, 0x11, { 0x81, 0x00 }),   -- ONBOARD_PROFILES
+    report(0x11, 0xff, 0x03, 0x11, { 0x22, 0x01 }),   -- ADJUSTABLE_DPI
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 2 }),            -- host mode
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
+    report(0x11, 0xff, 0x02, 0x31, {}),
+  } })
+  h:assert(host_dpi_dev:initialize(), "host-mode DPI fixture initializes")
+  host_dpi_dev:clear()
+  host_dpi_dev:set_dpi(400)
+  local host_dpi_writes = host_dpi_dev:writes()
+  h:assert_eq(#host_dpi_writes, 1, "a host-mode DPI change is one write")
+  h:assert_eq(host_dpi_writes[1].data[4], 0x31, "the write is setSensorDpi")
 
   -- A mode switch can take effect while its acknowledgement is lost during
   -- the transition. Confirm the live mode before retrying or surfacing the
@@ -109,7 +132,6 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
-    report(0x11, 0xff, 0x01, 0x21, { 1 }), -- initial host status-cache fill
     {}, {}, {}, {},                        -- setMode acknowledgement is lost
     report(0x11, 0xff, 0x01, 0x21, { 2 }), -- getMode confirms it was applied
   } })
@@ -209,11 +231,17 @@ return function(h)
   h:assert_eq(unifying_children[1].device_type, "mouse", "pairing-record kind supplies device type")
 
   local wireless_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), -- wake ping: live, protocol 4.5
     report(0x10, 0x01, 0x00, 0x01, { 2 }),
     report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0x1d, 0x4b }), -- WIRELESS_DEVICE_STATUS
   } })
   h:assert(wireless_child:initialize(), "receiver child initializes")
+  local child_writes = wireless_child:writes()
+  h:assert_eq(#child_writes, 4, "receiver child init is ping plus the feature walk")
+  h:assert_eq(child_writes[1].data[3], 0x00, "receiver child init opens with a ROOT request")
+  h:assert_eq(child_writes[1].data[4], 0x11, "wake ping uses getProtocolVersion with software id")
+  h:assert_eq(child_writes[1].data[7], 0x5a, "wake ping carries the echo payload byte")
   h:assert_eq(wireless_child:connection_status().connection_type, "wireless", "receiver child reports wireless connection")
 
   local rate_dev = h:open({ reads = {
@@ -277,6 +305,28 @@ return function(h)
   h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "successful EQ write updates cached value")
   h:assert(not pcall(function() eq_dev:set_eq_bands({ 0, 0 }) end), "failed EQ write surfaces")
   h:assert_eq(eq_dev:get_equalizer().bands[1].value, -12.0, "failed EQ write preserves cached value")
+
+  -- The receiver answers for an absent child in its own HID++ 1.0 code space,
+  -- where 0x08 is "unknown device" and not the feature-level "busy" a device
+  -- would mean by it. Only the reply class separates them.
+  local err_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x10 }),
+    report(0x11, 0xff, 0x01, 0x01, { 2, 12, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0, 31, 0, 250 }),
+    report(0x11, 0xff, 0x01, 0x21, { 0xfb, 6 }),
+    report(0x10, 0xff, 0x8f, 0x01, { 0x31, 0x08 }),
+    report(0x10, 0xff, 0xff, 0x01, { 0x31, 0x08 }),
+  } })
+  h:assert(err_dev:initialize(), "error-reply fixture initializes")
+  err_dev:get_equalizer()
+  local _, receiver_err = pcall(function() err_dev:set_eq_bands({ 0, 0 }) end)
+  h:assert(tostring(receiver_err):match("0x08 %(unknown device%) from the receiver"),
+    "a 0x8f reply decodes in the receiver's code space")
+  local _, feature_err = pcall(function() err_dev:set_eq_bands({ 0, 0 }) end)
+  h:assert(tostring(feature_err):match("0x08 %(busy%) from the device"),
+    "a 0xff reply decodes in the feature code space")
 
   local native_dev = h:open({ pid = 0xc352, reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
@@ -519,16 +569,16 @@ return function(h)
   h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
   local silent_child = h:open({ key = "1", reads = {
-    -- three ROOT attempts, four empty read windows each
+    -- three wake-ping attempts, four empty read windows each
     {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
 
   -- A zeroed ROOT record is a sleeping slot, not a featureless device.
   local zeroed_child = h:open({ key = "1", reads = {
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
-    report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), report(0x10, 0x01, 0x00, 0x01, { 0 }),
   } })
   h:assert(not zeroed_child:initialize(), "a zeroed ROOT reply is rejected")
 
@@ -537,21 +587,61 @@ return function(h)
   -- table with no features and must be rejected, or the daemon registers the
   -- device with no capabilities and nothing ever re-initializes it.
   local empty_count_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 0 }),
   } })
   h:assert(not empty_count_child:initialize(), "a zeroed feature count is rejected")
 
   local zeroed_ids_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
     report(0x10, 0x01, 0x00, 0x01, { 2 }), report(0x11, 0x01, 0x02, 0x01, { 1 }),
     report(0x11, 0x01, 0x02, 0x11, { 0, 0 }),
   } })
   h:assert(not zeroed_ids_child:initialize(), "zeroed feature ids are rejected")
+
+  -- A sleeping slot can bounce the ping request back instead of answering it;
+  -- the echo carries protocol version zero, which no live device reports.
+  local echoed_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x11, { 0, 0, 0x5a }),
+  } })
+  h:assert(not echoed_child:initialize(), "a bounced ping echo is rejected")
+  local echoed_writes = echoed_child:writes()
+  h:assert_eq(#echoed_writes, 3, "a rejected ping is retried without starting the walk")
+  h:assert_eq(echoed_writes[3].data[4], 0x11, "every rejected attempt is the wake ping")
+
+  -- An offline slot answers the ping with a HID++ 1.0 error relayed by the
+  -- receiver: rejected immediately, without retrying the walk.
+  local offline_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x8f, 0x00, { 0x11, 0x09 }),
+  } })
+  h:assert(not offline_child:initialize(), "an offline slot's ping error rejects init")
+  h:assert_eq(#offline_child:writes(), 1,
+    "a receiver-reported offline slot is not retried and never walked")
+
+  -- A paired device this plugin does not service (only classic BATTERY_STATUS
+  -- 0x1000) that answers the ping is a real device: it keeps its
+  -- connection-only registration instead of being mistaken for a sleeping slot.
+  local office_child = h:open({ key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), -- wake ping: live
+    report(0x10, 0x01, 0x00, 0x01, { 2 }),
+    report(0x11, 0x01, 0x02, 0x01, { 1 }),
+    report(0x11, 0x01, 0x02, 0x11, { 0x10, 0x00 }), -- BATTERY_STATUS
+  } })
+  h:assert(office_child:initialize(), "an unserviced but real feature table initializes")
+  h:assert_eq(office_child:connection_status().connection_type, "wireless",
+    "unserviced receiver child keeps its connection capability")
 
   local windows_asleep_headset = h:open({ pid = 0x0aba,
     write_error = "HID write error: hidapi error:" })
