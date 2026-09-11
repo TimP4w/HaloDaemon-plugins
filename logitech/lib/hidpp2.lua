@@ -236,6 +236,14 @@ local function enumerate_features(dev, devnum)
   return features
 end
 
+-- A sleeping slot either answers nothing or lets the receiver answer with a
+-- zeroed record in place of the device; both read as "unavailable" here.
+local function device_unreachable(err)
+  local text = tostring(err)
+  return text:find("HID++ response did not arrive", 1, true) ~= nil
+      or text:find("HID%+%+ .- unavailable") ~= nil
+end
+
 local function enumerate_features_with_retry(dev, devnum)
   local last_error
   -- A cold direct device can take longer than one transport window to
@@ -246,11 +254,7 @@ local function enumerate_features_with_retry(dev, devnum)
     local ok, value = pcall(enumerate_features, dev, devnum)
     if ok then return value end
     last_error = value
-    local text = tostring(value)
-    if not text:find("HID++ response did not arrive", 1, true)
-        and not text:find("HID++ feature set unavailable", 1, true) then
-      error(value)
-    end
+    if not device_unreachable(value) then error(value) end
   end
   error(last_error or "HID++ feature discovery failed")
 end
@@ -1037,9 +1041,8 @@ callbacks.initialize = function(dev)
   local ok, result = pcall(describe_device, dev)
   if ok then return result end
   local text = tostring(result)
-  local unavailable = text:find("HID++ error", 1, true)
-      or text:find("HID++ response did not arrive", 1, true)
-      or text:find("HID++ feature set unavailable", 1, true)
+  local unavailable = device_unreachable(result)
+      or text:find("HID++ error", 1, true)
       or (is_long_only(dev.match.pid)
         and text:find("HID write error", 1, true))
   if not unavailable then

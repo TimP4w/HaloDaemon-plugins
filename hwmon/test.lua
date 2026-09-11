@@ -29,7 +29,7 @@ return function(h)
   local sensor = root:open_controller(controllers[1].index)
   h:assert(sensor:initialize(), "sensor child initializes")
   local sensors = sensor:get_sensors()
-  h:assert_eq(#sensors, 1, "missing temp2 ends enumeration")
+  h:assert_eq(#sensors, 1, "only the listed temperature input is reported")
   h:assert_eq(sensors[1].id, "hwmon_pci0000_00_0000_00_18_3_temp1", "stable sensor id")
   h:assert_eq(sensors[1].name, "nct6798 CPU", "reading is qualified by its chip")
   h:assert(sensors[1].value == 42, "millidegrees converted to Celsius")
@@ -65,6 +65,18 @@ return function(h)
   h:assert(read_only_sensors:initialize(), "aggregate device initializes")
   h:assert_eq(read_only_sensors:get_sensors()[1].name, "read-only hwmon temp1",
     "an unlabeled reading falls back to its index")
+
+  local sparse = h:open_integration({
+    hwmon = {
+      { stable_id = "gpu", name = "amdgpu", attributes = { temp2_input = "61000\n", temp2_label = "junction\n" } },
+    },
+  })
+  h:assert(sparse:initialize(), "sparse-index integration initializes")
+  local sparse_sensors = sparse:open_controller(0)
+  h:assert(sparse_sensors:initialize(), "aggregate device initializes")
+  local sparse_all = sparse_sensors:get_sensors()
+  h:assert_eq(#sparse_all, 1, "an unreadable lower index does not hide later inputs")
+  h:assert_eq(sparse_all[1].id, "hwmon_gpu_temp2", "sensor id keeps the sysfs index")
 
   local two_chips = h:open_integration({
     hwmon = {

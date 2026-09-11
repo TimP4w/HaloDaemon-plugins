@@ -50,7 +50,7 @@ Values are ASCII text, typically newline-terminated; the integration trims surro
 | --- | --- | --- |
 | Chip enumeration | `hwmon_list()` | Lists scoped chips with key, stable id, name, attributes, writable attributes |
 | Fan detection | attribute presence | Indexes 1 through 16: requires `fanN_input` present and `pwmN` writable; if `pwmN_enable` exists it must also be writable |
-| Temperature read | `tempN_input`, `tempN_label` | Walks every scoped chip; per chip, enumeration stops at the first missing temperature index, matching the former built-in driver |
+| Temperature read | `tempN_input`, `tempN_label` | Walks every scoped chip; per chip, every listed `tempN_input` is read and an unreadable one is skipped for that poll |
 | Fan status read | `fanN_input`, `pwmN` | RPM from `fanN_input`; duty from `pwmN` converted to percent |
 | Duty write | `pwmN_enable`, `pwmN` | Switches `pwmN_enable` to manual mode (`1`) first when necessary, then writes the raw duty |
 
@@ -76,7 +76,7 @@ Display names: readings are named `<chip> <label>` from `tempN_label`, falling b
 
 ## 4. Responses
 
-Reads return the attribute's text content; the integration trims whitespace and parses numbers with `tonumber`. A missing or unreadable attribute yields nil, which ends temperature enumeration or falls back to defaults (RPM and duty read as 0, enable defaults to manual). Writes have no response; failures surface as transport errors.
+Reads return the attribute's text content; the integration trims whitespace and parses numbers with `tonumber`. A missing or unreadable attribute yields nil (a sleeping sensor answers `ENODATA`, a removed device leaves a stale sysfs link), which skips that temperature reading or falls back to defaults (RPM and duty read as 0, enable defaults to manual). Writes have no response; failures surface as transport errors.
 
 ---
 
