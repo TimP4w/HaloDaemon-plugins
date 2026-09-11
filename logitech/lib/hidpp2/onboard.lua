@@ -60,7 +60,7 @@ local function with_sector_crc(data, size)
 end
 
 local function read_sector(dev, sector, size)
-  if size < 16 then error("invalid onboard profile sector size") end
+  if size < 16 then error("HID++ onboard profile description unavailable") end
   local chunks, offset = {}, 0
   while offset + 15 < size do
     local reply
@@ -134,7 +134,7 @@ end
 local function refresh_onboard(dev)
   local info = feature(dev, ONBOARD_PROFILES, 0x00)
   local size = ((info:byte(8) or 0) << 8) | (info:byte(9) or 0)
-  if size < 16 then error("invalid onboard profile sector size") end
+  if size < 16 then error("HID++ onboard profile description unavailable") end
   local mode = feature(dev, ONBOARD_PROFILES, 0x20):byte(1) or 1
   local directory_data = read_sector(dev, 0, size)
   local directory = parse_directory(directory_data)

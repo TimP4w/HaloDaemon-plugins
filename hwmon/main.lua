@@ -29,20 +29,31 @@ end
 -- Every chip's temperatures land on one aggregate device, so a reading carries
 -- its chip name; the bare `tempN_label` alone would not say which chip it came
 -- from. Ids keep the per-chip form so saved fan curves still resolve.
+local function temperature_indexes(attributes)
+  local indexes = {}
+  for _, attribute in ipairs(attributes) do
+    local index = attribute:match("^temp(%d+)_input$")
+    if index then indexes[#indexes + 1] = tonumber(index) end
+  end
+  table.sort(indexes)
+  return indexes
+end
+
+-- A sensor can be unreadable while its chip stays listed (a sleeping device),
+-- so one nil skips that reading instead of ending the chip's walk.
 local function chip_sensors(dev, chip, out)
-  local index = 1
-  while true do
+  for _, index in ipairs(temperature_indexes(chip.attributes)) do
     local raw = tonumber(trim(dev.transport:hwmon_read(chip.key, "temp" .. index .. "_input")))
-    if raw == nil then break end
-    local label = trim(dev.transport:hwmon_read(chip.key, "temp" .. index .. "_label")) or ""
-    out[#out + 1] = {
-      id = "hwmon_" .. chip.stable_id .. "_temp" .. index,
-      name = chip.name .. " " .. (label ~= "" and label or ("temp" .. index)),
-      value = raw / 1000,
-      unit = "celsius",
-      sensor_type = "temperature",
-    }
-    index = index + 1
+    if raw ~= nil then
+      local label = trim(dev.transport:hwmon_read(chip.key, "temp" .. index .. "_label")) or ""
+      out[#out + 1] = {
+        id = "hwmon_" .. chip.stable_id .. "_temp" .. index,
+        name = chip.name .. " " .. (label ~= "" and label or ("temp" .. index)),
+        value = raw / 1000,
+        unit = "celsius",
+        sensor_type = "temperature",
+      }
+    end
   end
 end
 

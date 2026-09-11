@@ -510,7 +510,8 @@ end
 
 Each record contains `key`, `stable_id`, `name`, and an `attributes` array.
 Keys are opaque and paths are never exposed. Reads return a string or `nil` for
-an unavailable supported attribute. Writes accept unsigned-integer strings and
+an unavailable supported attribute, including one the kernel cannot read right
+now; only a permission failure raises. Writes accept unsigned-integer strings and
 are restricted to available `pwmN` and `pwmN_enable` attributes. The host
 meters writes and restores original PWM-enable values during teardown.
 

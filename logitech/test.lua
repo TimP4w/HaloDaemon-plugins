@@ -609,6 +609,17 @@ return function(h)
   } })
   h:assert(not zeroed_ids_child:initialize(), "zeroed feature ids are rejected")
 
+  -- The receiver can still zero a later feature reply once the slot has
+  -- enumerated, such as the onboard-profile description; that is the same
+  -- sleeping device, rejected so a connection event re-initializes it.
+  local zeroed_onboard = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }), -- ONBOARD_PROFILES
+    report(0x11, 0xff, 0x01, 0x01, {}),             -- zeroed getDescription
+  } })
+  h:assert(not zeroed_onboard:initialize(), "a zeroed onboard description is rejected")
+
   -- A sleeping slot can bounce the ping request back instead of answering it;
   -- the echo carries protocol version zero, which no live device reports.
   local echoed_child = h:open({ key = "1", reads = {
