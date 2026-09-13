@@ -418,6 +418,10 @@ Byte inputs accept a Lua string or `halod.buffer`. Reads return Lua strings.
 Companion methods work only when `transports.hid.companion` is declared and the
 collection opens successfully.
 
+A HID write first discards input reports that arrived before it (the OS keeps a
+small per-handle ring and drops new reports once it is full), so read a request's
+reply before issuing the next write. Unsolicited reports still reach `event()`.
+
 TCP has no message framing. Its `read(size)` returns exactly `size` bytes or
 fails on timeout or EOF. Read a fixed header first, then read its stated payload
 length. HID padding is handled by the HID transport.
