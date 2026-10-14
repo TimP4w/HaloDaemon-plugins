@@ -492,6 +492,18 @@ local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
 local set_remap_active = remap.set_active
 local button_events = remap.events
+local function set_sensor_dpi(dev, dpi)
+  local index = dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]
+  if not index then error("ADJUSTABLE_DPI unavailable") end
+  local args, last_error = bytes(0, (dpi >> 8) & 0xff, dpi & 0xff), nil
+  for _ = 1, 3 do
+    local ok, err = pcall(request, dev, dev.hidpp.devnum, index, 0x30, args)
+    if ok then dev.current_dpi = dpi; return end
+    last_error = err
+    if not tostring(err):find("HID++ response did not arrive", 1, true) then error(err) end
+  end
+  error(last_error)
+end
 local callbacks = {
   event_source = function(event)
     local report = event.report
@@ -791,8 +803,7 @@ local callbacks = {
     return { button_events = buttons }
   end,
   set_dpi = function(dev, dpi)
-    local index = dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]
-    if not index then error("ADJUSTABLE_DPI unavailable") end
+    if not (dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]) then error("ADJUSTABLE_DPI unavailable") end
     if dev.onboard and onboard_mode(dev) ~= 2 then
       local state = refresh_onboard(dev)
       local sector = state.active_sector >= 0x0100 and (state.active_sector & 0xff)
@@ -813,9 +824,9 @@ local callbacks = {
       dev.current_dpi = dpi
       return
     end
-    request(dev, dev.hidpp.devnum, index, 0x30, bytes(0, (dpi >> 8) & 0xff, dpi & 0xff))
-    dev.current_dpi = dpi
+    set_sensor_dpi(dev, dpi)
   end,
+  set_dpi_transient = function(dev, dpi) set_sensor_dpi(dev, dpi) end,
   set_dpi_steps = function(dev, steps)
     if #steps == 0 then error("DPI steps list cannot be empty") end
     if not dev.onboard or onboard_mode(dev) == 2 then
