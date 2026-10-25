@@ -477,7 +477,6 @@ local set_onboard_mode = onboard.set_mode
 local with_sector_crc = onboard.with_sector_crc
 local read_sector = onboard.read_sector
 local write_sector = onboard.write_sector
-local sector_dpi_steps = onboard.sector_dpi_steps
 local patch_sector_dpi = onboard.patch_sector_dpi
 local refresh_onboard = onboard.refresh
 local onboard_status = onboard.status
@@ -802,31 +801,7 @@ local callbacks = {
     if not buttons then return nil end
     return { button_events = buttons }
   end,
-  set_dpi = function(dev, dpi)
-    if not (dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]) then error("ADJUSTABLE_DPI unavailable") end
-    if dev.onboard and onboard_mode(dev) ~= 2 then
-      local state = refresh_onboard(dev)
-      local sector = state.active_sector >= 0x0100 and (state.active_sector & 0xff)
-        or state.active_sector
-      if sector == 0 then error("no active onboard profile") end
-      local data = read_sector(dev, sector, state.sector_size)
-      local steps, selected = sector_dpi_steps(data), nil
-      for i, value in ipairs(steps) do if value == dpi then selected = i - 1; break end end
-      if selected == nil then
-        selected = math.min(data:byte(2) or 0, math.max(0, #steps - 1))
-        steps[selected + 1] = dpi
-      end
-      local patched = patch_sector_dpi(data, state.sector_size, steps)
-      local values = { patched:byte(1, state.sector_size) }
-      values[2] = selected
-      write_sector(dev, sector, with_sector_crc(bytes(table.unpack(values)), state.sector_size))
-      refresh_onboard(dev); restore_rgb_control(dev)
-      dev.current_dpi = dpi
-      return
-    end
-    set_sensor_dpi(dev, dpi)
-  end,
-  set_dpi_transient = function(dev, dpi) set_sensor_dpi(dev, dpi) end,
+  set_dpi = set_sensor_dpi,
   set_dpi_steps = function(dev, steps)
     if #steps == 0 then error("DPI steps list cannot be empty") end
     if not dev.onboard or onboard_mode(dev) == 2 then

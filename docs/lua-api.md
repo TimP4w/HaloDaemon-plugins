@@ -208,7 +208,7 @@ host values and are commonly zero-based.
 | Lighting division | `initialize` marks a channel `chainable = true` with a `max_leds`; `detect_accessories(dev) -> {{channel, accessory}, ...}`; composed chain frames arrive through the same `write_frame(dev, channel_id, bytes)` |
 | Chain accessory cooling | A chainable channel names the fan it shares via `cooling_channel`. The detected child drives it through the parent's ordinary `get_cooling_status(dev, channel_id)` / `set_cooling_duty(dev, channel_id, duty)`; the parent stops exposing that channel while the child holds it. |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
-| DPI | `set_dpi(dev, dpi)` selects a DPI the user chose (a device may persist it); optional `set_dpi_transient(dev, dpi)` applies a temporary DPI such as a momentary shift and must never persist it (falls back to `set_dpi`) |
+| DPI | `set_dpi(dev, dpi)` |
 | Choice | `set_choice(dev, key, selected)` |
 | Range | `set_range(dev, key, value)` |
 | Boolean | `get_booleans(dev) -> {{key, value}, ...}`; `set_boolean(dev, key, value)` |

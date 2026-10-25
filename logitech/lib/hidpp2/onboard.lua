@@ -188,7 +188,6 @@ return {
   with_sector_crc = with_sector_crc,
   read_sector = read_sector,
   write_sector = write_sector,
-  sector_dpi_steps = sector_dpi_steps,
   patch_sector_dpi = patch_sector_dpi,
   refresh = refresh_onboard,
   status = onboard_status,

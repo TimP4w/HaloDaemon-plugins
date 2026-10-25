@@ -138,8 +138,8 @@ return function(h)
   shift_dev:clear()
   shift_dev:set_dpi(1600)
   local shift_writes = shift_dev:writes()
-  h:assert_eq(#shift_writes, 1, "a momentary DPI never touches the onboard profile sector")
-  h:assert_eq(shift_writes[1].data[4], 0x31, "a momentary DPI is setSensorDpi")
+  h:assert_eq(#shift_writes, 1, "an onboard-mode DPI change never touches the profile sector")
+  h:assert_eq(shift_writes[1].data[4], 0x31, "an onboard-mode DPI change is setSensorDpi")
 
   local lossy_dpi_dev = h:open({ reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
