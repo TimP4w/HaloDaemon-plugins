@@ -136,6 +136,7 @@ local function patch_sector_dpi(data, size, steps)
 end
 
 local function refresh_onboard(dev)
+  local previous=dev.onboard
   local info = feature(dev, ONBOARD_PROFILES, 0x00)
   local size = ((info:byte(8) or 0) << 8) | (info:byte(9) or 0)
   if size < 16 then error("HID++ onboard profile description unavailable") end
@@ -161,6 +162,12 @@ local function refresh_onboard(dev)
   if active ~= 0 then
     dev.onboard.profile_data = read_sector(dev, active, size)
     dev.onboard.profile_steps = sector_dpi_steps(dev.onboard.profile_data)
+    dev.onboard.current_index = dev.onboard.profile_data:byte(2) or 0
+    if previous and previous.active_sector==active and dev.onboard.profile_steps[(previous.current_index or 0)+1] then
+      dev.onboard.current_index=previous.current_index or 0
+    elseif mode~=2 then
+      dev.current_dpi=dev.onboard.profile_steps[dev.onboard.current_index+1] or dev.current_dpi
+    end
   else
     dev.onboard.profile_steps = {}
   end
@@ -174,11 +181,11 @@ local function onboard_status(dev)
   -- cache is populated during initialize and explicitly refreshed after every
   -- profile mutation and relevant feature notification.
   local state = dev.onboard or refresh_onboard(dev)
-  local active_slot = state.mode == 2 and 0 or (state.active_sector & 0xff)
+  local active_slot = state.mode == 2 and 0 or state.active_sector
   local slots = {}
   for _, entry in ipairs(state.directory) do
-    local slot = entry.sector & 0xff
-    slots[#slots + 1] = { index = slot, enabled = entry.enabled,
+    local slot = entry.sector
+    slots[#slots + 1] = { index = slot, read_only = slot >= 0x0100, enabled = entry.enabled,
       active = active_slot ~= 0 and active_slot == slot,
       has_rom_default = slot > 0 and slot <= state.rom_count }
   end

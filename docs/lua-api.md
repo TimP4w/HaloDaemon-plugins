@@ -208,7 +208,7 @@ host values and are commonly zero-based.
 | Lighting division | `initialize` marks a channel `chainable = true` with a `max_leds`; `detect_accessories(dev) -> {{channel, accessory}, ...}`; composed chain frames arrive through the same `write_frame(dev, channel_id, bytes)` |
 | Chain accessory cooling | A chainable channel names the fan it shares via `cooling_channel`. The detected child drives it through the parent's ordinary `get_cooling_status(dev, channel_id)` / `set_cooling_duty(dev, channel_id, duty)`; the parent stops exposing that channel while the child holds it. |
 | LCD | `lcd_stream_frame(dev, rgba, width, height, rotation, raw, brightness)`; `set_image(dev, bytes, rotation)`; `lcd_set_brightness(dev, brightness, rotation)`; `lcd_set_rotation(dev, brightness, degrees)`; `lcd_reset(dev)` |
-| DPI | `set_dpi(dev, dpi)` |
+| DPI | `set_dpi(dev, dpi)`; `set_dpi_steps(dev, steps)`; optional `dpi_status(dev) -> dpi` |
 | Choice | `set_choice(dev, key, selected)` |
 | Range | `set_range(dev, key, value)` |
 | Boolean | `get_booleans(dev) -> {{key, value}, ...}`; `set_boolean(dev, key, value)` |
@@ -808,3 +808,19 @@ map. The recording harness covers HID, TCP, USB endpoint/control, and scoped
 hwmon traffic.
 Physical timing, interface claims, and firmware behavior still need hardware
 tests.
+
+### Persisted input and onboard identities
+
+The daemon persists host DPI stages independently of the current mode and
+restores them when host mode is selected. Onboard stage edits write the active
+writable profile through the plugin; changing modes alone does not copy host
+stages to flash. Button maps persist explicit Native overrides and restore after
+mode/DPI settings. Reset callbacks must succeed before the host commits defaults.
+
+Onboard profile indices and active_slot are 16-bit sector identities. A slot can
+return `read_only = true` (default false for older plugins); read-only slots can
+be selected but cannot be restored or enabled/disabled.
+
+Integration test fixtures accept `config = { key = "value" }` when opened, using
+the same declared field conversion as runtime config. `h:sleep_ms(ms)` permits
+bounded waits (maximum 5000 ms) for protocol freshness/rate-limit regressions.

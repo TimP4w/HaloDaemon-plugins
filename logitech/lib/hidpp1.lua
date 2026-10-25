@@ -14,10 +14,11 @@ return function(api)
     return api.dispatch(dev, devnum, sub, reg & 0xff, selector)
   end
 
-  local function write(dev, devnum, reg, args)
+  local function write(dev, devnum, reg, args, checked)
     args = args or ""
     local sub = 0x80 | ((reg >> 8) & 0x02)
     api.send(dev, api.packet(devnum, sub, reg & 0xff, args, false))
+    if checked then return api.dispatch(dev, devnum, sub, reg & 0xff) end
   end
 
   local function receiver_children(dev, product_name, device_type)

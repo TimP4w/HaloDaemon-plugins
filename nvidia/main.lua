@@ -50,12 +50,18 @@ return {
     local ok, result = pcall(command.run, "nvidia-smi", {
       "-i", uuid, "--query-gpu=temperature.gpu,temperature.memory", "--format=csv,noheader,nounits"
     })
-    if not ok or not result.success then
-      dev.sensor_cache, dev.sensor_cache_until = {}, now + 1000
-      return dev.sensor_cache
+    local core, memory
+    if ok and result.success then
+      local row=lines(result.stdout)[1] or ""
+      core,memory=row:match("^%s*([^,]+),%s*(.-)%s*$")
+    else
+      -- Older drivers can reject the entire combined query for an unsupported field.
+      local function query(field)
+        local success,response=pcall(command.run,"nvidia-smi",{"-i",uuid,"--query-gpu="..field,"--format=csv,noheader,nounits"})
+        return success and response.success and (lines(response.stdout)[1] or "") or nil
+      end
+      core,memory=query("temperature.gpu"),query("temperature.memory")
     end
-    local row = lines(result.stdout)[1] or ""
-    local core, memory = row:match("^%s*([^,]+),%s*(.-)%s*$")
     local sensors = {}
     local value = tonumber(core)
     if value then sensors[#sensors + 1] = { id = stable_id(uuid) .. "_temp1", name = "GPU Core", value = value, unit = "celsius", sensor_type = "temperature" } end

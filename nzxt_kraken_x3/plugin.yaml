@@ -11,7 +11,7 @@ translations:
     plugin.name: NZXT Kraken X53/X63/X73
     plugin.description: Serie NZXT Kraken X con RGB dell'anello e del logo, telemetria e ventole collegate.
 permissions: [hid]
-capabilities: [lighting, sensors, lighting_division]
+capabilities: [lighting, sensors, lighting_division, cooling]
 devices:
   - vendor: NZXT
     model: Kraken X

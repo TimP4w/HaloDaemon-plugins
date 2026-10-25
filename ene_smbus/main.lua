@@ -264,9 +264,6 @@ return {
       return true
     end) end)
     if not ok then
-      pcall(function()
-        dev.transport:batch(function(ops) set_direct_mode(ops, addr, true); return true end)
-      end)
       error(err)
     end
   end,
@@ -322,6 +319,7 @@ return {
           set_direct_mode(ops, addr, false)
           set_mode(ops, addr, MODE_SPECTRUM_CYCLE_WAVE, speed, 0)
         elseif state.id == "off" then
+          set_direct_mode(ops, addr, false)
           set_mode(ops, addr, MODE_OFF, SPEED.normal, 0)
         end
       elseif state.mode == "engine" or state.mode == "direct_effect" then

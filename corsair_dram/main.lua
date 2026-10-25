@@ -169,7 +169,9 @@ local function wait_ready(ops, addr)
   for _ = 1, 5 do
     local status = ops:read_byte_data(addr, REG_STATUS)
     if status ~= nil and (status & STATUS_BUSY_BIT) == 0 then return end
+    halod.sleep_ms(10)
   end
+  error("Corsair DRAM remained busy")
 end
 
 local function stream_and_commit(ops, addr, data, config_id)
@@ -177,6 +179,8 @@ local function stream_and_commit(ops, addr, data, config_id)
   if crc8(data) == ops:read_byte_data(addr, REG_GET_CHECKSUM) then
     ops:write_byte_data(addr, REG_WRITE_CONFIGURATION, config_id)
     wait_ready(ops, addr)
+  else
+    error("Corsair DRAM transfer checksum mismatch")
   end
 end
 
@@ -252,6 +256,7 @@ return {
       model = info.model,
       version = info.firmware_version,
       channels = { { id = "leds", name = "LEDs", topology = "linear", led_count = info.led_count } },
+      native_effects = NATIVE_EFFECTS,
     }
   end,
 
@@ -303,7 +308,7 @@ return {
     if not info then error("Corsair DRAM device used before initialize()") end
     local addr = dev.match.addr
     dev.transport:batch(function(ops)
-      set_colors_direct(ops, addr, build_direct_packet(info, colors))
+      write_colors(ops, addr, info, colors)
       return true
     end)
   end,

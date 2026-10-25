@@ -2,7 +2,10 @@
 -- SPDX-FileCopyrightText: LibreHardwareMonitor contributors
 -- NCT67xx register helpers derived from LibreHardwareMonitor's Nct677X.cs.
 
+local telemetry = halod.require("lib.telemetry")
+
 local function read_hwm(dev, reg)
+  if dev.info and dev.info.ec then return telemetry.ec_read(dev.transport, dev.match.hwm_base, reg) end
   return dev.transport:lpcio_hwm_read(dev.match.hwm_base, reg)
 end
 
@@ -167,12 +170,8 @@ return {
       local tach = dev.info.tach[channel(dev) + 1]
       if tach then
         local high, low = read_hwm(dev, tach), read_hwm(dev, tach + 1)
-        local count = dev.info.count16 and ((high << 8) | low) or ((high << 5) | (low & 0x1f))
-        if dev.info.count16 then
-          dev.last_rpm = (count > 0 and count < 0xffff) and math.floor(1350000 / count) or 0
-        else
-          dev.last_rpm = count > 0x14 and count < 0x1fff and math.floor(1350000 / count) or 0
-        end
+        local raw_rpm = dev.info.count16 or dev.info.ec or dev.variant == "NCT6776F" or dev.variant == "NCT610XD"
+        dev.last_rpm = telemetry.rpm(raw_rpm, high, low)
       end
     end
     return { id = "fan", name = dev.match.name or ("Fan " .. (channel(dev) + 1)), kind = "fan", controllable = not dev.info.ec, duty = dev.last_duty, rpm = dev.last_rpm or 0 }

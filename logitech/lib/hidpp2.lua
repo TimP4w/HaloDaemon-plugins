@@ -579,6 +579,7 @@ local callbacks = {
     -- actual devices. Direct devices retain 0xff.
     dev.receiver = not dev.match.key and RECEIVERS[dev.match.pid] or nil
     if dev.receiver then
+      v1_write(dev, DIRECT, 0x0000, bytes(0, 9, 0), true)
       return { ok = true, model = product_name(dev.match.pid), capabilities = { "pairing" } }
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
@@ -618,6 +619,9 @@ local callbacks = {
       local steps = #profile_steps > 0 and profile_steps or available
       dev.software_dpi_steps = { table.unpack(steps) }
       dev.available_dpis, dev.current_dpi = available, dpi
+      if dev.onboard then
+        for i,value in ipairs(profile_steps) do if value==dpi then dev.onboard.current_index=i-1; break end end
+      end
       result.dpi = { min = available[1] or dpi or 100,
         max = available[#available] or dpi or 25600, steps = steps,
         available_dpis = available,
@@ -806,8 +810,19 @@ local callbacks = {
     end
     if dev.onboard and report_devnum == dev.hidpp.devnum
         and sub == dev.hidpp.features[ONBOARD_PROFILES] then
-      local ok = pcall(refresh_onboard, dev)
-      if ok then return { state_changed = true } end
+      local address = event.report:byte(4)
+      if address == 0x10 then
+        local index = event.report:byte(5)
+        if index and dev.onboard.profile_steps[index + 1] then
+          dev.onboard.current_index = index
+          dev.current_dpi = dev.onboard.profile_steps[index + 1]
+          return { state_changed = true }
+        end
+      elseif address == 0 then
+        local state=refresh_onboard(dev)
+        dev.current_dpi=state.profile_steps[(state.current_index or 0)+1] or dev.current_dpi
+        return { state_changed = true }
+      end
     end
     local buttons = button_events(dev, event.report)
     if not buttons then return nil end
@@ -837,9 +852,7 @@ local callbacks = {
     local steps = onboard and dev.onboard.profile_steps or dev.software_dpi_steps
     if not steps or #steps == 0 then steps = dev.available_dpis end
     local current = dev.current_dpi
-    if onboard and dev.onboard.profile_data then
-      current = steps[(dev.onboard.profile_data:byte(2) or 0) + 1] or current
-    end
+
     return { min = dev.available_dpis[1] or current or 100,
       max = dev.available_dpis[#dev.available_dpis] or current or 25600,
       steps = steps, available_dpis = dev.available_dpis, onboard = onboard,
@@ -855,23 +868,25 @@ local callbacks = {
     if state.mode == 2 then error("device is in host mode; switch to onboard mode first") end
     local enabled = false
     for _, entry in ipairs(state.directory) do
-      if (entry.sector & 0xff) == slot then enabled = entry.enabled; break end
+      if entry.sector == slot then enabled = entry.enabled; break end
     end
     if not enabled then error("profile slot is not enabled") end
-    feature(dev, ONBOARD_PROFILES, 0x30, bytes(0, slot, 0))
+    feature(dev, ONBOARD_PROFILES, 0x30, bytes((slot >> 8) & 0xff, slot & 0xff))
     refresh_onboard(dev)
   end,
   restore_profile = function(dev, slot)
+    if slot >= 0x0100 then error("profile is read-only") end
     local state = refresh_onboard(dev)
     if slot > state.rom_count then error("profile has no factory default") end
     restore_profile(dev, slot)
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_profile_enabled = function(dev, slot, enabled)
+    if slot >= 0x0100 then error("profile is read-only") end
     local state = refresh_onboard(dev)
     local found = false
     for _, entry in ipairs(state.directory) do
-      if (entry.sector & 0xff) == slot then
+      if entry.sector == slot then
         if entry.enabled == enabled then return end
         found = true
         break
@@ -881,7 +896,7 @@ local callbacks = {
     local values = { state.directory_data:byte(1, state.sector_size) }
     found = false
     for _, entry in ipairs(state.directory) do
-      if (entry.sector & 0xff) == slot then
+      if entry.sector == slot then
         values[entry.offset + 2] = enabled and 1 or 0; found = true; break
       end
     end
@@ -916,7 +931,8 @@ local callbacks = {
     if key == "host_mode" then
       if not dev.onboard then error("ONBOARD_PROFILES unavailable") end
       set_onboard_mode(dev, value)
-      if value then remap.rearm(dev) end
+      if value then remap.rearm(dev)
+      else dev.current_dpi=dev.onboard.profile_steps[(dev.onboard.current_index or 0)+1] or dev.current_dpi end
     elseif key == "hires_invert" or key == "hires_resolution" or key == "hires_diversion" then
       local current = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
       local mask = key == "hires_invert" and 0x04 or key == "hires_resolution" and 0x02 or 0x01
@@ -1045,7 +1061,11 @@ callbacks.initialize = function(dev)
   if ok then return result end
   local text = tostring(result)
   local unavailable = device_unreachable(result)
-      or text:find("HID++ error", 1, true)
+      or (text:find("from the receiver", 1, true)
+        and (text:find("HID++ error 0x04", 1, true)
+          or text:find("HID++ error 0x08", 1, true)
+          or text:find("HID++ error 0x09", 1, true)))
+      or (is_long_only(dev.match.pid) and text:find("HID++ error 0x05", 1, true))
       or (is_long_only(dev.match.pid)
         and text:find("HID write error", 1, true))
   if not unavailable then

@@ -2,7 +2,10 @@
 -- Stock LCD widgets. Widget policy and composition live here; Rust exposes
 -- only bounded drawing primitives and host-owned data/font access.
 
+local live_data=halod.require("lib.live_data")
+
 local date = halod.require("lib.date")
+local levels = halod.require("lib.levels")
 
 local function color(value, fallback)
   return value or fallback
@@ -15,8 +18,7 @@ local MUTED = { r = 148, g = 163, b = 184 }
 
 local function data_value(ctx, key)
   local snapshot = ctx:data(key)
-  if snapshot.status == "unavailable" then return nil, snapshot end
-  return snapshot.value, snapshot
+  return live_data.value(snapshot), snapshot
 end
 
 local function sensor_record(ctx, id)
@@ -112,7 +114,7 @@ local function render_spectrum(canvas, w, h, params, ctx)
   for i = 0, count - 1 do
     local src = math.floor(i * math.max(1, available) / count)
     if params.mirror then src = math.floor(math.abs(i - (count - 1) / 2) * math.max(1, available) * 2 / count) end
-    local level = available > 0 and (audio.bands[src + 1] or 0) or (0.22 + 0.58 * math.abs(math.sin(i * 0.71)))
+    local level = levels.spectrum(available > 0 and audio.bands[src + 1] or nil, i, ctx:is_preview())
     local x = params.flip_h and (count - 1 - i) or i
     local bh = math.max(1, h * 0.82 * math.max(0, math.min(1, level)))
     local y = params.flip_v and h * 0.09 or h * 0.91 - bh
@@ -132,7 +134,8 @@ local function render_gauge(canvas, w, h, params, ctx)
     local audio = ctx:audio()
     level = audio and audio.level
   end
-  level = math.max(0, math.min(1, level or 0.62))
+  local available = levels.gauge(level, ctx:is_preview())
+  level = available or 0
   local fill = color(params.fill, PRIMARY)
   local track = color(params.track, { r = 30, g = 41, b = 59 })
   local style = params.style or "ring"
@@ -159,6 +162,7 @@ local function render_gauge(canvas, w, h, params, ctx)
     ctx:draw_arc(canvas, w / 2, h / 2, r, thickness, 0, 360, 0, track)
     if level > 0 then ctx:draw_arc(canvas, w / 2, h / 2, r, thickness, 0, 360 * level, 0, fill) end
   end
+  if available == nil then center_text(canvas, w, h, "--", math.min(w, h) * 0.2, ctx, MUTED) end
 end
 
 local function render_now_playing(canvas, w, h, params, ctx)

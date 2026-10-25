@@ -220,6 +220,15 @@ return function(h)
     report(0x11, 0xff, 1, 0x51, { 1, 0, 0, 0x90, 1, 0x20, 3 }),
   } })
   h:assert(rom_directory_dev:initialize(), "blank RAM directory falls back to ROM headers")
+  local rom_state=rom_directory_dev:serialize()
+  for _,cap in ipairs(rom_state.capabilities) do
+    if cap.kind=="onboard_profiles" then
+      h:assert_eq(cap.data.active_slot,0x101,"active ROM sector retains its full ID")
+      h:assert_eq(cap.data.slots[1].index,0x101,"ROM slot retains its full ID")
+      h:assert(cap.data.slots[1].read_only,"ROM slot is read-only")
+    end
+  end
+  h:assert(not pcall(function() rom_directory_dev:set_profile_enabled(0x101,false) end),"ROM enable mutation is rejected")
   local rom_writes = rom_directory_dev:writes()
   h:assert_eq(rom_writes[7].data[5], 1, "directory fallback reads ROM bank 0x0100")
   h:assert_eq(rom_writes[9].data[5], 1, "ROM profile remains addressed in the ROM bank")
@@ -246,7 +255,7 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x21, { 2 }),            -- host mode
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
-    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x51, { 1,0,0,0x90,1,0x20,3 }),
     report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
     report(0x11, 0xff, 0x02, 0x31, {}),
@@ -267,17 +276,24 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x21, { 1 }),            -- onboard mode
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
-    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x51, { 1,0,0,0x90,1,0x20,3 }),
     report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
     report(0x11, 0xff, 0x02, 0x31, {}),
   } })
   h:assert(shift_dev:initialize(), "onboard-mode shift fixture initializes")
   shift_dev:clear()
-  shift_dev:set_dpi(1600)
+  shift_dev:set_dpi(400)
   local shift_writes = shift_dev:writes()
   h:assert_eq(#shift_writes, 1, "an onboard-mode DPI change never touches the profile sector")
   h:assert_eq(shift_writes[1].data[4], 0x31, "an onboard-mode DPI change is setSensorDpi")
+  h:assert_eq(shift_dev:dpi_status().current_dpi,400,"momentary onboard DPI reports the sensor value")
+  shift_dev:clear()
+  shift_dev:queue_event(report(0x11,0xff,1,0x10,{1}))
+  shift_dev:pump_events()
+  h:assert_eq(shift_dev:dpi_status().current_dpi,800,"physical DPI event updates the current sensor value")
+  h:assert_eq(shift_dev:dpi_status().current_index,1,"physical DPI event updates the selected stage")
+  h:assert_eq(#shift_dev:writes(),0,"physical DPI notification uses its payload without USB reads")
 
   local lossy_dpi_dev = h:open({ reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
@@ -402,12 +418,15 @@ return function(h)
   -- A LIGHTSPEED receiver uses HID++ 1.0 register reads at devnum 0xff to
   -- enumerate paired slots. The child receives slot 1 as its opaque key.
   local receiver = h:open({ pid = 0xc547, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0, 0, 0x12, 0x34 }), -- stale bank reply
     report(0x10, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
     report(0x10, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
   } })
   h:assert(receiver:initialize(), "receiver root initializes")
+  h:assert_eq(receiver:writes()[1].data,{0x10,0xff,0x80,0,0,9,0},"receiver enables wireless and software notifications")
+  receiver:clear()
   local children = receiver:enumerate_controllers()
   h:assert_eq(#children, 1, "receiver enumerates one paired slot")
   h:assert_eq(children[1].id, "logitech_ABCDEF12", "receiver child has stable serial id")
@@ -422,6 +441,7 @@ return function(h)
   -- families, not a special case tied to the C547 LIGHTSPEED PID. The pairing
   -- record's kind nibble identifies devices unknown to the small WPID catalog.
   local unifying = h:open({ pid = 0xc52b, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x12, 0x34, 0, 0, 0x02 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0x12, 0x34, 0x56, 0x78 }),
@@ -705,6 +725,7 @@ return function(h)
   -- records answer long; dispatch matches each reply by (devnum, sub) whatever
   -- collection carried it, so enumeration works across the split.
   local mixed_rx = h:open({ pid = 0xc547, companion = true, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
@@ -718,12 +739,14 @@ return function(h)
   -- while the mouse remains paired in slot 2. Enumeration must continue so
   -- the mouse stays registered and pairing_status remains available.
   local sparse_rx = h:open({ pid = 0xc547, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x10, 0xff, 0x8f, 0x83, { 0xb5, 0x09 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x21, 0, 0, 0x40, 0x99 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x31, 0x12, 0x34, 0x56, 0x78 }),
   } })
   h:assert(sparse_rx:initialize(), "sparse receiver root initializes")
+  sparse_rx:clear()
   local sparse_children = sparse_rx:enumerate_controllers()
   h:assert_eq(#sparse_children, 1, "empty slot does not hide a later paired mouse")
   h:assert_eq(sparse_children[1].id, "logitech_12345678", "later-slot mouse keeps its identity")
@@ -736,7 +759,7 @@ return function(h)
   -- Pairing-lock notifications are HID++ 1.0 packets. Byte 4 is the lock
   -- state, not a HID++ 2.0 software id: an open notification must reach Lua,
   -- and a clean close must both finish the UI state and rescan receiver slots.
-  local pairing_rx = h:open({ pid = 0xc547 })
+  local pairing_rx = h:open({ pid = 0xc547, reads = {report(0x10,0xff,0x80,0,{0,9,0})} })
   h:assert(pairing_rx:initialize(), "pairing event receiver initializes")
   pairing_rx:queue_event(report(0x10, 0xff, 0x4a, 0x01, { 0x00 }))
   local pairing_open = pairing_rx:pump_events()

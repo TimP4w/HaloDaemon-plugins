@@ -73,11 +73,19 @@ end
 
 -- Read the one reply packet expected for a protocol-v3 request.
 local function recv_payload(dev, want_id)
-  local _, pkt_id, size = recv_header(dev)
-  if pkt_id ~= want_id then
-    error("openrgb: unexpected reply " .. pkt_id .. ", wanted " .. want_id)
+  for _ = 1, 256 do
+    local _, pkt_id, size = recv_header(dev)
+    local payload = size > 0 and dev.transport:read(size) or ""
+    if pkt_id == 100 then
+      custom_mode_sent = {}
+      controller_colors = {}
+    elseif pkt_id == want_id then
+      return payload
+    else
+      error("openrgb: unexpected reply " .. pkt_id .. ", wanted " .. want_id)
+    end
   end
-  return (size > 0) and dev.transport:read(size) or ""
+  error("openrgb: too many notifications before a response")
 end
 
 -- Several client->server payloads repeat their own byte length as a leading

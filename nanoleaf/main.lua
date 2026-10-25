@@ -5,7 +5,9 @@
 -- for per-panel streaming (HTTP effect writes as fallback). See docs/protocol.md.
 
 local function http_origin(host, port)
-  return "http://" .. (host or "") .. ":" .. (port or "")
+  host = host or ""
+  if host:sub(1, 1) ~= "[" and host:find(":", 1, true) then host = "[" .. host .. "]" end
+  return "http://" .. host .. ":" .. tostring(port or 16021)
 end
 
 local function base()
@@ -15,6 +17,13 @@ end
 local function api(suffix)
   -- An unset token yields an unauthenticated path the controller rejects.
   return "/api/v1/" .. (halod.config.token or "") .. suffix
+end
+
+local function require_success(response)
+  if response.status < 200 or response.status >= 300 then
+    error("nanoleaf: request failed with HTTP " .. tostring(response.status))
+  end
+  return response
 end
 
 local function get(path)
@@ -35,25 +44,26 @@ local function rgb_to_hsv(color)
   return math.floor(hue + 0.5), saturation, math.floor(hi * 100 + 0.5)
 end
 
-local last_color, next_color_write_ms = nil, 0
+local last_color, next_color_write_ms, last_color_ms = nil, 0, 0
 
 local function set_color(color)
   local now = halod.monotonic_ms()
   local key = string.format("%d:%d:%d", color.r, color.g, color.b)
-  if key == last_color or now < next_color_write_ms then return end
-  next_color_write_ms = now + 100
+  if (key == last_color and now - last_color_ms < 2000) or now < next_color_write_ms then return end
   local hue, saturation, brightness = rgb_to_hsv(color)
   local response = halod.http:request({
     method = "PUT", origin = base(), path = api("/state"),
     headers = { ["Content-Type"] = "application/json" },
     body = string.format('{"on":{"value":true},"hue":{"value":%d},"sat":{"value":%d},"brightness":{"value":%d}}', hue, saturation, brightness),
   })
-  if response.status >= 200 and response.status < 300 then last_color = key end
+  require_success(response)
+  last_color, last_color_ms = key, now
+  next_color_write_ms = now + 100
 end
 
 -- Firmware panel ids in declared LED order; empty on the single-LED fallback.
 local panel_ids = {}
-local last_frame, next_frame_write_ms = nil, 0
+local last_frame, next_frame_write_ms, last_frame_ms = nil, 0, 0
 
 -- Nanoleaf panel y increases upward; flip it so geometry matches the UI axis.
 local function panel_topology(layout)
@@ -93,20 +103,21 @@ local function push_http_static(colors)
     local c = colors[i] or { r = 0, g = 0, b = 0 }
     anim[#anim + 1] = string.format("%d 1 %d %d %d 0 1", panel_ids[i], c.r or 0, c.g or 0, c.b or 0)
   end
-  halod.http:request({
+  require_success(halod.http:request({
     method = "PUT", origin = base(), path = api("/effects"),
     headers = { ["Content-Type"] = "application/json" },
     body = string.format(
       '{"write":{"command":"display","animType":"static","animData":"%s","loop":false,"palette":[]}}',
       table.concat(anim, " ")),
-  })
+  }))
 end
 
 -- Arm v2 external control once so the controller consumes UDP stream datagrams.
 local ext_control_ready = false
+local ext_control_until = 0
 local next_ext_control_ms = 0
 local function ensure_ext_control()
-  if ext_control_ready then return true end
+  if ext_control_ready and halod.monotonic_ms() < ext_control_until then return true end
   local now = halod.monotonic_ms()
   if now < next_ext_control_ms then return false end
   next_ext_control_ms = now + 1000
@@ -116,6 +127,7 @@ local function ensure_ext_control()
     body = '{"write":{"command":"display","animType":"extControl","extControlVersion":"v2"}}',
   })
   ext_control_ready = r.status >= 200 and r.status < 300
+  ext_control_until = now + 10000
   return ext_control_ready
 end
 
@@ -132,7 +144,9 @@ end
 -- Returns false when UDP or ext-control is unavailable, so callers fall back.
 local function push_udp(colors)
   if not halod.udp or not ensure_ext_control() then return false end
-  return pcall(function() halod.udp:send({ bytes = panel_datagram(colors) }) end)
+  local ok = pcall(function() halod.udp:send({ bytes = panel_datagram(colors) }) end)
+  if not ok then ext_control_ready = false end
+  return ok
 end
 
 -- One-shot apply: UDP, else HTTP.
@@ -143,20 +157,24 @@ end
 -- Engine frames: UDP streams every distinct frame; HTTP fallback is rate-limited.
 local function stream_panels(colors)
   local key = frame_key(colors)
-  if key == last_frame then return end
-  if halod.udp and push_udp(colors) then last_frame = key; return end
   local now = halod.monotonic_ms()
+  if key == last_frame and now - last_frame_ms < 2000 then return end
+  if halod.udp and push_udp(colors) then last_frame, last_frame_ms = key, now; return end
   if now < next_frame_write_ms then return end
   next_frame_write_ms = now + 100
   push_http_static(colors)
-  last_frame = key
+  last_frame, last_frame_ms = key, now
 end
 
 return {
   discover = function(context)
     local found = {}
     for _, service in ipairs(context.mdns or {}) do
-      local address = service.addresses and service.addresses[1]
+      local address
+      for _, candidate in ipairs(service.addresses or {}) do
+        if not address or candidate:match("^%d+%.%d+%.%d+%.%d+$") then address = candidate end
+        if candidate:match("^%d+%.%d+%.%d+%.%d+$") then break end
+      end
       if address then
         found[#found + 1] = {
           id = service.id,
@@ -168,10 +186,12 @@ return {
     for _, service in ipairs(context.ssdp or {}) do
       local authority = (service.location or ""):match("^https?://([^/]+)")
       if authority then
+        local host, port = authority:match("^%[([^%]]+)%]:?(%d*)$")
+        if not host then host, port = authority:match("^([^:]+):?(%d*)$") end
         found[#found + 1] = {
           id = service.id,
           name = "Nanoleaf at " .. authority,
-          values = { host = authority:match("^([^:]+)"), http_port = authority:match(":(%d+)") or "16021" },
+          values = { host = host, http_port = port ~= "" and port or "16021" },
         }
       end
     end

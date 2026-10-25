@@ -20,6 +20,8 @@
 -- 256-entry rainbow palette, built once at load time so plasma's render loop
 -- never computes a hue conversion per pixel — 120000 pixels/frame in
 -- interpreted Lua adds up fast otherwise.
+local live_data=halod.require("lib.live_data")
+
 local PALETTE = {}
 for i = 0, 255 do
   PALETTE[i] = { halod.hsv(i / 255.0, 1.0, 1.0) }
@@ -51,11 +53,12 @@ end
 
 local function sensor_value(ctx, id)
   local catalog = ctx:data("host.sensors.catalog")
-  if catalog.status == "unavailable" then return nil end
+  if catalog.status ~= "fresh" then return nil end
   for _, item in ipairs(catalog.value) do
     if item.id == id then
       local snapshot = ctx:data(item.key)
-      if snapshot.status ~= "unavailable" then return snapshot.value.value end
+      local value=live_data.value(snapshot)
+      if value then return value.value end
       return nil
     end
   end
