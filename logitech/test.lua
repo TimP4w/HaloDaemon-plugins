@@ -225,6 +225,7 @@ return function(h)
       report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
       report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
       report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+      report(0x11, 0xff, 0x02, 0x11, {}), -- initial button reporting enable
     } })
   end
   local onboard_mode_dev = onboard_remap_dev(1)
@@ -232,6 +233,29 @@ return function(h)
   local onboard_remap = onboard_mode_dev:key_remap_status()
   h:assert(onboard_remap.requires_host_mode, "onboard mouse requires host mode for remap")
   h:assert(not onboard_remap.host_mode_active, "onboard-mode mouse reports host mode inactive")
+  onboard_mode_dev:set_button_mapping({ cid = 2,
+    base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } })
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x02, 0x11, {}))
+  onboard_mode_dev:set_boolean("host_mode", true)
+  local restored_writes = onboard_mode_dev:writes()
+  h:assert_eq(#restored_writes, 2, "host-mode restore re-arms cached button overrides")
+  h:assert_eq(restored_writes[1].data[3], 1, "restore switches onboard mode first")
+  h:assert_eq(restored_writes[2].data[3], 2, "restore then enables button reporting again")
+  h:assert_eq(restored_writes[2].data[5], 1, "button reporting is enabled")
+
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  local rearm_ok = pcall(function() onboard_mode_dev:set_boolean("host_mode", true) end)
+  h:assert(not rearm_ok, "a failed button re-arm fails mode restoration")
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x02, 0x11, {}))
+  onboard_mode_dev:set_boolean("host_mode", true)
+  h:assert_eq(#onboard_mode_dev:writes(), 2,
+    "retry retains desired mappings and re-arms reporting even when already in host mode")
+
   local host_mode_dev = onboard_remap_dev(2)
   h:assert(host_mode_dev:initialize(), "host-mode mouse remap fixture initializes")
   h:assert(host_mode_dev:key_remap_status().host_mode_active,

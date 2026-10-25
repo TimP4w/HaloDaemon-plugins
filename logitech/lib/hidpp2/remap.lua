@@ -78,6 +78,20 @@ local function set_remap_active(dev, cid, enabled)
   end
 end
 
+local function rearm(dev)
+  local state = dev.remap
+  if not state then return end
+  local active = state.active
+  state.active, state.previous = {}, {}
+  for cid in pairs(active) do
+    local ok, err = pcall(set_remap_active, dev, cid, true)
+    if not ok then
+      state.active = active
+      error(err)
+    end
+  end
+end
+
 local function button_events(dev, packet_in)
   local remap = dev.remap
   if not remap or not remap.backend or #packet_in < 4 then return nil end
@@ -114,6 +128,7 @@ return {
   mapping_is_native = mapping_is_native,
   buttons = remap_buttons,
   set_active = set_remap_active,
+  rearm = rearm,
   events = button_events,
 }
 end

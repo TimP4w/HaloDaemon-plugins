@@ -900,6 +900,7 @@ local callbacks = {
     if key == "host_mode" then
       if not dev.onboard then error("ONBOARD_PROFILES unavailable") end
       set_onboard_mode(dev, value)
+      if value then remap.rearm(dev) end
     elseif key == "hires_invert" or key == "hires_resolution" or key == "hires_diversion" then
       local current = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
       local mask = key == "hires_invert" and 0x04 or key == "hires_resolution" and 0x02 or 0x01
