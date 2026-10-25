@@ -81,6 +81,7 @@ local function duty_packet(h0, h1, h2, h3, duty, min_duty)
   for i = 0, PROFILE_LEN - 1 do
     b:set_u8(4 + i, duty)
   end
+  b:set_u8(4 + PROFILE_LEN - 1, 100) -- last point is always 100% as failsafe
   return b
 end
 
@@ -458,16 +459,16 @@ return {
         duty=(dev.status or {}).pump_duty or 0, rpm=(dev.status or {}).pump_rpm }
     end
     if id == "fan1" then
-      return { id=id, name="Radiator fan", kind="fan", controllable=((dev.status or {}).fan_rpm or 0) > 0,
+      return { id=id, name="Radiator fan", kind="fan", controllable=true,
         duty=(dev.status or {}).fan_duty or 0, rpm=(dev.status or {}).fan_rpm }
     end
     error("unknown cooling channel: " .. tostring(id))
   end,
   set_cooling_duty = function(dev, id, duty)
     if id == "pump" then
-      dev.transport:write(duty_packet(0x72, 0x01, 0x00, 0x00, duty, 20))
+      dev.transport:write(duty_packet(0x72, 0x01, dev.match.pid == 0x3008 and 0 or 1, 0x00, duty, 20))
     elseif id == "fan1" then
-      dev.transport:write(duty_packet(0x72, 0x02, 0x01, 0x01, duty, 0))
+      dev.transport:write(duty_packet(0x72, 0x02, dev.match.pid == 0x3008 and 0 or 1, dev.match.pid == 0x3008 and 0 or 1, duty, 0))
     else error("unknown cooling channel: " .. tostring(id)) end
   end,
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
@@ -481,6 +482,7 @@ return {
           and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
         local frac = r:get_u8(16)
         if frac > 9 then frac = 9 end
+        dev.last_status_ms = halod.monotonic_ms()
         status = {
           liquid_temp = r:get_u8(15) + frac / 10.0,
           pump_rpm = r:get_u16_le(17),
@@ -491,7 +493,7 @@ return {
         status.cooling = {
           { id="pump", name="Pump", kind="pump", controllable=true,
             duty=status.pump_duty, rpm=status.pump_rpm },
-          { id="fan1", name="Radiator fan", kind="fan", controllable=status.fan_rpm > 0,
+          { id="fan1", name="Radiator fan", kind="fan", controllable=true,
             duty=status.fan_duty, rpm=status.fan_rpm },
         }
       end
@@ -501,6 +503,7 @@ return {
 
   get_sensors = function(dev)
     local s = dev.status or {}
+    if s.liquid_temp == nil or halod.monotonic_ms() - (dev.last_status_ms or 0) > 5000 then return {} end
     return {
       { id = "liquid", name = "Liquid Temperature", value = s.liquid_temp or 0,
         unit = "celsius", sensor_type = "temperature" },

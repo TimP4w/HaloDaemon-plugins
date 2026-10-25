@@ -3,10 +3,9 @@
 --
 -- NZXT Kraken X53/X63/X73 plugin for HaloDaemon — the older X-series wire
 -- protocol, distinct from (and simpler than) the Z/Elite family in
--- `nzxt_kraken.lua`: an 8-LED ring plus a single logo LED, no LCD, and no
--- software pump/fan speed control.
+-- `nzxt_kraken.lua`: an 8-LED ring plus a single logo LED, no LCD, and pump speed control.
 --
--- Protocol reference: nzxt_kraken_x3/docs/protocol.md and liquidctl's kraken2 driver.
+-- Protocol reference: nzxt_kraken_x3/docs/protocol.md and liquidctl's kraken3 driver.
 -- Verified offsets: status report 0x75 (shared with Z/Elite); RGB `0x22 0x10`
 -- per-channel data packets (60 bytes/packet, two packets for 8 LEDs) + `0x22
 -- 0xA0` commit; logo `0x2A 0x04`.
@@ -95,9 +94,10 @@ return {
       channels = {
         { id="ring", name="Ring", topology="ring", led_count=8 },
         { id="logo", name="Logo", topology="linear", led_count=1 },
-        -- No `cooling_channel`: this wire family exposes no software fan control.
+        -- This accessory header carries lighting only.
         { id="0", name="Aer/F Fan", chainable=true, max_leds=40 },
       },
+      cooling = {channels={{id="pump",name="Pump",min_duty=20,max_duty=100,can_stop=false}}},
       accessories = accessories,
     }
   end,
@@ -134,8 +134,20 @@ return {
     end
   end,
 
-  -- Status stream (0x75): liquid temp only — pump/fan duty aren't
-  -- software-controllable on this wire family, so nothing else is surfaced.
+  get_cooling_status = function(dev,id)
+    if id~="pump" then error("unknown cooling channel: "..tostring(id)) end
+    local s=dev.status or {}
+    return {id="pump",name="Pump",controllable=true,min_duty=20,max_duty=100,can_stop=false,duty=s.pump_duty or 0,rpm=s.pump_rpm}
+  end,
+  set_cooling_duty = function(dev,id,duty)
+    if id~="pump" then error("unknown cooling channel: "..tostring(id)) end
+    local b=halod.buffer(44)
+    b:set_bytes(0,string.char(0x72,1,0,0))
+    for i=0,38 do b:set_u8(4+i,math.floor(math.max(20,math.min(100,duty)))) end
+    b:set_u8(43,100)
+    dev.transport:write(b)
+  end,
+  -- Status stream (0x75): liquid temperature and pump speed/duty.
   read_status = function(dev)
     local status = dev.status
     for _ = 1, 64 do
@@ -146,7 +158,9 @@ return {
           and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
         local frac = r:get_u8(16)
         if frac > 9 then frac = 9 end
-        status = { liquid_temp = r:get_u8(15) + frac / 10.0 }
+        dev.last_status_ms = halod.monotonic_ms()
+        status = { liquid_temp = r:get_u8(15) + frac / 10.0, pump_rpm=r:get_u16_le(17),pump_duty=r:get_u8(19) }
+        status.cooling={{id="pump",name="Pump",controllable=true,min_duty=20,max_duty=100,can_stop=false,duty=status.pump_duty,rpm=status.pump_rpm}}
       end
     end
     return status
@@ -154,6 +168,7 @@ return {
 
   get_sensors = function(dev)
     local s = dev.status or {}
+    if s.liquid_temp == nil or halod.monotonic_ms() - (dev.last_status_ms or 0) > 5000 then return {} end
     return {
       { id = "liquid", name = "Liquid Temperature", value = s.liquid_temp or 0,
         unit = "celsius", sensor_type = "temperature" },

@@ -50,6 +50,35 @@ return function(h)
   h:assert_eq(batteries[1].level, 73, "unified battery percent")
   h:assert_eq(batteries[1].status, "charging", "unified battery charging state")
 
+  local approximate_battery_dev = h:open({ reads = {
+    report(0x10, 0xff, 0, 1, { 2 }),
+    report(0x11, 0xff, 2, 1, { 1 }),
+    report(0x11, 0xff, 2, 0x11, { 0x10, 4 }),
+    report(0x11, 0xff, 1, 0x11, { 0, 4, 6 }),
+  } })
+  h:assert(approximate_battery_dev:initialize(), "approximate battery fixture initializes")
+  local approximate_battery = approximate_battery_dev:get_batteries()[1]
+  h:assert_eq(approximate_battery.level, 50, "unified battery falls back to its coarse level")
+  h:assert_eq(approximate_battery.status, "unknown", "a battery thermal error is not reported as charging")
+
+  local function voltage_battery(code, flags)
+    local dev = h:open({ reads = {
+      report(0x10, 0xff, 0, 1, { 2 }),
+      report(0x11, 0xff, 2, 1, { 1 }),
+      report(0x11, 0xff, 2, 0x11, { code >> 8, code & 0xff }),
+      report(0x11, 0xff, 1, 1, { 0x0f, 0xe3, flags }), -- 4067 mV
+    } })
+    h:assert(dev:initialize(), "voltage battery fixture initializes")
+    return dev:get_batteries()
+  end
+  h:assert_eq(voltage_battery(0x1001, 0x80)[1].status, "charging",
+    "battery voltage uses the charging flag instead of a magic status byte")
+  h:assert_eq(voltage_battery(0x1001, 0)[1].status, "discharging",
+    "battery voltage without charging flag discharges")
+  h:assert_eq(voltage_battery(0x1f20, 3)[1].status, "charging", "ADC charging bit is decoded")
+  h:assert_eq(voltage_battery(0x1f20, 1)[1].status, "discharging", "ADC discharging bit is decoded")
+  h:assert_eq(#voltage_battery(0x1f20, 0), 0, "invalid ADC measurement does not publish a battery")
+
   -- ADJUSTABLE_DPI has an explicit list followed by a current-value query.
   -- Setting DPI must use function 0x30 and preserve sensor 0 in byte 5.
   local dpi_dev = h:open({ reads = {
@@ -76,6 +105,18 @@ return function(h)
   h:assert_eq(dpi_status.available_dpis[1], 400, "DPI list keeps its first exact point")
   h:assert_eq(dpi_status.available_dpis[2], 800, "DPI list keeps its second exact point")
 
+  local default_dpi_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x22, 0x01 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0xff, 0x01, { 0x11, 0x02 }), -- stale get-list error
+    report(0x11, 0xff, 0x01, 0x21, { 0, 0, 0, 0x03, 0x20 }),
+  } })
+  h:assert(default_dpi_dev:initialize(), "stale errors from another function do not abort DPI reads")
+  h:assert_eq(default_dpi_dev:dpi_status().current_dpi, 800,
+    "zero current DPI uses the firmware default resolution")
+
   -- Full daemon state snapshots run every 250 ms. Onboard status must use the
   -- state populated during initialization instead of re-reading the directory
   -- and active-profile flash sectors on every serialization pass.
@@ -83,7 +124,7 @@ return function(h)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 1 }),
     report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
-    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 0, 2, 0, 16 }),
     report(0x11, 0xff, 0x01, 0x21, { 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
@@ -96,6 +137,112 @@ return function(h)
   h:assert_eq(#onboard_dev:writes(), 0,
     "state serialization serves cached onboard profiles without HID writes")
 
+  local function onboard_reads(dev, active, enabled)
+    local replies = {
+      report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 5, 2, 0, 16 }),
+      report(0x11, 0xff, 0x01, 0x21, { 1 }),
+      report(0x11, 0xff, 0x01, 0x51, { 0, 1, enabled and 1 or 0, 0, 0xff, 0xff }),
+      report(0x11, 0xff, 0x01, 0x41, { active >> 8, active & 0xff }),
+      report(0x11, 0xff, 0x01, 0x51, { 1, 0, 0, 0x90, 1, 0x20, 3 }),
+    }
+    for _, reply in ipairs(replies) do dev:queue_read(reply) end
+  end
+  local flash_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x22, 0x01 }),
+  } })
+  onboard_reads(flash_dev, 1, false)
+  flash_dev:queue_read(report(0x11, 0xff, 0x02, 0x11, { 0, 1, 0x90, 3, 0x20, 0, 0 }))
+  flash_dev:queue_read(report(0x11, 0xff, 0x02, 0x21, { 0, 3, 0x20 }))
+  h:assert(flash_dev:initialize(), "flash editing fixture initializes")
+  flash_dev:clear()
+  onboard_reads(flash_dev, 0x0101, false)
+  h:assert(not pcall(function() flash_dev:set_dpi_steps({ 400, 800 }) end),
+    "editing a ROM profile must fail instead of overwriting its writable counterpart")
+  h:assert_eq(#flash_dev:writes(), 5, "ROM DPI edit performs no flash write")
+
+  flash_dev:clear()
+  onboard_reads(flash_dev, 1, false)
+  flash_dev:queue_read(report(0x11, 0xff, 0x01, 0x51, { 1, 0, 0, 0x90, 1, 0x20, 3 }))
+  flash_dev:set_dpi_steps({ 400, 800 })
+  h:assert_eq(#flash_dev:writes(), 6, "unchanged DPI stages do not wear flash")
+
+  flash_dev:clear()
+  onboard_reads(flash_dev, 1, false)
+  flash_dev:queue_read(report(0x11, 0xff, 0x01, 0x61, {}))
+  flash_dev:queue_read(report(0x11, 0xff, 0x01, 0x71, {}))
+  flash_dev:queue_read(report(0x11, 0xff, 0x01, 0x81, {}))
+  onboard_reads(flash_dev, 1, true)
+  flash_dev:set_profile_enabled(1, true)
+  local flash_writes = flash_dev:writes()
+  h:assert_eq(#flash_writes, 13, "enabling a profile writes only its directory")
+  h:assert_eq(flash_writes[6].data[4], 0x61, "directory write begins after reading current state")
+  h:assert_eq(flash_writes[6].data[6], 0, "profile enabling targets the directory sector")
+  h:assert_eq(flash_writes[7].data[7], 1, "directory marks the existing profile enabled")
+  flash_dev:clear()
+  onboard_reads(flash_dev, 1, true)
+  flash_dev:set_profile_enabled(1, true)
+  h:assert_eq(#flash_dev:writes(), 5, "enabling an enabled profile is a flash no-op")
+
+  flash_dev:clear()
+  onboard_reads(flash_dev, 2, true)
+  flash_dev:queue_read(report(0x11, 0xff, 0x01, 0x51, { 1, 0, 0, 0x90, 1, 0x20, 3 }))
+  h:assert(not pcall(function() flash_dev:set_dpi_steps({ 800, 400 }) end),
+    "a profile outside the declared writable sectors is rejected before erase")
+  h:assert_eq(#flash_dev:writes(), 6, "out-of-range sector never starts a flash write")
+
+  flash_dev:clear()
+  onboard_reads(flash_dev, 1, true)
+  flash_dev:queue_read(report(0x11, 0xff, 1, 0x51,
+    { 1, 0, 0, 0x90, 1, 0x20, 3, 0, 0, 0, 0, 0, 0, 0x5a, 0, 0 }))
+  flash_dev:queue_read(report(0x11, 0xff, 1, 0x61, {}))
+  flash_dev:queue_read(report(0x11, 0xff, 1, 0x71, {}))
+  flash_dev:queue_read(report(0x11, 0xff, 1, 0x81, {}))
+  onboard_reads(flash_dev, 1, true)
+  flash_dev:set_dpi_steps({ 800, 400 })
+  local changed_flash_writes = flash_dev:writes()
+  h:assert_eq(#changed_flash_writes, 14, "changed DPI stages use one erase/write/commit transaction")
+  h:assert_eq(changed_flash_writes[8].data[8], 0x20, "profile DPI uses little-endian values")
+  h:assert_eq(changed_flash_writes[8].data[9], 3, "profile DPI preserves the requested stage order")
+  h:assert_eq(changed_flash_writes[8].data[18], 0x5a, "DPI edit preserves unrelated profile bytes")
+
+  local rom_directory_dev = h:open({ reads = {
+    report(0x10, 0xff, 0, 1, { 2 }),
+    report(0x11, 0xff, 2, 1, { 1 }),
+    report(0x11, 0xff, 2, 0x11, { 0x81, 0 }),
+    report(0x11, 0xff, 1, 1, { 1, 1, 0, 1, 1, 5, 2, 0, 16 }),
+    report(0x11, 0xff, 1, 0x21, { 1 }),
+    report(0x11, 0xff, 1, 0x51, {}), -- blank RAM directory
+    report(0x11, 0xff, 1, 0x51, { 1, 1, 1, 0, 0xff, 0xff }),
+    report(0x11, 0xff, 1, 0x41, { 1, 1 }),
+    report(0x11, 0xff, 1, 0x51, { 1, 0, 0, 0x90, 1, 0x20, 3 }),
+  } })
+  h:assert(rom_directory_dev:initialize(), "blank RAM directory falls back to ROM headers")
+  local rom_state=rom_directory_dev:serialize()
+  for _,cap in ipairs(rom_state.capabilities) do
+    if cap.kind=="onboard_profiles" then
+      h:assert_eq(cap.data.active_slot,0x101,"active ROM sector retains its full ID")
+      h:assert_eq(cap.data.slots[1].index,0x101,"ROM slot retains its full ID")
+      h:assert(cap.data.slots[1].read_only,"ROM slot is read-only")
+    end
+  end
+  h:assert(not pcall(function() rom_directory_dev:set_profile_enabled(0x101,false) end),"ROM enable mutation is rejected")
+  local rom_writes = rom_directory_dev:writes()
+  h:assert_eq(rom_writes[7].data[5], 1, "directory fallback reads ROM bank 0x0100")
+  h:assert_eq(rom_writes[9].data[5], 1, "ROM profile remains addressed in the ROM bank")
+
+  local unsupported_onboard = h:open({ reads = {
+    report(0x10, 0xff, 0, 1, { 2 }),
+    report(0x11, 0xff, 2, 1, { 1 }),
+    report(0x11, 0xff, 2, 0x11, { 0x81, 0 }),
+    report(0x11, 0xff, 1, 1, { 2, 6, 0, 1, 1, 5, 2, 0, 16 }),
+  } })
+  h:assert(not pcall(function() unsupported_onboard:initialize() end),
+    "unknown onboard memory layouts are not interpreted using the known flash format")
+  h:assert_eq(#unsupported_onboard:writes(), 4, "unknown layout stops before reading profile sectors")
+
   -- A DPI change reads the onboard mode from the same cache. Re-reading it put
   -- a second exchange on the DPI-button path, and one late reply there aborted
   -- the DPI change before its own write ever went out.
@@ -104,11 +251,11 @@ return function(h)
     report(0x11, 0xff, 0x03, 0x01, { 2 }),
     report(0x11, 0xff, 0x03, 0x11, { 0x81, 0x00 }),   -- ONBOARD_PROFILES
     report(0x11, 0xff, 0x03, 0x11, { 0x22, 0x01 }),   -- ADJUSTABLE_DPI
-    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 0, 2, 0, 16 }),
     report(0x11, 0xff, 0x01, 0x21, { 2 }),            -- host mode
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
-    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x51, { 1,0,0,0x90,1,0x20,3 }),
     report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
     report(0x11, 0xff, 0x02, 0x31, {}),
@@ -125,21 +272,28 @@ return function(h)
     report(0x11, 0xff, 0x03, 0x01, { 2 }),
     report(0x11, 0xff, 0x03, 0x11, { 0x81, 0x00 }),
     report(0x11, 0xff, 0x03, 0x11, { 0x22, 0x01 }),
-    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 0, 2, 0, 16 }),
     report(0x11, 0xff, 0x01, 0x21, { 1 }),            -- onboard mode
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
-    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x51, { 1,0,0,0x90,1,0x20,3 }),
     report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
     report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
     report(0x11, 0xff, 0x02, 0x31, {}),
   } })
   h:assert(shift_dev:initialize(), "onboard-mode shift fixture initializes")
   shift_dev:clear()
-  shift_dev:set_dpi(1600)
+  shift_dev:set_dpi(400)
   local shift_writes = shift_dev:writes()
   h:assert_eq(#shift_writes, 1, "an onboard-mode DPI change never touches the profile sector")
   h:assert_eq(shift_writes[1].data[4], 0x31, "an onboard-mode DPI change is setSensorDpi")
+  h:assert_eq(shift_dev:dpi_status().current_dpi,400,"momentary onboard DPI reports the sensor value")
+  shift_dev:clear()
+  shift_dev:queue_event(report(0x11,0xff,1,0x10,{1}))
+  shift_dev:pump_events()
+  h:assert_eq(shift_dev:dpi_status().current_dpi,800,"physical DPI event updates the current sensor value")
+  h:assert_eq(shift_dev:dpi_status().current_index,1,"physical DPI event updates the selected stage")
+  h:assert_eq(#shift_dev:writes(),0,"physical DPI notification uses its payload without USB reads")
 
   local lossy_dpi_dev = h:open({ reads = {
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
@@ -165,7 +319,7 @@ return function(h)
     report(0x10, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 1 }),
     report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }),
-    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 0, 2, 0, 16 }),
     report(0x11, 0xff, 0x01, 0x21, { 1 }),
     report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
     report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
@@ -220,11 +374,12 @@ return function(h)
       report(0x11, 0xff, 0x02, 0x01, { 2 }),
       report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x00 }), -- ONBOARD_PROFILES
       report(0x11, 0xff, 0x02, 0x11, { 0x81, 0x10 }), -- MOUSE_BUTTON_SPY
-      report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+      report(0x11, 0xff, 0x01, 0x01, { 1, 1, 0, 1, 1, 0, 2, 0, 16 }),
       report(0x11, 0xff, 0x01, 0x21, { mode }),
       report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
       report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
       report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+      report(0x11, 0xff, 0x02, 0x11, {}), -- initial button reporting enable
     } })
   end
   local onboard_mode_dev = onboard_remap_dev(1)
@@ -232,6 +387,29 @@ return function(h)
   local onboard_remap = onboard_mode_dev:key_remap_status()
   h:assert(onboard_remap.requires_host_mode, "onboard mouse requires host mode for remap")
   h:assert(not onboard_remap.host_mode_active, "onboard-mode mouse reports host mode inactive")
+  onboard_mode_dev:set_button_mapping({ cid = 2,
+    base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } })
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x02, 0x11, {}))
+  onboard_mode_dev:set_boolean("host_mode", true)
+  local restored_writes = onboard_mode_dev:writes()
+  h:assert_eq(#restored_writes, 2, "host-mode restore re-arms cached button overrides")
+  h:assert_eq(restored_writes[1].data[3], 1, "restore switches onboard mode first")
+  h:assert_eq(restored_writes[2].data[3], 2, "restore then enables button reporting again")
+  h:assert_eq(restored_writes[2].data[5], 1, "button reporting is enabled")
+
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  local rearm_ok = pcall(function() onboard_mode_dev:set_boolean("host_mode", true) end)
+  h:assert(not rearm_ok, "a failed button re-arm fails mode restoration")
+  onboard_mode_dev:clear()
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x01, 0x11, {}))
+  onboard_mode_dev:queue_read(report(0x11, 0xff, 0x02, 0x11, {}))
+  onboard_mode_dev:set_boolean("host_mode", true)
+  h:assert_eq(#onboard_mode_dev:writes(), 2,
+    "retry retains desired mappings and re-arms reporting even when already in host mode")
+
   local host_mode_dev = onboard_remap_dev(2)
   h:assert(host_mode_dev:initialize(), "host-mode mouse remap fixture initializes")
   h:assert(host_mode_dev:key_remap_status().host_mode_active,
@@ -240,11 +418,15 @@ return function(h)
   -- A LIGHTSPEED receiver uses HID++ 1.0 register reads at devnum 0xff to
   -- enumerate paired slots. The child receives slot 1 as its opaque key.
   local receiver = h:open({ pid = 0xc547, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
-    report(0x10, 0xff, 0x83, 0xb5, { 0, 0, 0, 0x40, 0xb0 }),
-    report(0x10, 0xff, 0x83, 0xb5, { 0, 0xab, 0xcd, 0xef, 0x12 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0, 0, 0x12, 0x34 }), -- stale bank reply
+    report(0x10, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
+    report(0x10, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
   } })
   h:assert(receiver:initialize(), "receiver root initializes")
+  h:assert_eq(receiver:writes()[1].data,{0x10,0xff,0x80,0,0,9,0},"receiver enables wireless and software notifications")
+  receiver:clear()
   local children = receiver:enumerate_controllers()
   h:assert_eq(#children, 1, "receiver enumerates one paired slot")
   h:assert_eq(children[1].id, "logitech_ABCDEF12", "receiver child has stable serial id")
@@ -259,9 +441,10 @@ return function(h)
   -- families, not a special case tied to the C547 LIGHTSPEED PID. The pairing
   -- record's kind nibble identifies devices unknown to the small WPID catalog.
   local unifying = h:open({ pid = 0xc52b, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0, 0, 0x12, 0x34, 0, 0, 0x02 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0x12, 0x34, 0x56, 0x78 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x12, 0x34, 0, 0, 0x02 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0x12, 0x34, 0x56, 0x78 }),
   } })
   h:assert(unifying:initialize(), "Unifying receiver root initializes")
   local unifying_children = unifying:enumerate_controllers()
@@ -542,9 +725,10 @@ return function(h)
   -- records answer long; dispatch matches each reply by (devnum, sub) whatever
   -- collection carried it, so enumeration works across the split.
   local mixed_rx = h:open({ pid = 0xc547, companion = true, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0, 0, 0x40, 0xb0 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0xab, 0xcd, 0xef, 0x12 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
   } })
   h:assert(mixed_rx:initialize(), "mixed-collection receiver root initializes")
   local mixed_children = mixed_rx:enumerate_controllers()
@@ -555,12 +739,14 @@ return function(h)
   -- while the mouse remains paired in slot 2. Enumeration must continue so
   -- the mouse stays registered and pairing_status remains available.
   local sparse_rx = h:open({ pid = 0xc547, reads = {
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x10, 0xff, 0x8f, 0x83, { 0xb5, 0x09 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0, 0, 0x40, 0x99 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0, 0x12, 0x34, 0x56, 0x78 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x21, 0, 0, 0x40, 0x99 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x31, 0x12, 0x34, 0x56, 0x78 }),
   } })
   h:assert(sparse_rx:initialize(), "sparse receiver root initializes")
+  sparse_rx:clear()
   local sparse_children = sparse_rx:enumerate_controllers()
   h:assert_eq(#sparse_children, 1, "empty slot does not hide a later paired mouse")
   h:assert_eq(sparse_children[1].id, "logitech_12345678", "later-slot mouse keeps its identity")
@@ -573,7 +759,7 @@ return function(h)
   -- Pairing-lock notifications are HID++ 1.0 packets. Byte 4 is the lock
   -- state, not a HID++ 2.0 software id: an open notification must reach Lua,
   -- and a clean close must both finish the UI state and rescan receiver slots.
-  local pairing_rx = h:open({ pid = 0xc547 })
+  local pairing_rx = h:open({ pid = 0xc547, reads = {report(0x10,0xff,0x80,0,{0,9,0})} })
   h:assert(pairing_rx:initialize(), "pairing event receiver initializes")
   pairing_rx:queue_event(report(0x10, 0xff, 0x4a, 0x01, { 0x00 }))
   local pairing_open = pairing_rx:pump_events()
@@ -601,8 +787,8 @@ return function(h)
     report(0x11, 0xff, 0x00, 0x01, { 2 }),          -- ROOT -> FEATURE_SET index
     report(0x11, 0xff, 0x02, 0x01, { 1 }),          -- FEATURE_SET count
     report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x00 }), -- feature[1] = SIDETONE
-    -- [report, devnum, 0xff, feature_idx=1, func_byte=0x00, err_code=0x05]
-    report(0x11, 0xff, 0xff, 0x01, { 0x00, 0x05 }),
+    -- [report, devnum, 0xff, feature_idx=1, func_byte=0x01, err_code=0x05]
+    report(0x11, 0xff, 0xff, 0x01, { 0x01, 0x05 }),
   } })
   h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
@@ -714,13 +900,28 @@ return function(h)
     report(0x11, 0xff, 0x02, 0x01, { 1 }),                -- FEATURE_SET count
     report(0x11, 0xff, 0x02, 0x11, { 0x1b, 0x04 }),       -- feature[1] = REPROG_CONTROLS_V4
     report(0x11, 0xff, 0x01, 0x00, { 0, 0x38 }),          -- interleaved button press (swid 0)
-    report(0x11, 0xff, 0x01, 0x01, { 1 }),                -- reprog control count
-    report(0x11, 0xff, 0x01, 0x11, { 0, 0x38, 0, 0x38, 0x08, 0, 0 }), -- divertable cid 0x38
+    report(0x11, 0xff, 0x01, 0x01, { 2 }),                -- reprog control count
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0x38, 0, 0x38, 0x20, 0, 0 }), -- divertable cid 0x38
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0x39, 0, 0x39, 0x08, 0, 0 }), -- Fn-sensitive only
   } })
   h:assert(evt_dev:initialize(), "event fixture initializes past an interleaved packet")
+  h:assert_eq(#evt_dev:key_remap_status().buttons, 1, "Fn-sensitive controls are not assumed divertable")
   local pumped = evt_dev:pump_events()
   h:assert_eq(#pumped, 1, "deferred interleaved packet is delivered through event()")
   h:assert_eq(pumped[1].pressed[1], 0x38, "event() decodes the deferred button press")
+
+  evt_dev:queue_read(report(0x11, 0xff, 0x01, 0x31, {}))
+  evt_dev:set_button_mapping({ cid = 0x38,
+    base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } })
+  local divert_writes = evt_dev:writes()
+  h:assert_eq(divert_writes[#divert_writes].data[7], 0x03,
+    "diversion enable includes the diverted-valid bit")
+  evt_dev:queue_read(report(0x11, 0xff, 0x01, 0x31, {}))
+  evt_dev:set_button_mapping({ cid = 0x38,
+    base = { type = "native" }, shifted = { type = "native" } })
+  divert_writes = evt_dev:writes()
+  h:assert_eq(divert_writes[#divert_writes].data[7], 0x02,
+    "diversion disable includes the diverted-valid bit")
 
   -- A queued button release for an already-pressed control produces a release
   -- transition on the next pump.

@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+local temperatures=halod.require("lib.temperatures")
+return function(h)
+  h:assert_eq(temperatures.tctl(400<<21),50.0,"Tctl raw eighth-degree units")
+  h:assert_eq(temperatures.tctl((400<<21)|0x80000),1.0,"Tctl range adjustment")
+  h:assert_eq(temperatures.ccd(2800),45.0,"CCD raw eighth-degree units")
+  h:assert_eq(temperatures.ccd(0),nil,"absent CCD is not a cold reading")
+  local base,count,turin=temperatures.layout(0x1a,0x11)
+  h:assert_eq(base,0x599f0,"Turin CCD register bank")
+  h:assert_eq(count,16,"Turin supports all sixteen CCDs")
+  h:assert(turin,"Turin requires per-register validity")
+  base,count,turin=temperatures.layout(0x1a,0x44)
+  h:assert_eq(base,0x59b08,"desktop Zen 5 retains desktop CCD register bank")
+  h:assert_eq(count,8,"desktop CCD map remains bounded")
+  h:assert_eq(temperatures.layout(0x17,1),nil,"unknown CCD layouts are not probed")
+end

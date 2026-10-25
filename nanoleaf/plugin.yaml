@@ -34,7 +34,7 @@ transports:
 setup:
   modes: [automatic, manual]
   discovery:
-    mdns: ["_nanoleaf._tcp.local."]
+    mdns: ["_nanoleafapi._tcp.local.", "_nanoleaf._tcp.local."]
     ssdp: ["nanoleaf_aurora:light"]
   auth:
     kind: button

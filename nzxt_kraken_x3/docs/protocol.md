@@ -10,7 +10,7 @@ NZXT Kraken X53/X63/X73 USB HID protocol for ring and logo RGB, chained external
 
 This document covers only the Kraken X53/X63/X73 devices implemented by [`nzxt_kraken_x3`](../main.lua), HID VID `0x1E71`, USB PIDs `0x2007` and `0x2014`. The protocol is proprietary USB HID: every report is 64 bytes on the wire, with no report-ID prefix; shorter commands are zero-padded by HaloDaemon's HID transport (`report_size: 64`, 1000 ms timeout, no feature reports).
 
-The first two bytes of a report are the command and subcommand. Request/response pairs reply with the next command value and the same subcommand: `20 03` receives `21 03`, `10 01` receives `11 01`. After initialization the device also pushes unsolicited `75 02` status reports. This wire family has no LCD, no bulk endpoint, and no software pump or fan speed control; it is older than and distinct from the Z/Elite family.
+The first two bytes of a report are the command and subcommand. Request/response pairs reply with the next command value and the same subcommand: `20 03` receives `21 03`, `10 01` receives `11 01`. After initialization the device also pushes unsolicited `75 02` status reports. This wire family has no LCD, no bulk endpoint, and pump speed control, and no radiator-fan speed control; it shares the kraken3 protocol family.
 
 ---
 
@@ -167,6 +167,15 @@ After the init sequence the device streams unsolicited `75 02` status reports at
 
 ## Notes
 
-- Cooling control is not implemented by this package: no pump or fan RPM/duty values are exposed, and the wire family offers no software speed control.
+- Pump RPM/duty and pump control are exposed. The accessory header carries lighting; radiator-fan speed control is not exposed.
 - Correction: an earlier revision of this document gave commit byte 7 as `0x28`; liquidctl's `KrakenX3` driver sends `0x08` there (`22 A0 cid 00 <mode> <speed lo> <speed hi> 08 00 00 80 00 32 00 00 01`). The implementation in this package still sends `0x28`.
 - liquidctl requests `10 01` and `20 03` before the `70 02` / `70 01` pair; this package sends `70 02`, `70 01`, `10 01` and leaves `20 03` to the daemon's accessory-discovery path. Both orders work on hardware per the respective implementations.
+
+## Pump control and freshness
+
+X53/X63/X73 pump control uses `72 01 00 00` followed by 40 duty points for
+20–59°C. Requests clamp to 20–100%; the 59°C endpoint remains 100%. Status
+report 0x75 contains little-endian pump RPM at offsets 17–18 and duty at 19.
+This package exposes pump cooling separately from the lighting-only accessory
+header. Temperature data is unavailable until a valid report arrives and expires
+after five seconds without valid status. Protocol family: kraken3 X series.

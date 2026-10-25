@@ -22,7 +22,7 @@ local function reply(packet, payload)
   return {
     bytes("ORGB"),
     bytes(string.pack("<I4I4I4", 0, packet, #payload)),
-    bytes(payload),
+    #payload>0 and bytes(payload) or nil,
   }
 end
 
@@ -32,6 +32,7 @@ return function(h)
     for _, part in ipairs(parts) do target[#target + 1] = part end
   end
   append(reads, reply(40, string.pack("<I4", 3)))
+  append(reads, reply(100, ""))
   append(reads, reply(0, string.pack("<I4", 3)))
   append(reads, reply(1, controller("Board", "ABC123", "HID: /dev/hidraw6", 12)))
   append(reads, reply(1, controller("Empty", "", "", 4)))

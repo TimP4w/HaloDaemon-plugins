@@ -90,4 +90,40 @@ return function(h)
   h:assert_eq(uw[1].endpoint, 0x02, "LCD header uses bulk OUT endpoint")
   h:assert_eq(uw[1].data[13], 0x08, "LCD bulk header selects Q565 mode")
   h:assert(#uw[2].data > 0, "LCD payload is non-empty")
+
+ do
+ local dev = h:open({ reads = { {} } })
+ h:assert(dev:initialize(), "initialization succeeds")
+ dev:clear()
+ dev:set_cooling_duty("pump", 30)
+ local writes = dev:writes()
+ h:assert_eq(writes[1].data[44], 100, "hardware curve must retain the critical-temperature override")
+ local status = {}
+ for i = 1, 26 do status[i] = 0 end
+ status[1], status[16] = 0x75, 30
+ dev:queue_read(status)
+ dev:poll_sensors()
+ local controllable
+ for _, capability in ipairs(dev:serialize().capabilities) do
+  if capability.kind == "cooling" then
+   for _, channel in ipairs(capability.data.channels) do
+    if channel.id == "fan1" then controllable = channel.controllable end
+   end
+  end
+ end
+ h:assert(controllable == true, "a stopped fan must remain controllable")
+
+ end
+  for _, case in ipairs({{0x3008,{0x72,1,0,0}},{0x300e,{0x72,1,1,0}}}) do
+    local cooler=h:open({pid=case[1],reads={{}}})
+    h:assert(cooler:initialize(),"cooler model initializes")
+    h:assert_eq(#cooler:poll_sensors(),0,"missing status never fabricates a temperature")
+    cooler:clear()
+    cooler:set_cooling_duty("pump",30)
+    local packet=cooler:writes()[1].data
+    h:assert_eq({packet[1],packet[2],packet[3],packet[4]},case[2],"model-specific pump header")
+  end
+  h:sleep_ms(5000)
+  h:sleep_ms(20)
+  h:assert_eq(#dev:poll_sensors(),0,"retained liquid temperature expires after missing status")
 end

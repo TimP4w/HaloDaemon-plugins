@@ -10,6 +10,7 @@ return function(h)
   h:assert_eq(dev:writes()[3].data, { 0x10, 0x01 }, "enable status stream")
   dev:clear()
 
+  h:assert_eq(#dev:poll_sensors(),0,"missing status never fabricates a temperature")
   local status = {}
   for i = 1, 26 do status[i] = 0 end
   status[1], status[16], status[17] = 0x75, 28, 7
@@ -40,4 +41,10 @@ return function(h)
   h:assert_eq(w[4].data[8], 20, "logo G")
   h:assert_eq(w[4].data[9], 10, "logo R")
   h:assert_eq(w[4].data[10], 30, "logo B")
+  dev:clear()
+  dev:set_cooling_duty("pump",25)
+  local pump=dev:writes()[1].data
+  h:assert_eq({pump[1],pump[2],pump[3],pump[4]},{0x72,1,0,0},"X3 pump header")
+  h:assert_eq(pump[5],25,"X3 pump fixed duty")
+  h:assert_eq(pump[44],100,"X3 critical temperature overrides fixed duty")
 end

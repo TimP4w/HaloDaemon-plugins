@@ -34,4 +34,12 @@ return function(h)
   h:assert(timed_out:initialize(), "timeout fixture initializes")
   local timed_out_controllers = timed_out:enumerate_controllers()
   h:assert_eq(#timed_out_controllers, 0, "timed-out command result is handled")
+  local legacy=h:open({key="GPU-123",command_results={
+    {success=false,exit_code=2,stdout="",stderr="unsupported field",timed_out=false},
+    {success=true,exit_code=0,stdout="51",stderr="",timed_out=false},
+    {success=false,exit_code=2,stdout="",stderr="unsupported field",timed_out=false}}})
+  h:assert(legacy:initialize(),"legacy driver initializes")
+  local available=legacy:poll_sensors()
+  h:assert_eq(#available,1,"unsupported memory field preserves core sensor")
+  h:assert_eq(available[1].value,51.0,"individual core query is used")
 end

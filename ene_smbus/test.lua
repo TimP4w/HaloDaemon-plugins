@@ -35,4 +35,11 @@ return function(h)
   h:assert_eq(w[2].operation, "write_block_data", "frame writes colors as one block")
   h:assert_eq(w[3].operation, "write_word_data", "frame selects apply register")
   h:assert_eq(w[4].operation, "write_byte_data", "frame latches colors")
+  dev:clear()
+  dev:apply({mode="native_effect",id="off",params={}})
+  local disabled_direct = false
+  for _, op in ipairs(dev:smbus_writes()) do
+    if op.operation == "write_word_data" and op.value == 0x2080 then disabled_direct = true end
+  end
+  h:assert(disabled_direct, "off must leave direct mode so the hardware off mode can take effect")
 end

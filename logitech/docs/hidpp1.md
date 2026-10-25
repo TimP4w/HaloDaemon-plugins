@@ -56,7 +56,7 @@ All addressed to the receiver itself (`devnum = 0xFF`); the typed wrappers live 
 ### `paired_info(slot)` - pairing record for a slot (1-based)
 
 1. Read `REG_RECEIVER_INFO` with param `[INFO_PAIRING + slot − 1]` → `10 FF 83 B5 (0x20+slot-1) 00 00`. Reply must be ≥ 8 bytes.
-2. **WPID** is bytes `[3:5]` big-endian (Solaar `extract_wpid` reverses `pair[3:5]`). A WPID of `0x0000` or `0xFFFF` means the slot is empty → `None`.
+2. **WPID** is bytes `[3:5]` big-endian (Solaar `extract_wpid` preserves `pair[3:5]`). A WPID of `0x0000` or `0xFFFF` means the slot is empty → `None`.
 3. Read `REG_RECEIVER_INFO` with param `[INFO_EXTENDED_PAIRING + slot − 1]` → the **serial**: 4 bytes at `ext[1:5]`, formatted as 8 hex chars. All-zero or all-`0xFF` is the unset sentinel (`parse_extended_serial` → `None`).
 
 Returns `PairedDevice { devnum, wpid, serial }`.

@@ -8,6 +8,7 @@ or adapted source inside that plugin and may therefore differ.
 AMD SMN (amd_smn)
   Plugin license: MPL-2.0
   Source SPDX licenses:
+    - GPL-3.0-or-later
     - MPL-2.0
       Copyright: LibreHardwareMonitor contributors
 
