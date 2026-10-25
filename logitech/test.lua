@@ -120,6 +120,44 @@ return function(h)
   h:assert_eq(#host_dpi_writes, 1, "a host-mode DPI change is one write")
   h:assert_eq(host_dpi_writes[1].data[4], 0x31, "the write is setSensorDpi")
 
+  local shift_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 3 }),
+    report(0x11, 0xff, 0x03, 0x01, { 2 }),
+    report(0x11, 0xff, 0x03, 0x11, { 0x81, 0x00 }),
+    report(0x11, 0xff, 0x03, 0x11, { 0x22, 0x01 }),
+    report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1, 0, 0, 0, 16 }),
+    report(0x11, 0xff, 0x01, 0x21, { 1 }),            -- onboard mode
+    report(0x11, 0xff, 0x01, 0x51, { 0, 1, 1, 0 }),
+    report(0x11, 0xff, 0x01, 0x41, { 0, 1 }),
+    report(0x11, 0xff, 0x01, 0x51, { 0, 0, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0x02, 0x21, { 0, 0x03, 0x20 }),
+    report(0x11, 0xff, 0x02, 0x31, {}),
+  } })
+  h:assert(shift_dev:initialize(), "onboard-mode shift fixture initializes")
+  shift_dev:clear()
+  shift_dev:set_dpi(1600)
+  local shift_writes = shift_dev:writes()
+  h:assert_eq(#shift_writes, 1, "an onboard-mode DPI change never touches the profile sector")
+  h:assert_eq(shift_writes[1].data[4], 0x31, "an onboard-mode DPI change is setSensorDpi")
+
+  local lossy_dpi_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x22, 0x01 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0, 0x01, 0x90, 0x03, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x21, { 0, 0x03, 0x20 }),
+    {}, {}, {}, {},
+    report(0x11, 0xff, 0x01, 0x31, {}),
+  } })
+  h:assert(lossy_dpi_dev:initialize(), "lossy DPI fixture initializes")
+  lossy_dpi_dev:clear()
+  lossy_dpi_dev:set_dpi(400)
+  local lossy_writes = lossy_dpi_dev:writes()
+  h:assert_eq(#lossy_writes, 2, "an unacknowledged setSensorDpi is resent once")
+  h:assert_eq(lossy_writes[2].data[4], 0x31, "the resend is setSensorDpi")
+  h:assert_eq(lossy_dpi_dev:dpi_status().current_dpi, 400, "the acknowledged resend updates the DPI")
+
   -- A mode switch can take effect while its acknowledgement is lost during
   -- the transition. Confirm the live mode before retrying or surfacing the
   -- transport timeout.
