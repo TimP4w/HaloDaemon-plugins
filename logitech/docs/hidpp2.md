@@ -93,7 +93,7 @@ Read-only V0 feature with **no getter**; the only payload is the device-initiate
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
-| getStatus (`0x10`) | `11 dd fi 11 ··` | none | reply `[level, ?, charging, …]`: byte 0 = percent, byte 2 ≠ 0 → charging |
+| getStatus (`0x10`) | `11 dd fi 11 ··` | none | reply `[level, ?, charging, …]`: byte 0 = percent (zero uses the coarse level in byte 1); byte 2 is a status enum: 1/2/4 charging, 0/3 discharging, errors unknown |
 
 ### ADC_MEASUREMENT (`0x1F20`) / BATTERY_VOLTAGE (`0x1001`) - cell voltage
 
@@ -101,7 +101,7 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
-| getVoltage (`0x00`) | `11 dd fi 01 00 ··` | `[0x00]` | reply: BE-u16 mV in bytes 0–1; byte 2 status (`0x01` discharging, `0x03` charging) |
+| getVoltage (`0x00`) | `11 dd fi 01 00 ··` | `[0x00]` | reply: BE-u16 mV in bytes 0–1; byte 2 flags: BATTERY_VOLTAGE bit 7 = charging; ADC bit 0 = valid, bit 1 = charging |
 
 `voltage_to_percent` maps mV → 0–100% by piecewise-linear interpolation over a discharge curve. A `0` mV reading means the headset is **asleep** (dongle on, earcups off); the same condition makes SIDETONE/EQUALIZER reads return `logitech_internal` (`0x05`); all are treated as "not yet available" and the 30 s battery poll retries. The two voltage features share this exact reply layout.
 
@@ -137,7 +137,7 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 | getSensorDpi (`0x20`) | `11 dd fi 21 ··` | none | reply carries current DPI (BE), with/without sensor echo |
 | setSensorDpi (`0x30`) | `11 dd fi 31 00 <dpi_hi> <dpi_lo> ··` | `[sensor=0, dpi_hi, dpi_lo]` (`encode_set_dpi`) | 3-byte form; a 5-byte variant is rejected by G502 X Plus (`INVALID_ARGUMENT`) |
 
-**DPI byte order** depends on where the value lives: on the wire (`encode_set_dpi`) it is **big-endian** (`1600 = 0x0640 → 06 40`); in a profile flash sector it is **little-endian** (`40 06`). `read_current_dpi` returns `None` for a decoded `0` (never genuinely reported).
+**DPI byte order** depends on where the value lives: on the wire (`encode_set_dpi`) it is **big-endian** (`1600 = 0x0640 → 06 40`); in a profile flash sector it is **little-endian** (`40 06`). A zero current DPI uses the default DPI in reply bytes 3–4 (zero-based), as in Solaar.
 
 **DPI-list range markers** (`parse_dpi_list`). `getSensorDpiList` returns BE-u16 entries terminated by `0x0000`. A u16 whose top 3 bits are all set (`value >> 13 == 0b111`) is a **range marker**: low 13 bits = step, the *next* u16 = inclusive end; the range expands from the last explicit value adding `step` while `≤ end`. E.g. `400`, marker `0xE190` (step 400), end `0x0640` → 800, 1200, 1600.
 
@@ -283,10 +283,10 @@ The **older** LED effect-type system, used by devices that predate `0x8071` RGB_
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
 | getControlCount (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 = control count |
-| getCidInfo (`0x10`) | `11 dd fi 11 <index> ··` | `[index]` | reply `[cid_hi,cid_lo,task_hi,task_lo,flags,pos,group,gmask,…]`; flags bit 3 (`0x08`) = divertable |
-| setCidReporting (`0x30`) | `11 dd fi 31 <cid_hi cid_lo flags 00 …0>` | 16-byte block (`encode_set_cid_reporting`) | flags bit 0 (`0x01`) = divert; remap target zero (native) |
+| getCidInfo (`0x10`) | `11 dd fi 11 <index> ··` | `[index]` | reply `[cid_hi,cid_lo,task_hi,task_lo,flags,pos,group,gmask,…]`; flags bit 5 (`0x20`) = divertable |
+| setCidReporting (`0x30`) | `11 dd fi 31 <cid_hi cid_lo flags 00 …0>` | 16-byte block (`encode_set_cid_reporting`) | flags bit 0 (`0x01`) = divert, bit 1 (`0x02`) = update-valid; remap target zero (unchanged) |
 
-**setCidReporting 16-byte block:** bytes 0–1 = CID (BE), byte 2 = flags (bit 0 = divert), bytes 3–15 = `0x00` (remap target zero → native action retained). Divert only takes effect in host mode and only for controls whose getCidInfo flags have bit 3 set; to un-divert, resend with flags `0x00`.
+**setCidReporting 16-byte block:** bytes 0–1 = CID (BE), byte 2 = flags (`0x03` enables temporary diversion, `0x02` disables it), bytes 3–15 = `0x00` (remap target zero leaves the current target unchanged). Divert only takes effect in host mode and only for controls whose getCidInfo flags have bit 5 set.
 
 ### GKEY (`0x8010`) / MOUSE_BUTTON_SPY (`0x8110`)
 
@@ -338,7 +338,11 @@ A graphic equalizer of **N signed-dB bands** read from the device; no named pres
 ## 8. Responses
 
 - **getFeature** (ROOT `0x00`) - byte 0 = the feature's runtime index; `0` = absent.
-- **Battery** (UNIFIED getStatus) - byte 0 = percent, byte 2 ≠ 0 → charging; voltage features decode BE-u16 mV + status byte.
+- **Battery** (UNIFIED getStatus) - byte 0 = percent (zero uses the coarse level in byte 1); byte 2 is a status enum: 1/2/4 charging, 0/3 discharging, errors unknown; voltage features decode BE-u16 mV + status byte.
 - **DPI** (`parse_current_dpi`) - DPI big-endian; longer replies echo the sensor in byte 0 (DPI in 1..3), shorter put DPI in 0..2. A decoded `0` reads as unknown (`None`).
 - **Error replies** - sub-ID `0x8F`/`0xFF`; see [protocol.md](protocol.md).
 - **Firmware / device name** - resolved at enumeration; firmware-string decode is not invoked.
+
+Profile enabling changes only the directory flag and preserves customized profile data.
+DPI writes reject ROM/out-of-range sectors and skip unchanged profile bodies.
+See [implementation review](review.md) for findings and remaining gaps.

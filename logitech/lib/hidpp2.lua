@@ -100,7 +100,7 @@ local function error_response(reply)
     reply:byte(4) or 0, reply:byte(5) or 0))
 end
 
-local function dispatch(dev, devnum, sub, address, check_func)
+local function dispatch(dev, devnum, sub, address, selector)
   local deadline = halod.monotonic_ms() + DISPATCH_BUDGET_MS
   local empties = 0
   while halod.monotonic_ms() < deadline do
@@ -114,9 +114,10 @@ local function dispatch(dev, devnum, sub, address, check_func)
       if reply:byte(2) ~= devnum then
         dev.transport:defer_event(reply)
       elseif rsub == 0x8f or rsub == 0xff then
-        if reply:byte(4) == sub then error_response(reply) end
+        if reply:byte(4) == sub and reply:byte(5) == address then error_response(reply) end
         dev.transport:defer_event(reply)
-      elseif rsub == sub and (not check_func or reply:byte(4) == address) then
+      elseif rsub == sub and reply:byte(4) == address
+          and (selector == nil or reply:byte(5) == selector) then
         return reply:sub(5)
       else
         dev.transport:defer_event(reply)
@@ -131,7 +132,7 @@ local function request(dev, devnum, feature_index, func, args)
   local long = is_long_only(dev.match.pid) or feature_index ~= 0 or #args > 3
   local address = func | SW_ID
   send(dev, packet(devnum, feature_index, address, args, long))
-  return dispatch(dev, devnum, feature_index, address, true)
+  return dispatch(dev, devnum, feature_index, address)
 end
 
 -- HID++ 1.0 receiver register read.  Register 0x2B5 is selected with sub-id
@@ -327,16 +328,27 @@ local function battery_reading(dev)
   if index then
     local reply = request(dev, devnum, index, 0x10)
     local level = reply:byte(1)
-    if level then return level > 100 and 100 or level, (reply:byte(3) or 0) ~= 0 end
+    if level then
+      if level == 0 then
+        level = ({ [8] = 100, [4] = 50, [2] = 20, [1] = 5 })[reply:byte(2)] or 0
+      end
+      local status = reply:byte(3) or 0
+      local charging = status == 1 or status == 2 or status == 4
+      return math.min(level, 100), status > 4 and "unknown" or (charging and "charging" or "discharging")
+    end
   end
   index = features[ADC_MEASUREMENT] or features[BATTERY_VOLTAGE]
   if not index then return nil end
+  local adc = features[ADC_MEASUREMENT] ~= nil
   local reply = request(dev, devnum, index, 0x00, bytes(0))
   local hi, low = reply:byte(1), reply:byte(2)
   if not hi or not low then return nil end
   local mv = (hi << 8) | low
   if mv == 0 then return nil end -- headset asleep
-  return voltage_percent(mv), reply:byte(3) == 0x03
+  local flags = reply:byte(3) or 0
+  if adc and (flags & 0x01) == 0 then return nil end
+  local charging = adc and (flags & 0x02) ~= 0 or not adc and (flags & 0x80) ~= 0
+  return voltage_percent(mv), charging and "charging" or "discharging"
 end
 
 local function dpi_list(dev, index)
@@ -601,6 +613,7 @@ local callbacks = {
       local current = request(dev, devnum, features[ADJUSTABLE_DPI], 0x20)
       local dpi = #current >= 3 and ((current:byte(2) << 8) | current:byte(3))
           or (#current >= 2 and ((current:byte(1) << 8) | current:byte(2))) or 0
+      if dpi == 0 and #current >= 5 then dpi = (current:byte(4) << 8) | current:byte(5) end
       local profile_steps = dev.onboard and dev.onboard.profile_steps or {}
       local steps = #profile_steps > 0 and profile_steps or available
       dev.software_dpi_steps = { table.unpack(steps) }
@@ -744,10 +757,9 @@ local callbacks = {
   -- Exported callbacks deliberately use the same feature helper, so packet
   -- framing remains protocol-correct as each former native feature is ported.
   get_batteries = function(dev)
-    local ok, level, charging = pcall(battery_reading, dev)
+    local ok, level, status = pcall(battery_reading, dev)
     if not ok or not level then return {} end
-    return {{ key = "battery", label = "Battery", level = level,
-      status = charging and "charging" or "discharging" }}
+    return {{ key = "battery", label = "Battery", level = level, status = status }}
   end,
   connection_status = function(dev)
     -- A receiver child is necessarily reached through the wireless receiver.
@@ -809,11 +821,13 @@ local callbacks = {
       return
     end
     local state = refresh_onboard(dev)
-    local sector = state.active_sector >= 0x0100 and (state.active_sector & 0xff)
-      or state.active_sector
+    local sector = state.active_sector
     if sector == 0 then error("no active onboard profile") end
+    if sector >= 0x0100 then error("active onboard profile is read-only") end
     local data = read_sector(dev, sector, state.sector_size)
-    write_sector(dev, sector, patch_sector_dpi(data, state.sector_size, steps))
+    local patched = patch_sector_dpi(data, state.sector_size, steps)
+    if patched:sub(1, -3) == data:sub(1, -3) then return end
+    write_sector(dev, sector, patched)
     refresh_onboard(dev)
     restore_rgb_control(dev)
   end,
@@ -850,18 +864,20 @@ local callbacks = {
   restore_profile = function(dev, slot)
     local state = refresh_onboard(dev)
     if slot > state.rom_count then error("profile has no factory default") end
-    restore_profile(dev, slot, false)
+    restore_profile(dev, slot)
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_profile_enabled = function(dev, slot, enabled)
     local state = refresh_onboard(dev)
     local found = false
     for _, entry in ipairs(state.directory) do
-      if (entry.sector & 0xff) == slot then found = true; break end
+      if (entry.sector & 0xff) == slot then
+        if entry.enabled == enabled then return end
+        found = true
+        break
+      end
     end
     if not found then error("profile slot not present in directory") end
-    if enabled then restore_profile(dev, slot, true) end
-    state = refresh_onboard(dev)
     local values = { state.directory_data:byte(1, state.sector_size) }
     found = false
     for _, entry in ipairs(state.directory) do

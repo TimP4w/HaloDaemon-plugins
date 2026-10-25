@@ -788,6 +788,8 @@ halod plugin-test .\openrgb
 | `dev:get_batteries()` | Run the declared battery capability and return its readings. |
 | `dev:set_range(key, value)` | Exercise a runtime range-control write. |
 | `dev:set_choice(key, value)` | Exercise a choice control. |
+| `dev:set_dpi_steps(steps)` | Replace host or onboard DPI stages through the capability. |
+| `dev:set_profile_enabled(slot, enabled)` | Change an onboard profile directory entry. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
 | `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |

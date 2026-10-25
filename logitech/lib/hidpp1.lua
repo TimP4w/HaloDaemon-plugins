@@ -1,4 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
+-- SPDX-FileCopyrightText: 2012-2013 Daniel Pavel
+-- SPDX-FileCopyrightText: 2014-2024 Solaar Contributors <https://pwr-solaar.github.io/Solaar/>
 -- HID++ 1.0 receiver register access and paired-child enumeration.
 
 return function(api)
@@ -8,7 +10,8 @@ return function(api)
     args = args or ""
     local sub = 0x81 | ((reg >> 8) & 0x02)
     api.send(dev, api.packet(devnum, sub, reg & 0xff, args, false))
-    return api.dispatch(dev, devnum, sub, reg & 0xff, false)
+    local selector = (reg == 0x02b5 or reg == 0x00f1) and args:byte(1) or nil
+    return api.dispatch(dev, devnum, sub, reg & 0xff, selector)
   end
 
   local function write(dev, devnum, reg, args)

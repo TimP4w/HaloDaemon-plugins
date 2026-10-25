@@ -1,4 +1,6 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
+-- SPDX-FileCopyrightText: 2012-2013 Daniel Pavel
+-- SPDX-FileCopyrightText: 2014-2024 Solaar Contributors <https://pwr-solaar.github.io/Solaar/>
 -- HID++2 programmable-control discovery, diversion, and button events.
 
 return function(api)
@@ -26,7 +28,7 @@ local function remap_buttons(dev)
     for i = 0, count - 1 do
       local info = request(dev, devnum, reprog, 0x10, bytes(i))
       local hi, lo, task_hi, task_lo, flags, _, group = info:byte(1, 7)
-      if hi and lo and flags and (flags & 0x08) ~= 0 then
+      if hi and lo and flags and (flags & 0x20) ~= 0 then
         local cid = (hi << 8) | lo
         local task = ((task_hi or 0) << 8) | (task_lo or 0)
         local labels = { [0x0038] = "Left Button", [0x0039] = "Right Button", [0x003a] = "Middle Button",
@@ -64,7 +66,7 @@ local function set_remap_active(dev, cid, enabled)
   local any = next(remap.active) ~= nil
   local ok, value = true, nil
   if remap.backend == "reprog" then
-    local payload = { (cid >> 8) & 0xff, cid & 0xff, enabled and 1 or 0 }
+    local payload = { (cid >> 8) & 0xff, cid & 0xff, enabled and 0x03 or 0x02 }
     for _ = 1, 13 do payload[#payload + 1] = 0 end
     ok, value = pcall(feature, dev, REPROG_CONTROLS_V4, 0x30, bytes(table.unpack(payload)))
   elseif remap.backend == "gkey" and had_any ~= any then
