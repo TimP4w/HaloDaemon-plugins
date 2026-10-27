@@ -668,9 +668,7 @@ return function(h)
     if led.id == 4 then led_4_index = i end
   end
   h:assert(led_4_index ~= nil, "keyboard RGB descriptor contains firmware LED 4")
-  -- The descriptor is zero-based at the protocol boundary; frame bytes remain
-  -- a flat, one-based Lua sequence, so LED id 4 starts after four RGB triples.
-  local led_4_offset = led_4_index * 3
+  local led_4_offset = (led_4_index - 1) * 3
   breathing[led_4_offset + 1] = 255
   breathing[led_4_offset + 2] = 0
   breathing[led_4_offset + 3] = 0
@@ -929,4 +927,17 @@ return function(h)
   local released = evt_dev:pump_events()
   h:assert_eq(#released, 1, "release notification produces an event() outcome")
   h:assert_eq(released[1].released[1], 0x38, "event() decodes the button release")
+
+  local labeled_dev = h:open({ reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x1b, 0x04 }),
+    report(0x11, 0xff, 0x01, 0x01, { 2 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0x00, 0xe8, 0x00, 0xc8, 0x20, 0, 0 }),
+    report(0x11, 0xff, 0x01, 0x11, { 0x0f, 0xff, 0x00, 0x00, 0x20, 0, 0 }),
+  } })
+  h:assert(labeled_dev:initialize(), "label fixture initializes")
+  local labeled = labeled_dev:key_remap_status().buttons
+  h:assert_eq(labeled[1].label, "Volume Down", "controls are labeled by CID, not by task id")
+  h:assert_eq(labeled[2].label, "Button 0x0FFF", "unknown CIDs fall back to their hex id")
 end

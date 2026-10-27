@@ -8,6 +8,7 @@ local bytes, request, feature = api.bytes, api.request, api.feature
 local DIRECT, device_profile = api.direct, api.device_profile
 local REPROG_CONTROLS_V4 = api.reprog_controls_v4
 local GKEY, MOUSE_BUTTON_SPY = api.gkey, api.mouse_button_spy
+local CONTROLS = halod.require("lib.hidpp2.controls")
 
 local function action_is_native(action)
   return not action or action.type == nil or action.type == "native"
@@ -27,16 +28,10 @@ local function remap_buttons(dev)
     local count = request(dev, devnum, reprog, 0x00):byte(1) or 0
     for i = 0, count - 1 do
       local info = request(dev, devnum, reprog, 0x10, bytes(i))
-      local hi, lo, task_hi, task_lo, flags, _, group = info:byte(1, 7)
+      local hi, lo, _, _, flags, _, group = info:byte(1, 7)
       if hi and lo and flags and (flags & 0x20) ~= 0 then
         local cid = (hi << 8) | lo
-        local task = ((task_hi or 0) << 8) | (task_lo or 0)
-        local labels = { [0x0038] = "Left Button", [0x0039] = "Right Button", [0x003a] = "Middle Button",
-          [0x003b] = "Back", [0x003c] = "Forward", [0x00c7] = "DPI Down", [0x00c8] = "DPI Up",
-          [0x00c9] = "DPI Cycle", [0x00d0] = "DPI Shift", [0x00d7] = "Smart Shift",
-          [0x0050] = "Volume Mute", [0x0051] = "Volume Down", [0x0052] = "Volume Up" }
-        local label = labels[task] or (cid == 0x0056 and "Left Scroll")
-          or (cid == 0x005d and "Right Scroll") or string.format("Button 0x%04X", cid)
+        local label = CONTROLS[cid] or string.format("Button 0x%04X", cid)
         buttons[#buttons + 1] = { cid = cid, label = label, divertable = true, group = group or 0 }
       end
     end
