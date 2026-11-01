@@ -1044,10 +1044,10 @@ local callbacks = {
       for zone = 0, dev.lighting.channels - 1 do write_rgb_zone(dev, "zone_" .. zone, { color }) end
     end
   end,
-  write_frame = function(dev, zone_id, bytes, led_ids)
+  write_frame = function(dev, zone_id, bytes)
   local colors = {}
   for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
-    write_rgb_zone(dev, zone_id, colors, led_ids)
+    write_rgb_zone(dev, zone_id, colors)
   end,
   close = function(_dev) end,
 }

@@ -108,10 +108,8 @@ local function color_led_zones(dev, index, count)
   return channels, slots
 end
 
-local function write_per_key_frame(dev, colors, led_ids)
-  -- Streaming colours are ordered like the host descriptor, which for
-  -- keyboards is physical key order rather than numeric firmware-ID order.
-  local ids = led_ids or dev.lighting.led_ids or {}
+local function write_per_key_frame(dev, colors)
+  local ids = dev.lighting.led_ids or {}
   local cache, states = dev.lighting.frame_cache or {}, {}
   dev.lighting.frame_cache = cache
   for i = 1, math.min(#ids, #colors) do
@@ -263,9 +261,9 @@ local function write_per_key_pairs(dev, channels)
   for _, entry in ipairs(entries) do cache[entry.id] = { entry.r, entry.g, entry.b } end
 end
 
-local function write_rgb_zone(dev, zone_id, colors, led_ids)
+local function write_rgb_zone(dev, zone_id, colors)
   if not dev.lighting then return end
-  if dev.lighting.wire == "per_key" then write_per_key_frame(dev, colors, led_ids); return end
+  if dev.lighting.wire == "per_key" then write_per_key_frame(dev, colors); return end
   local zone = tonumber(zone_id:match("^zone_(%d+)$")) or 0
   local color = colors[1] or { r = 0, g = 0, b = 0 }
   local slot = dev.lighting.static_slots[zone + 1] or 0
