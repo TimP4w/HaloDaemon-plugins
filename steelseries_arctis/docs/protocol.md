@@ -13,7 +13,7 @@ SteelSeries vendor HID protocol for the Arctis Nova Pro Wireless headset family:
 
 ## Overview
 
-A SteelSeries vendor HID protocol spoken on **HID interface 4** (the plugin's device spec matches `interface: 4`). Every packet is **64 bytes** and begins with a report ID and a message ID.
+A SteelSeries vendor HID protocol spoken on **HID interface 4** (the plugin's device spec matches `interface: 4`). On Windows the interface splits into two collections: usage page `0xFFC0` owns report `0x06` (commands and replies) and `0xFF00` owns report `0x07` (notifications); a `0x06` write to the `0xFF00` collection fails with `ERROR_INVALID_FUNCTION`, so the spec pins `usage_page: 0xffc0`. Every packet is **64 bytes** and begins with a report ID and a message ID.
 
 Supported base stations: `0x1038:0x12E0` (Nova Pro Wireless), `0x1038:0x12E5` and `0x1038:0x225D` (Nova Pro Wireless X). The two **X** PIDs additionally expose a Bluetooth status block in the status response (see §1); the plugin gates the BT booleans to them via `dev.match.pid`.
 
