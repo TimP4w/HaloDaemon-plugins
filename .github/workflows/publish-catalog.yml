@@ -1,0 +1,78 @@
+name: Publish catalog
+
+on:
+  workflow_call:
+    inputs:
+      name:
+        description: Catalog display name
+        type: string
+        required: true
+      catalog-url:
+        description: The live catalog.yaml this publish replaces
+        type: string
+        required: true
+      key-id:
+        type: string
+        required: true
+      trusted-key:
+        description: "<key-id>=<base64 public key> the previous catalog must verify with"
+        type: string
+        required: true
+      bootstrap:
+        description: First publish, with no previous catalog
+        type: boolean
+        default: false
+    secrets:
+      HALOD_PLUGIN_SIGNING_KEY_B64:
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: github-pages
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+        with:
+          path: plugins
+
+      - name: Check out HaloDaemon
+        uses: actions/checkout@v4
+        with:
+          repository: TimP4w/HaloDaemon
+          ref: main
+          path: halodaemon
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the signing tool outside the published tree
+        working-directory: halodaemon/src
+        run: |
+          cargo build --release -p halod-plugin-signing
+          cp target/release/halod-plugin-signing "$RUNNER_TEMP/halod-plugin-signing"
+
+      - name: Build, sign and verify the catalog
+        env:
+          TOOL: ${{ runner.temp }}/halod-plugin-signing
+          HALOD_PLUGIN_SIGNING_KEY_B64: ${{ secrets.HALOD_PLUGIN_SIGNING_KEY_B64 }}
+          CATALOG_URL: ${{ inputs.catalog-url }}
+          TRUSTED_KEY: ${{ inputs.trusted-key }}
+        run: |
+          set -euo pipefail
+          args=(--previous "$CATALOG_URL" --trusted-key "$TRUSTED_KEY")
+          if [ "${{ inputs.bootstrap }}" = true ]; then
+            args=(--bootstrap)
+          fi
+          "$TOOL" catalog plugins --out site --name "${{ inputs.name }}" "${args[@]}"
+          "$TOOL" sign site --key-id "${{ inputs.key-id }}"
+          "$TOOL" verify site --trusted-key "$TRUSTED_KEY"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - uses: actions/deploy-pages@v4

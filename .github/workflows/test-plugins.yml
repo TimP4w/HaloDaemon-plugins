@@ -3,6 +3,14 @@ name: Test plugins
 on:
   push:
   pull_request:
+  workflow_call:
+    inputs:
+      catalog-url:
+        type: string
+        required: true
+      trusted-key:
+        type: string
+        required: true
 
 jobs:
   plugin-test:
@@ -37,7 +45,7 @@ jobs:
         run: cargo build -p halod --features plugin-test
         working-directory: halodaemon/src
 
-      - name: Validate packages and generated release metadata
+      - name: Check protocol docs and the license notice
         run: |
           for manifest in plugins/*/plugin.yaml; do
             package="${manifest%/plugin.yaml}"
@@ -46,14 +54,20 @@ jobs:
               exit 1
             }
           done
-          cargo run --manifest-path halodaemon/src/Cargo.toml \
-            -p halod-plugin-signing -- index plugins \
-            --version 0.0.0 --id test-release --name "Test release"
-          cargo run --manifest-path halodaemon/src/Cargo.toml \
-            -p halod-plugin-signing -- validate plugins
-          rm plugins/release.yaml
-          python3 plugins/scripts/generate-licenses.py \
-            --output "$RUNNER_TEMP/plugin-licenses.txt"
+          python3 plugins/scripts/generate-licenses.py --check
+
+      - name: Build a catalog against the published one
+        env:
+          CATALOG_URL: ${{ inputs.catalog-url || 'https://timp4w.github.io/HaloDaemon-plugins/catalog.yaml' }}
+          TRUSTED_KEY: ${{ inputs.trusted-key || 'halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=' }}
+        run: |
+          set -euo pipefail
+          args=(--bootstrap)
+          if curl --silent --fail --head "$CATALOG_URL" > /dev/null; then
+            args=(--previous "$CATALOG_URL" --trusted-key "$TRUSTED_KEY")
+          fi
+          cargo run --manifest-path halodaemon/src/Cargo.toml -p halod-plugin-signing -- \
+            catalog plugins --out "$RUNNER_TEMP/catalog" --name "dry run" "${args[@]}"
 
       - name: Run halod plugin-test on every package with a test.lua
         run: |

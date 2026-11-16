@@ -6,6 +6,7 @@ type: integration
 name: OpenRGB
 author: HaloDaemon
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 description: OpenRGB integration that exposes its controllers as devices.
 translations:
@@ -16,8 +17,6 @@ setup:
   modes: [manual]
   auth: { kind: none }
 capabilities: [lighting]
-permissions:
-  - network
 transports:
   tcp:
     host_key: host

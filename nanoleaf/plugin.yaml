@@ -5,6 +5,7 @@ type: integration
 name: Nanoleaf
 author: HaloDaemon
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 description: Controls a Nanoleaf light-panel controller over its local HTTP API (OpenAPI v1).
 translations:
@@ -15,9 +16,6 @@ translations:
     setup.auth.instructions.0: Tieni premuto il pulsante di accensione/spegnimento del controller per 5–7 secondi.
     setup.auth.instructions.1: Rilascialo quando i LED del pannello iniziano a lampeggiare in sequenza.
 capabilities: [lighting]
-permissions:
-  - network
-  - secure_storage
 transports:
   http:
     host_key: host

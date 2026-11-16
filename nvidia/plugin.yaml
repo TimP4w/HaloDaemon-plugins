@@ -2,6 +2,7 @@
 id: nvidia
 name: NVIDIA GPUs
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 description: NVIDIA GPU thermal sensors reported by nvidia-smi.
 translations:
@@ -9,7 +10,6 @@ translations:
     plugin.name: GPU NVIDIA
     plugin.description: Sensori termici delle GPU NVIDIA rilevati da nvidia-smi.
 platforms: [linux, windows]
-permissions: [command]
 capabilities: [sensors]
 dynamic_children: true
 devices:

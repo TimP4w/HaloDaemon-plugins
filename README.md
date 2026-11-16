@@ -10,7 +10,7 @@ source tree but are validated against one repository index.
 ## Plugin catalog
 
 Each hardware protocol is documented by the package that implements it. The
-manifest remains the authoritative device, platform, permission, and transport
+manifest remains the authoritative device, platform, and transport
 catalog.
 
 | Package | Hardware or service | Transport | Documentation |
@@ -58,76 +58,52 @@ the implementing package's `docs/` directory and link to the exact Lua code.
 When related packages share a vendor, each package documents only the commands
 it sends and parses; cross-link another package instead of copying its protocol.
 
-## Authority and activation
+## What a plugin can reach
 
-Plugins are disabled until the user approves their normalized authority. The
-manifest declares permissions and the narrow transport scope the daemon will
-enforce: HID identities, USB devices and endpoints, SMBus addresses, commands,
-or network access. Adding authority to an installed plugin requires renewed
-consent.
+A plugin can only use what its manifest declares: its HID identities, USB
+devices and endpoints, SMBus addresses, commands, or network transports. The
+daemon enforces those scopes and shows the user what each plugin uses. Plugins
+are installed, enabled and updated one at a time.
 
-Each plugin is standalone. A signed release may publish one plugin or a pack of
-plugins; `release.yaml` is generated from that exact release payload during
-publication and is not committed.
+Each package carries its own semver `version` and the plugin `api` it targets
+(see the [manifest reference](docs/manifest-reference.md#plugin-api-version)).
 
-Plugin packages use their own semantic versions, starting at `1.0.0`. Pack
-releases follow the daemon's minor line (for example daemon `0.10` uses release
-`0.10.x`), but their patch number is independent from both the daemon patch and
-individual plugin versions.
+## Publishing
 
-## Testing
+Every push to `main` runs the package tests, then publishes the repository to
+GitHub Pages as a signed catalog:
 
-Release metadata is generated only for validation and publication. From a
-HaloDaemon checkout, validate it with:
+```text
+catalog.yaml                     signature line + index of every package
+licenses.txt
+packages/<id>-<version>.tar.gz   one immutable archive per package version
+```
+
+The catalog keeps the newest version of each package for every `api` value it
+has published, so older HaloDaemon releases still find a compatible build.
+Publishing fails if a package's content changed while its `version` did not.
+Users add the repository by its catalog URL,
+`https://timp4w.github.io/HaloDaemon-plugins/catalog.yaml`.
+
+To check a change the same way CI does, from a HaloDaemon checkout:
 
 ```powershell
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 0.0.0 --id test-release --name "Test release"
-python scripts/generate-licenses.py
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
-Remove-Item release.yaml
+python scripts/generate-licenses.py --check
+cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- catalog . --out $env:TEMP\catalog --name "dry run" --previous https://timp4w.github.io/HaloDaemon-plugins/catalog.yaml --trusted-key halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=
 ```
 
-Publication recomputes every package SHA-256 and the generated `licenses.txt`
-SHA-256 before signing the exact `release.yaml` bytes. A package or license
-notice change therefore cannot retain an old hash or signature.
-
-Third-party repositories can use the same optional trust-on-first-use format:
-`halod-plugin-signing sign` writes the Ed25519 public key and key id into the
-canonical `release.yaml`, then signs those exact bytes as `release.sig`.
-HaloDaemon pins that advertised key on first import and rejects later key
-changes. The official repository remains a special case authenticated by the
-keys built into HaloDaemon.
-
-The advertised public key is a top-level block in the repository root's
-`release.yaml`; it does not belong in any package's `plugin.yaml`:
-
-```yaml
-signing_key:
-  id: example-repository-2026
-  algorithm: ed25519
-  public_key: "<base64-encoded raw 32-byte Ed25519 public key>"
-```
-
-`public_key` is Base64 of the raw 32-byte Ed25519 public key, not PEM and not a
-path. Do not commit the matching private seed. Generate a key and let the tool
-populate the block and `release.sig`:
+Third-party repositories can reuse the publish workflow with their own key.
+HaloDaemon pins a signed repository's key the first time it is added and
+rejects a catalog signed by any other key; changing keys means removing and
+re-adding the repository. Generate a key with:
 
 ```powershell
 cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- keygen example-repository-2026
-$env:HALOD_PLUGIN_SIGNING_KEY_B64 = '<private_seed_b64>'
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 1.2.1 --id example-plugins --name "Example plugins"
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- sign . --key-id example-repository-2026
 ```
 
-Publish `release.yaml`, `release.sig`, and `plugins.tar.gz` as release assets. Keep the key id stable: after the
-first successful import HaloDaemon pins the advertised key, and any later key
-addition, removal, or replacement requires users to remove and re-import the
-repository.
-
-A public key block alone is never sufficient. `release.sig` must name the
-same key id and must be produced from the matching private seed over the exact
-`release.yaml` bytes. Run `halod-plugin-signing validate .` before
-signing; package id, version, or hash mismatches make the repository invalid.
+Store `private_seed_b64` as the `HALOD_PLUGIN_SIGNING_KEY_B64` secret of the
+`github-pages` environment and never commit it. The first publish has no
+previous catalog: run the Publish workflow by hand with `bootstrap` checked.
 
 Run one package against the daemon's recording transports:
 
@@ -158,8 +134,9 @@ reverse-engineering work, including
 | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | MPL-2.0 | NCT677x SuperIO register map, AMD Ryzen (Zen) SMN thermal decode |
 | [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM |
 
-Publication generates `licenses.txt` from each `plugin.yaml` license and the
-SPDX license/copyright declarations in that package. This deliberately shows
-both when they differ, such as the GPL-3.0-or-later Logitech plugin and its
-GPL-2.0-or-later Solaar-derived source. Development CI generates a temporary
-copy to validate the source data without committing the release artifact.
+`licenses.txt` is generated from each `plugin.yaml` license and the SPDX
+license/copyright declarations in that package, and published beside the
+catalog. It deliberately shows both when they differ, such as the
+GPL-3.0-or-later Logitech plugin and its GPL-2.0-or-later Solaar-derived source.
+Regenerate it with `python scripts/generate-licenses.py`; CI fails when it is
+stale.

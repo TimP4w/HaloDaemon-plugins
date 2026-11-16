@@ -2,6 +2,7 @@
 id: logitech
 name: Logitech HID++
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 description: Logitech HID++ direct devices and receivers.
 translations:
@@ -9,7 +10,6 @@ translations:
     plugin.name: Logitech HID++
     plugin.description: Dispositivi diretti e ricevitori Logitech HID++.
 platforms: [linux, windows]
-permissions: [hid]
 capabilities: [lighting, battery, connection, dpi, controls, key_remap, keyboard_layout, onboard_profiles, pairing, equalizer]
 dynamic_children: true
 devices:

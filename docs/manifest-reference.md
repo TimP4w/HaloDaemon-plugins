@@ -3,8 +3,8 @@
 `plugin.yaml` describes a plugin without running its Lua code. HaloDaemon reads
 and validates this file before the plugin can be enabled.
 
-Release package hashes belong in the ephemeral `release.yaml` generated during
-publication, not in a plugin manifest.
+Publication adds archive digests to the repository's signed `catalog.yaml`;
+they never belong in a plugin manifest.
 
 ## Package layout
 
@@ -30,9 +30,9 @@ outside its own package.
 id: example_ring
 name: Example Ring
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 platforms: [linux, windows]
-permissions: [hid]
 capabilities: [lighting]
 
 devices:
@@ -55,12 +55,12 @@ transports:
 | `experimental` | Marks an unfinished or not-yet-validated plugin in the GUI. Default: `false`. |
 | `name` | Display name. |
 | `author` | Plugin author. |
-| `version` | Plugin version text. |
+| `version` | Required semver version. Bump it whenever the package changes; publication refuses changed content under an already published version. |
+| `api` | Required plugin API, `<major>.<minor>`. See [Plugin API version](#plugin-api-version). |
 | `license` | License name or SPDX identifier. |
 | `description` | Short description. |
 | `entry` | Entry script. Default: `main.lua`. |
 | `platforms` | Any of `linux`, `windows`, and `macos`. Empty means all platforms. |
-| `permissions` | Privileges shown in the consent prompt. |
 | `capabilities` | Everything this package may expose at runtime. |
 | `devices` | Hardware entries for a device plugin. |
 | `transports` | Transport settings and access limits. |
@@ -265,25 +265,37 @@ category with no entry (or one whose controls the device does not report) is
 appended as its own full-width row, so a layout may name fewer categories than
 the plugin declares.
 
-## Permissions
+## Plugin API version
 
-| Permission | Grants |
+`api` names the host API the package is written against. HaloDaemon loads a
+package only when the major version matches its own and the minor version is
+not newer. Publication keeps the newest version of each package for every
+`api` value it has used, so an older HaloDaemon still finds a compatible build.
+
+Raise the minor version when the package starts using a host feature added in
+that minor release. A major version changes only when HaloDaemon breaks the Lua
+API or manifest format.
+
+## What a plugin uses
+
+A plugin can only reach what its manifest declares. HaloDaemon derives the list
+below from those declarations, shows it to the user, and enforces it at every
+transport open and sandbox global:
+
+| Shown as | Declared by |
 |---|---|
-| `hid` | Access to the matched HID device and its input reports. |
-| `usb` | Access to declared USB devices, interfaces, and endpoints. |
-| `smbus` | SMBus scanning and scoped register access. |
-| `hwmon` | Access to the scoped Linux hwmon collection. |
-| `lpcio` | Typed LPC/Super I/O operations on Windows. |
-| `amd_smn` | Read-only AMD SMN access on Windows. |
-| `command` | Running declared executable names without a shell. |
-| `network` | Opening network connections. |
-| `os` | The limited `os.time()` and `os.clock()` functions. |
-| `secure_storage` | Reading this plugin's protected config values. |
-| `audio_routing` | Creating and controlling host audio sinks. |
+| HID | a `hid` device match or `transports.hid` |
+| USB | a `usb` device match or `transports.usb` |
+| SMBus | an `smbus` device match |
+| hwmon | an `hwmon` match or `transports.hwmon` |
+| LPC I/O | `transports.lpcio` |
+| AMD SMN | `transports.amd_smn` |
+| Commands | `transports.command` |
+| Network | `transports.tcp`, `transports.http`, `transports.udp`, setup discovery, or OAuth setup |
+| Secure storage | a `secure: true` config field or OAuth setup |
+| Audio routing | `transports.audio_routing: {}` |
 
-A hardware match must declare its matching permission. TCP and HTTP require
-`network`. The command transport requires `command`. A new permission requires
-new user consent.
+`os.time()` and `os.clock()` are always available.
 
 ## Host requirements
 
@@ -327,7 +339,6 @@ collection on the same physical device.
 ### USB
 
 ```yaml
-permissions: [usb]
 transports:
   usb:
     devices:
@@ -346,6 +357,8 @@ transports:
         control:
           max_transfer_size: 64
           max_timeout_ms: 1000
+          requests:
+            - { request_type: 0x21, request: 0x09 }
 
       - id: companion
         vid: 0x1234
@@ -366,12 +379,13 @@ Set it explicitly when the device has several possible interfaces.
 Every endpoint is an allowlist entry. Its address also sets its direction:
 `0x01..0x0f` are OUT and `0x81..0x8f` are IN. The type is `bulk` or
 `interrupt`. Calls that exceed the size or timeout limits fail. USB control
-transfers are disabled unless the device has a `control` block.
+transfers are disabled unless the device has a `control` block. When `requests`
+is set, only those `request_type`/`request` pairs are allowed; leave it out to
+allow any request.
 
 ### TCP
 
 ```yaml
-permissions: [network]
 transports:
   tcp:
     host_key: host
@@ -387,10 +401,9 @@ addresses.
 ### Serial
 
 A serial/COM byte stream for integrations that talk over a UART or USB-serial
-adapter. Requires the `serial` permission.
+adapter.
 
 ```yaml
-permissions: [serial]
 transports:
   serial:
     port_key: serial_port   # config field holding the selected port
@@ -417,10 +430,9 @@ for the runtime contract and line-control operations.
 
 ### HTTP
 
-A scoped HTTP client for integrations. Requires the `network` permission.
+A scoped HTTP client for integrations.
 
 ```yaml
-permissions: [network]
 transports:
   http:
     host_key: host
@@ -458,11 +470,10 @@ verification. An integration declares exactly one root transport, so `http`,
 
 A scoped connected-UDP capability (`halod.udp`). Like `http` it is a bounded
 capability rather than a root transport, so it may accompany a device or an
-integration. Requires the `network` permission. Datagrams may only reach the one
+integration. Datagrams may only reach the one
 configured destination; there is no broadcast, multicast, or `send_to`.
 
 ```yaml
-permissions: [network]
 transports:
   udp:
     host_key: host          # config field holding the destination host
@@ -483,7 +494,6 @@ true` only for a LAN device. See [docs/lua-api.md](lua-api.md) for `halod.udp`.
 ### Command
 
 ```yaml
-permissions: [command]
 transports:
   command:
     commands: [nvidia-smi]
@@ -500,7 +510,6 @@ Linux hwmon is an integration transport rather than a device match:
 ```yaml
 type: integration
 platforms: [linux]
-permissions: [hwmon]
 transports:
   hwmon: {}
 ```
@@ -515,7 +524,6 @@ transport, so `hwmon` and `tcp` cannot appear together.
 These Windows transports use explicit empty settings:
 
 ```yaml
-permissions: [amd_smn, lpcio]
 transports:
   amd_smn: {}
   lpcio: {}
@@ -537,7 +545,6 @@ persistence; Lua only returns typed data from `validate(context)`,
 
 ```yaml
 type: integration
-permissions: [network, secure_storage]
 setup:
   modes: [automatic, manual]
   discovery:
@@ -625,8 +632,7 @@ and duration fields may set `min` and `max`; ports are always restricted to
 
 Lua receives booleans as booleans, numbers, ports, and durations as numbers,
 and text, enum, host, and URL values as strings. Secure fields are masked in
-the GUI, never cross IPC in plaintext, and require the manifest to declare the
-`secure_storage` permission before the package validates.
+the GUI and never cross IPC in plaintext.
 
 ## Effect plugins
 
