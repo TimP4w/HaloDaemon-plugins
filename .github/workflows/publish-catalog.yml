@@ -44,7 +44,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TimP4w/HaloDaemon
-          ref: main
+          ref: plugin-rework-audit
           path: halodaemon
 
       - uses: dtolnay/rust-toolchain@stable
