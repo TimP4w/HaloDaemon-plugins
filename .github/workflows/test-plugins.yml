@@ -76,6 +76,9 @@ jobs:
           args=(--previous "$CATALOG_URL" --trusted-key "$TRUSTED_KEY")
           if [ "$BOOTSTRAP" = "true" ]; then
             args=(--bootstrap)
+          elif [ "$(curl --silent --head --output /dev/null --write-out '%{http_code}' "$CATALOG_URL")" = 404 ]; then
+            echo "$CATALOG_URL is not published yet; building without a previous catalog"
+            args=(--bootstrap)
           fi
           cargo run --manifest-path halodaemon/src/Cargo.toml -p halod-plugin-signing -- \
             catalog plugins --out "$RUNNER_TEMP/catalog" --name "dry run" "${args[@]}"
