@@ -576,7 +576,9 @@ a raw socket. Manual mode requires at least one non-secure config field.
   and secure storage; Lua never implements the browser protocol.
 
 An integration without `setup` is considered configured immediately, but it
-still implements `validate(context)`. Halo invokes validation before every
+still implements `validate(context)`. So is one whose setup asks for nothing:
+`auth.kind: none`, a `manual` mode, no `secure` field, and a `default` for every
+config field. Halo invokes validation before every
 enable. A setup integration is enabled only after pairing and final validation
 succeed.
 
