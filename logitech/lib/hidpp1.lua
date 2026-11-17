@@ -40,7 +40,7 @@ return function(api)
         if serial == "00000000" or serial == "FFFFFFFF" then serial = nil end
         out[#out + 1] = {
           index = slot, key = tostring(slot), serial = serial,
-          id = serial and ("logitech_" .. serial)
+          id = serial and ("logitech-" .. serial)
             or string.format("logitech_%04x_%d", wpid, slot),
           name = product_name(nil, wpid), device_type = device_type(pair:byte(8), wpid),
           extra = { wpid = wpid },

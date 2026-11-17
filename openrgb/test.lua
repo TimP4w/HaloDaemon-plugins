@@ -66,6 +66,15 @@ return function(h)
   h:assert_eq(controllers[3].location.kind, "opaque", "an unrecognized location stays opaque")
   h:assert_eq(controllers[3].location.value, "PCI: 0000:01:00.0", "opaque location is verbatim")
 
+  local found = dev:discover({
+    tcp = { { service = "tcp", id = "127.0.0.1:6742", name = "127.0.0.1:6742", host = "127.0.0.1", port = 6742 } },
+  })
+  h:assert_eq(#found, 1, "a listening local server becomes one candidate")
+  h:assert_eq(found[1].id, "127.0.0.1:6742", "candidate id is the probed endpoint")
+  h:assert_eq(found[1].values.host, "127.0.0.1", "candidate fills the host field")
+  h:assert_eq(found[1].values.port, "6742", "candidate fills the port field")
+  h:assert_eq(#dev:discover({}), 0, "no listening server means no candidates")
+
   local oversized = {}
   append(oversized, reply(40, string.pack("<I4", 3)))
   append(oversized, reply(0, string.pack("<I4", 257)))

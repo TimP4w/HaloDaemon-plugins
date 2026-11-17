@@ -99,8 +99,26 @@ local function gpro_tkl_keyboard(layout)
   }
 end
 
+local function bind_gkeys_to_function_row(keyboard, gkey_count)
+  for _, variant in pairs({ keyboard.ansi, keyboard.iso }) do
+    for _, mapping in ipairs(variant.keys) do
+      local n = mapping.key and tonumber(mapping.key:match("^f(%d+)$"))
+      if n and n <= gkey_count then mapping.remap_cid = n end
+    end
+  end
+end
+
+local function keyboard_with_remap(keyboard, remap_backend, buttons)
+  if keyboard and remap_backend == "gkey" then
+    bind_gkeys_to_function_row(keyboard, #buttons)
+  end
+  return keyboard
+end
+
 return {
   device_profile = device_profile,
   gpro_tkl_keyboard = gpro_tkl_keyboard,
+  bind_gkeys_to_function_row = bind_gkeys_to_function_row,
+  keyboard_with_remap = keyboard_with_remap,
 }
 end

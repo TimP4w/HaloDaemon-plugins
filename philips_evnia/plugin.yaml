@@ -4,6 +4,7 @@ id: philips_evnia
 name: Philips Evnia 49
 author: HaloDaemon
 version: 1.0.0
+api: "3.0"
 license: GPL-3.0-or-later
 description: Philips Evnia 49M2C8900 - DDC/CI picture/OSD controls + Ambiglow RGB.
 translations:
@@ -11,7 +12,6 @@ translations:
     plugin.name: Philips Evnia 49
     plugin.description: Philips Evnia 49M2C8900 - controlli immagine/OSD DDC/CI e RGB Ambiglow.
 capabilities: [lighting, controls]
-permissions: [usb]
 devices:
   - vendor: Philips
     model: 49M2C8900

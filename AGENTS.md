@@ -3,13 +3,12 @@
 # Repository instructions
 
 After changing any plugin package, package documentation, test fixture, or
-license notice, validate an ephemeral release manifest before finishing:
+license notice:
 
-```powershell
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- index . --version 0.0.0 --id test-release --name "Test release"
-cargo run --manifest-path ..\HaloDaemon\src\Cargo.toml -p halod-plugin-signing -- validate .
-Remove-Item release.yaml
-```
+- bump the package's `version` (publishing refuses changed content under a
+  published version);
+- regenerate `licenses.txt` with `python scripts/generate-licenses.py`;
+- run `halod plugin-test` on the package if it has a `test.lua`.
 
-Never commit `release.yaml`, `release.sig`, or `plugins.tar.gz`. The publication
-workflow generates, signs, validates, and uploads all three as release assets.
+Never commit `catalog.yaml` or package archives. The Publish workflow builds,
+signs and deploys them to GitHub Pages on every push to `main`.

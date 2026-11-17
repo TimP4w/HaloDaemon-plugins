@@ -3,6 +3,7 @@
 id: nuvoton_lpcio
 name: Nuvoton Super I/O
 version: 1.0.0
+api: "3.0"
 license: MPL-2.0
 description: Nuvoton NCT67xx temperature and PWM fan control through LPCIO.
 translations:
@@ -10,7 +11,6 @@ translations:
     plugin.name: Super I/O Nuvoton
     plugin.description: Temperatura e controllo PWM delle ventole Nuvoton NCT67xx tramite LPCIO.
 platforms: [windows]
-permissions: [lpcio]
 capabilities: [sensors, cooling]
 dynamic_children: true
 devices:

@@ -6,6 +6,7 @@ id: corsair_dram
 name: Corsair DRAM RGB
 author: HaloDaemon
 version: 1.0.0
+api: "3.0"
 license: GPL-2.0-or-later
 description: Corsair iCUE DRAM RGB (Vengeance / Dominator, DDR4 & DDR5).
 translations:
@@ -13,7 +14,6 @@ translations:
     plugin.name: RGB DRAM Corsair
     plugin.description: RGB per memorie Corsair iCUE DRAM (Vengeance / Dominator, DDR4 e DDR5).
 platforms: [linux, windows]
-permissions: [smbus]
 capabilities: [lighting]
 devices:
   - vendor: Corsair
