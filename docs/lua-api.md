@@ -136,9 +136,12 @@ return {
   },
   -- Optional runtime keyboard geometry. Standard keys inherit their cells
   -- from the named base; device-specific keys provide an explicit cell.
+  -- `remap_cid` ties a key to its `key_remap` button so the GUI can pick it
+  -- from the keyboard picture.
   keyboard = {
     ansi = { base = "tkl", keys = {
       { led_id = 1, key = "a" },
+      { led_id = 55, key = "f1", remap_cid = 1 },
       { led_id = 150, cell = { col = 5, row = -1.5 } },
     } },
     iso = { base = "tkl_iso", keys = {} },
@@ -331,7 +334,7 @@ end
 
 mDNS records contain `service`, `id`, `name`, `host`, `port`, `addresses`, and
 `txt`. SSDP records contain `service`, `id`, `name`, `location`, `source`, and
-`server`. Candidate IDs must be unique and stable. `values` may contain only
+`server`. TCP records contain `service`, `id`, `name`, `host`, and `port`. Candidate IDs must be unique and stable. `values` may contain only
 non-secure config keys declared by the manifest. Halo renders the candidates;
 plugins cannot return arbitrary controls or modal markup.
 
@@ -789,6 +792,7 @@ halod plugin-test .\openrgb
 | `dev:set_dpi_steps(steps)` | Replace host or onboard DPI stages through the capability. |
 | `dev:set_profile_enabled(slot, enabled)` | Change an onboard profile directory entry. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
+| `dev:discover(context)` | Run the integration's `discover` hook on fixture records and return its candidates. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
 | `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |
 | `dev:hwmon_read(key, attribute)` | Inspect a fixture attribute after plugin writes. |

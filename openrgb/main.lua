@@ -250,6 +250,18 @@ local function set_zone_colors(dev, index, zone_id, colors)
 end
 
 return {
+  discover = function(context)
+    local servers = {}
+    for _, server in ipairs(context.tcp or {}) do
+      servers[#servers + 1] = {
+        id = server.id,
+        name = "OpenRGB server",
+        values = { host = server.host, port = tostring(server.port) },
+      }
+    end
+    return servers
+  end,
+
   validate = function(context)
     local config = context.config or {}
     if not config.host or config.host == "" or not config.port or config.port == "" then

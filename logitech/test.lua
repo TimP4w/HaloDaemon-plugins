@@ -940,4 +940,34 @@ return function(h)
   local labeled = labeled_dev:key_remap_status().buttons
   h:assert_eq(labeled[1].label, "Volume Down", "controls are labeled by CID, not by task id")
   h:assert_eq(labeled[2].label, "Button 0x0FFF", "unknown CIDs fall back to their hex id")
+
+  local profiles = halod.require("lib.hidpp2.profiles")(function() return "G PRO" end)
+  local gpro = profiles.gpro_tkl_keyboard("u_s")
+  profiles.bind_gkeys_to_function_row(gpro, 12)
+  for _, variant in ipairs({ gpro.ansi, gpro.iso }) do
+    local bound = {}
+    for _, mapping in ipairs(variant.keys) do
+      if mapping.remap_cid then bound[mapping.key] = mapping.remap_cid end
+    end
+    for n = 1, 12 do
+      h:assert_eq(bound["f" .. n], n, "F" .. n .. " selects G-key " .. n)
+    end
+    h:assert_eq(bound.escape, nil, "keys outside the function row stay unbound")
+  end
+  local partial = profiles.gpro_tkl_keyboard("u_s")
+  profiles.bind_gkeys_to_function_row(partial, 3)
+  for _, mapping in ipairs(partial.ansi.keys) do
+    if mapping.key == "f4" then h:assert_eq(mapping.remap_cid, nil, "F4 is unbound past the G-key count") end
+  end
+  local function bound_f1(keyboard)
+    for _, mapping in ipairs(keyboard.ansi.keys) do
+      if mapping.key == "f1" then return mapping.remap_cid end
+    end
+  end
+  local two_buttons = { { cid = 1 }, { cid = 2 } }
+  h:assert_eq(bound_f1(profiles.keyboard_with_remap(profiles.gpro_tkl_keyboard("u_s"), "gkey", two_buttons)), 1,
+    "a gkey backend binds the function row")
+  h:assert_eq(bound_f1(profiles.keyboard_with_remap(profiles.gpro_tkl_keyboard("u_s"), "reprog", two_buttons)), nil,
+    "other remap backends leave the keyboard alone")
+  h:assert_eq(profiles.keyboard_with_remap(nil, "gkey", two_buttons), nil, "a mouse has no keyboard to bind")
 end

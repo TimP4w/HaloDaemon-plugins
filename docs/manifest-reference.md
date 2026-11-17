@@ -550,6 +550,7 @@ setup:
   discovery:
     mdns: ["_example._tcp.local."]
     ssdp: ["urn:example-org:device:controller:1"]
+    tcp: ["127.0.0.1:6742"]
   auth:
     kind: button
     title: Put the controller in pairing mode
@@ -559,13 +560,17 @@ setup:
 ```
 
 `modes` contains `automatic`, `manual`, or both. Automatic mode requires at
-least one mDNS service type or SSDP search target. Halo performs those network
+least one mDNS service type, SSDP search target, or `tcp` endpoint. A `tcp`
+endpoint is an `ip:port` literal that Halo probes with a short connect; it lists
+only endpoints that accept the connection. Halo performs those network
 protocols and passes normalized records to `discover`; the plugin does not get
 a raw socket. Manual mode requires at least one non-secure config field.
 
 `auth.kind` is one of:
 
-- `none`: validate and enable after choosing or entering the device.
+- `none`: one Configure step, then Done. With automatic mode Halo scans as
+  soon as setup opens and lists the candidates above the config form; choosing
+  one fills the form.
 - `button`: show fixed `title` and `instructions`, then invoke `pair` when the
   user starts pairing.
 - `oauth2_pkce`: run OAuth2 Authorization Code with PKCE through a loopback
@@ -576,9 +581,9 @@ a raw socket. Manual mode requires at least one non-secure config field.
   and secure storage; Lua never implements the browser protocol.
 
 An integration without `setup` is considered configured immediately, but it
-still implements `validate(context)`. So is one whose setup asks for nothing:
-`auth.kind: none`, a `manual` mode, no `secure` field, and a `default` for every
-config field. Halo invokes validation before every
+still implements `validate(context)`. An integration that declares `setup` stays
+unconfigured until the user completes it, even when every config field has a
+default; the defaults prefill the setup form. Halo invokes validation before every
 enable. A setup integration is enabled only after pairing and final validation
 succeed.
 

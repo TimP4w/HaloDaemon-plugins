@@ -5,7 +5,7 @@ id: openrgb
 type: integration
 name: OpenRGB
 author: HaloDaemon
-version: 1.0.0
+version: 1.1.0
 api: "3.0"
 license: GPL-3.0-or-later
 description: OpenRGB integration that exposes its controllers as devices.
@@ -14,7 +14,9 @@ translations:
     plugin.name: OpenRGB
     plugin.description: Integration OpenRGB che espone i suoi controller come dispositivi.
 setup:
-  modes: [manual]
+  modes: [automatic, manual]
+  discovery:
+    tcp: ["127.0.0.1:6742"]
   auth: { kind: none }
 capabilities: [lighting]
 transports:
