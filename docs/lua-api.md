@@ -1,6 +1,6 @@
 # Lua plugin API reference
 
-HaloDaemon uses Lua 5.4. `plugin.yaml` declares devices, permissions,
+HaloDaemon uses Lua 5.4. `plugin.yaml` declares devices,
 transports, capabilities, config fields, effects, and widgets. The entry script
 returns callback functions.
 
@@ -28,7 +28,7 @@ return {
 ```
 
 HaloDaemon does not run Lua while reading the manifest. It runs the entry script
-only after activation and consent. Keep module-level code limited to constants
+only after the plugin is enabled. Keep module-level code limited to constants
 and helper functions. Do device or network I/O inside callbacks.
 
 ## Globals and sandbox
@@ -42,7 +42,7 @@ includes `string.pack` and `string.unpack`. HaloDaemon adds:
 | `halod.config` | This plugin's resolved config values. Booleans are Lua booleans; number, port, and duration fields are numbers; textual fields are strings. |
 | `halod.platform` | Target platform name such as `windows` or `linux`. |
 | `halod.sleep_ms(ms)` | Block this device worker for a protocol delay; capped at 5000 ms. |
-| `halod.monotonic_ms()` | Permission-free elapsed-milliseconds clock for rate limiting/caching. |
+| `halod.monotonic_ms()` | Elapsed-milliseconds clock for rate limiting and caching. |
 | `halod.buffer(value)` | Allocate a zeroed buffer by length or copy a Lua string. |
 | `halod.require(name)` | Load a package-local module, for example `lib.hidpp.v1`. |
 | `halod.publish(key, value)` | Publish a declared bounded latest-value record. |
@@ -54,8 +54,8 @@ It does not read the filesystem at runtime. Absolute paths, `..`, path
 separators, symlinks, and modules from another plugin are rejected.
 
 `os`, `io`, `package`, `require`, `dofile`, `loadfile`, `load`, `debug`, and
-`collectgarbage` are removed. With `os` permission, a small `os` table provides
-only `os.time()` and `os.clock()`.
+`collectgarbage` are removed. A small `os` table provides only `os.time()` and
+`os.clock()`.
 
 Each VM has a 64 MiB Lua memory limit. Each callback has a 50,000,000 instruction
 budget. Device calls time out after 30 seconds; effect calls after 2 seconds.
@@ -95,7 +95,7 @@ Every device callback receives `dev` first.
 | `dev.match.key` | Optional stable route key for a dynamic child. |
 | `dev.match.name` | Optional child name returned by discovery. |
 | `dev.status` | Latest value returned by `read_status`; set by the polling loop. |
-| `dev.audio` | Audio-routing userdata when `audio_routing` is granted. |
+| `dev.audio` | Audio-routing userdata when the manifest declares `transports.audio_routing`. |
 
 Extra transport-specific numeric fields may also appear in `dev.match` for a
 dynamic child.
@@ -107,7 +107,7 @@ dynamic child.
 Runs once on each matching SMBus bus before probing addresses. The device match
 must set `pre_scan: true`. The callback can access only `addresses` and
 `extra_addresses` from the manifest. Plugin config is not available. The call
-has a 5-second timeout and requires the `smbus` permission.
+has a 5-second timeout and requires an `smbus` device match.
 
 ### `initialize(dev) -> boolean | table | nil`
 
@@ -136,9 +136,12 @@ return {
   },
   -- Optional runtime keyboard geometry. Standard keys inherit their cells
   -- from the named base; device-specific keys provide an explicit cell.
+  -- `remap_cid` ties a key to its `key_remap` button so the GUI can pick it
+  -- from the keyboard picture.
   keyboard = {
     ansi = { base = "tkl", keys = {
       { led_id = 1, key = "a" },
+      { led_id = 55, key = "f1", remap_cid = 1 },
       { led_id = 150, cell = { col = 5, row = -1.5 } },
     } },
     iso = { base = "tkl_iso", keys = {} },
@@ -308,7 +311,7 @@ end
 ```
 
 `context.config` contains the integration's declared configuration, including
-credentials only when the plugin has `secure_storage` consent. Halo invokes
+credentials only when it declares secure config fields. Halo invokes
 `validate` before enabling and after an interactive setup. Return `ok` and an
 optional user-facing `reason`; setup does not complete when `ok` is false.
 
@@ -331,7 +334,7 @@ end
 
 mDNS records contain `service`, `id`, `name`, `host`, `port`, `addresses`, and
 `txt`. SSDP records contain `service`, `id`, `name`, `location`, `source`, and
-`server`. Candidate IDs must be unique and stable. `values` may contain only
+`server`. TCP records contain `service`, `id`, `name`, `host`, and `port`. Candidate IDs must be unique and stable. `values` may contain only
 non-secure config keys declared by the manifest. Halo renders the candidates;
 plugins cannot return arbitrary controls or modal markup.
 
@@ -457,10 +460,10 @@ fit the manifest rules.
 
 ## Command transport
 
-The command transport exposes an allowlisted runner:
+The command transport exposes an allowlisted runner on `dev.transport`:
 
 ```lua
-local result = command.run("nvidia-smi", { "--query-gpu=name" })
+local result = dev.transport:run("nvidia-smi", { "--query-gpu=name" })
 -- result = {
 --   success = true,
 --   exit_code = 0,
@@ -473,8 +476,7 @@ local result = command.run("nvidia-smi", { "--query-gpu=name" })
 The executable must appear in `transports.command.commands`. Arguments are
 passed directly without a shell. Non-zero exits return `success = false` with
 their exit code and bounded stderr. A timeout returns `timed_out = true`; a
-failure to resolve or spawn the executable raises a Lua error. The same result
-is returned by `dev.transport:run(executable, args)`.
+failure to resolve or spawn the executable raises a Lua error.
 
 ## Windows typed transports
 
@@ -499,7 +501,7 @@ lpcio_superio_outb(register, value)
 ```
 
 These methods are available only on Windows and only with the matching
-permission and transport. They do not expose the raw broker handle.
+transport declared. They do not expose the raw broker handle.
 
 ## Linux hwmon transport
 
@@ -547,8 +549,7 @@ only inside the `batch` callback. Do not save it for later use.
 
 ## Scoped HTTP requests
 
-A plugin that declares an `http` transport and holds the `network` permission
-gets `halod.http:request{…}`. It is a capability global (like `halod.publish`),
+A plugin that declares an `http` transport gets `halod.http:request{…}`. It is a capability global (like `halod.publish`),
 not `dev.transport:` userdata; there is no persistent socket. Each call is a
 synchronous, bounded request validated against the declared origins before a
 socket opens.
@@ -576,7 +577,7 @@ declared method set, size limits, timeout, or origin scope raise an error.
 
 ## Scoped UDP datagrams
 
-A plugin that declares a `udp` transport and holds the `network` permission gets
+A plugin that declares a `udp` transport gets
 `halod.udp`, a capability global for exchanging datagrams with the single
 configured destination. There is no `send_to`; every datagram goes to the one
 vetted host/port.
@@ -791,6 +792,7 @@ halod plugin-test .\openrgb
 | `dev:set_dpi_steps(steps)` | Replace host or onboard DPI stages through the capability. |
 | `dev:set_profile_enabled(slot, enabled)` | Change an onboard profile directory entry. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
+| `dev:discover(context)` | Run the integration's `discover` hook on fixture records and return its candidates. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
 | `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |
 | `dev:hwmon_read(key, attribute)` | Inspect a fixture attribute after plugin writes. |

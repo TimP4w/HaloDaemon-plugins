@@ -7,10 +7,10 @@ local function lines(value)
   return out
 end
 
-local function gpu_rows()
+local function gpu_rows(dev)
   -- Absence of nvidia-smi/a transient driver restart is not a device failure.
   -- The former native source simply yielded no readings in that case.
-  local ok, result = pcall(command.run, "nvidia-smi", { "--query-gpu=uuid,name", "--format=csv,noheader,nounits" })
+  local ok, result = pcall(dev.transport.run, dev.transport, "nvidia-smi", { "--query-gpu=uuid,name", "--format=csv,noheader,nounits" })
   if not ok or not result.success then return {} end
   local rows = {}
   for _, line in ipairs(lines(result.stdout)) do
@@ -23,9 +23,9 @@ end
 local function stable_id(uuid) return "nvidia_gpu_" .. uuid end
 
 return {
-  enumerate_controllers = function(_dev)
+  enumerate_controllers = function(dev)
     local controllers = {}
-    for index, gpu in ipairs(gpu_rows()) do
+    for index, gpu in ipairs(gpu_rows(dev)) do
       controllers[#controllers + 1] = {
         index = index - 1, id = stable_id(gpu.uuid), key = gpu.uuid,
         serial = gpu.uuid, name = gpu.name, device_type = "gpu", sensor = {},
@@ -47,7 +47,7 @@ return {
     if dev.sensor_cache and now < (dev.sensor_cache_until or 0) then
       return dev.sensor_cache
     end
-    local ok, result = pcall(command.run, "nvidia-smi", {
+    local ok, result = pcall(dev.transport.run, dev.transport, "nvidia-smi", {
       "-i", uuid, "--query-gpu=temperature.gpu,temperature.memory", "--format=csv,noheader,nounits"
     })
     local core, memory
@@ -57,7 +57,7 @@ return {
     else
       -- Older drivers can reject the entire combined query for an unsupported field.
       local function query(field)
-        local success,response=pcall(command.run,"nvidia-smi",{"-i",uuid,"--query-gpu="..field,"--format=csv,noheader,nounits"})
+        local success,response=pcall(dev.transport.run,dev.transport,"nvidia-smi",{"-i",uuid,"--query-gpu="..field,"--format=csv,noheader,nounits"})
         return success and response.success and (lines(response.stdout)[1] or "") or nil
       end
       core,memory=query("temperature.gpu"),query("temperature.memory")

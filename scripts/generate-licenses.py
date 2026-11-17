@@ -98,9 +98,9 @@ def generate(root: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", type=Path, default=Path("licenses.txt"))
-    args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
+    parser.add_argument("--output", type=Path, default=root / "licenses.txt")
+    args = parser.parse_args()
     expected = generate(root)
     if args.check:
         actual = args.output.read_text(encoding="utf-8") if args.output.is_file() else None

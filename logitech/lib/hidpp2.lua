@@ -300,6 +300,7 @@ end
 local profiles = halod.require("lib.hidpp2.profiles")(product_name)
 local device_profile = profiles.device_profile
 local gpro_tkl_keyboard = profiles.gpro_tkl_keyboard
+local keyboard_with_remap = profiles.keyboard_with_remap
 local function has(features, code) return features[code] ~= nil end
 
 local VOLTAGE_CURVE = {
@@ -640,6 +641,7 @@ local callbacks = {
       -- remap only takes effect in host mode. See docs/hidpp2.md.
       result.key_remap = { buttons = buttons, requires_host_mode = dev.onboard ~= nil,
         default_mappings = defaults }
+      result.keyboard = keyboard_with_remap(result.keyboard, dev.remap.backend, buttons)
       capability("key_remap")
     end
     local rates = report_rates(dev)
