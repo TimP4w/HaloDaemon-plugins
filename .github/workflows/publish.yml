@@ -20,8 +20,10 @@ jobs:
     with:
       catalog-url: https://timp4w.github.io/HaloDaemon-plugins/catalog.yaml
       trusted-key: halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=
+      bootstrap: ${{ inputs.bootstrap == true }}
 
   publish:
+    if: github.ref == 'refs/heads/main'
     needs: test
     uses: ./.github/workflows/publish-catalog.yml
     permissions:

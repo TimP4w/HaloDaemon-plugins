@@ -3,6 +3,12 @@ name: Test plugins
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      bootstrap:
+        description: Build without a previous catalog (first publish only)
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       catalog-url:
@@ -11,6 +17,9 @@ on:
       trusted-key:
         type: string
         required: true
+      bootstrap:
+        type: boolean
+        default: false
 
 jobs:
   plugin-test:
@@ -25,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TimP4w/HaloDaemon
+          ref: plugin-rework-audit
           path: halodaemon
 
       - name: Install Rust
@@ -60,11 +70,12 @@ jobs:
         env:
           CATALOG_URL: ${{ inputs.catalog-url || 'https://timp4w.github.io/HaloDaemon-plugins/catalog.yaml' }}
           TRUSTED_KEY: ${{ inputs.trusted-key || 'halodaemon-official-2026=tjbwm5X4f70e+soVNV1AfRyb/TtnEsNNl+93YMO6IhQ=' }}
+          BOOTSTRAP: ${{ inputs.bootstrap == true }}
         run: |
           set -euo pipefail
-          args=(--bootstrap)
-          if curl --silent --fail --head "$CATALOG_URL" > /dev/null; then
-            args=(--previous "$CATALOG_URL" --trusted-key "$TRUSTED_KEY")
+          args=(--previous "$CATALOG_URL" --trusted-key "$TRUSTED_KEY")
+          if [ "$BOOTSTRAP" = "true" ]; then
+            args=(--bootstrap)
           fi
           cargo run --manifest-path halodaemon/src/Cargo.toml -p halod-plugin-signing -- \
             catalog plugins --out "$RUNNER_TEMP/catalog" --name "dry run" "${args[@]}"
