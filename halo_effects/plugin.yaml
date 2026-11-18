@@ -4,8 +4,8 @@ id: halo_effects
 type: effect
 name: Halo Effects
 author: HaloDaemon
-version: 1.0.0
-api: "3.0"
+version: 1.1.0
+api: "1.0"
 license: GPL-3.0-or-later
 description: The stock library of pixmap and direct RGB effects, and the reference effect-plugin implementation.
 translations:
@@ -239,36 +239,21 @@ effects:
       - gradient
       - meter
       kind: enum
-  - label: Color A
+  - label: Stops
     default:
-      b: 255
-      g: 128
-      r: 0
-    id: color_a
+    - color:
+        b: 255
+        g: 128
+        r: 0
+      value: 20
+    - color:
+        b: 0
+        g: 0
+        r: 255
+      value: 90
+    id: stops
     kind:
-      kind: color
-  - label: Color B
-    default:
-      b: 0
-      g: 0
-      r: 255
-    id: color_b
-    kind:
-      kind: color
-  - label: Min
-    default: 20.0
-    id: min
-    kind:
-      min: -100000.0
-      max: 100000.0
-      kind: number
-  - label: Max
-    default: 90.0
-    id: max
-    kind:
-      min: -100000.0
-      max: 100000.0
-      kind: number
+      kind: gradient
   - label: Smoothing
     default: 0.3
     id: smoothing

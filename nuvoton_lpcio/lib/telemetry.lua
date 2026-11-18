@@ -9,6 +9,17 @@ function M.rpm(raw_rpm, high, low)
   local count = (high << 5) | (low & 0x1f)
   return count > 0x14 and count < 0x1fff and math.floor(1350000 / count) or 0
 end
+local NUVOTON_VENDOR_ID = 0x5ca3
+
+-- False while the window is unprepared, locked by firmware or answering for a
+-- different chip; the caller then re-runs the config-space sequence.
+function M.hwm_ready(io, base, vendor_reg)
+  local ok, id = pcall(function()
+    return (io:lpcio_hwm_read(base, 0x8000 | vendor_reg) << 8) | io:lpcio_hwm_read(base, vendor_reg)
+  end)
+  return ok and id == NUVOTON_VENDOR_ID
+end
+
 function M.ec_read(io, base, register)
   local deadline = halod.monotonic_ms() + 500
   while io:lpcio_read_port(base + 4) ~= 0xff do

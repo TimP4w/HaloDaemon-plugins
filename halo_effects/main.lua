@@ -21,6 +21,7 @@
 -- never computes a hue conversion per pixel — 120000 pixels/frame in
 -- interpreted Lua adds up fast otherwise.
 local live_data=halod.require("lib.live_data")
+local stops=halod.require("lib.stops")
 
 local PALETTE = {}
 for i = 0, 255 do
@@ -70,6 +71,11 @@ local function linear_rgb(ctx, color, brightness)
     ctx:srgb_to_linear(color.g / 255.0) * brightness,
     ctx:srgb_to_linear(color.b / 255.0) * brightness
 end
+
+local DEFAULT_STOPS = {
+  { value = 20, color = { r = 0, g = 128, b = 255 } },
+  { value = 90, color = { r = 255, g = 0, b = 0 } },
+}
 
 local DEFAULT_STEPS = {
   { value = 40, color = { r = 0, g = 255, b = 0 } },
@@ -336,56 +342,46 @@ return {
     end
   end)(),
 
-  -- Direct: colors a zone (`mode = "gradient"`) or fills it up to the
-  -- reading (`mode = "meter"`) along a two-stop gradient, normalized against
-  -- [min, max]. The selected host sensor snapshot is the live reading, or nil
-  -- while unset/unavailable — the effect fades to black rather than snapping
-  -- when it disappears.
+  -- Direct: blends a zone (`mode = "gradient"`) or fills it up to the
+  -- reading (`mode = "meter"`) along the `stops` list, in raw sensor units.
+  -- Fades to black rather than snapping when the sensor disappears.
   led_effect_sensor_gradient = (function()
-    local state = { display_level = 0.0, presence = 0.0, last_frame = nil }
+    local state = { display_value = nil, presence = 0.0, last_frame = nil }
     local MAX_TAU = 5.0
     return function(leds, ctx)
       local dt, params = ctx.dt, ctx.params
       local sensor = sensor_value(ctx, params.sensor or "")
-      local min = params.min or 20.0
-      local max = params.max or 90.0
       local smoothing = params.smoothing or 0.3
       if state.last_frame ~= ctx.frame then
-        local target_level, target_presence
-        if sensor ~= nil then
-          local range = max - min
-          if math.abs(range) > 1e-6 then
-            target_level = clamp01((sensor - min) / range)
-          else
-            target_level = 0.0
-          end
-          target_presence = 1.0
-        else
-          target_level, target_presence = state.display_level, 0.0
-        end
         local tau = clamp01(smoothing) * MAX_TAU
-        state.display_level = ease_toward(state.display_level, target_level, tau, dt)
+        if sensor ~= nil then
+          if state.display_value == nil then
+            state.display_value = sensor
+          else
+            state.display_value = ease_toward(state.display_value, sensor, tau, dt)
+          end
+        end
+        local target_presence = (sensor ~= nil) and 1.0 or 0.0
         state.presence = ease_toward(state.presence, target_presence, tau, dt)
         state.last_frame = ctx.frame
       end
 
-      local mode = params.mode or "gradient"
-      local color_a = params.color_a or { r = 0, g = 128, b = 255 }
-      local color_b = params.color_b or { r = 255, g = 0, b = 0 }
-      local level, presence = state.display_level, state.presence
+      local sorted = stops.sorted(params.stops or DEFAULT_STOPS)
+      local value, presence = state.display_value, state.presence
+      local meter = (params.mode or "gradient") == "meter"
+      local low, high = stops.span(sorted)
+      local level = value and stops.level(sorted, value) or 0.0
       local out = {}
       for i, led in ipairs(leds) do
-        local r, g, b
-        if mode == "meter" and led.p > level then
-          r, g, b = 0.0, 0.0, 0.0
-        elseif mode == "meter" then
-          local color = ctx:lerp_color(color_a, color_b, led.p)
-          r, g, b = color.r, color.g, color.b
+        local color
+        if value == nil or (meter and led.p > level) then
+          color = { r = 0, g = 0, b = 0 }
+        elseif meter then
+          color = stops.color_at(sorted, low + led.p * (high - low))
         else
-          local color = ctx:lerp_color(color_a, color_b, level)
-          r, g, b = color.r, color.g, color.b
+          color = stops.color_at(sorted, value)
         end
-        local cr, cg, cb = linear_rgb(ctx, { r = r, g = g, b = b }, presence)
+        local cr, cg, cb = linear_rgb(ctx, color, presence)
         out[i] = { r = cr, g = cg, b = cb }
       end
       return out

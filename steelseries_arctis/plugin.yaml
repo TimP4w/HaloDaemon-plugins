@@ -3,8 +3,8 @@
 id: steelseries_arctis
 name: SteelSeries Arctis Nova Pro Wireless
 author: HaloDaemon
-version: 1.0.1
-api: "3.0"
+version: 1.0.2
+api: "1.0"
 poll_interval_ms: 250
 license: GPL-3.0-or-later
 description: SteelSeries Arctis Nova Pro Wireless / Wireless X controls and equalizer and chatmix support on linux.

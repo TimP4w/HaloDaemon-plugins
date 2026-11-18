@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: logitech
 name: Logitech HID++
-version: 1.0.1
-api: "3.0"
+version: 1.0.2
+api: "1.0"
 license: GPL-3.0-or-later
 description: Logitech HID++ direct devices and receivers.
 translations:
@@ -28,14 +28,17 @@ devices:
   - vendor: Logitech
     model: Unifying Receiver
     type: dongle
+    capabilities: [pairing]
     match: { hid: { vid: 0x046d, pids: [0xc52b, 0xc532], interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
   - vendor: Logitech
     model: Nano Receiver
     type: dongle
+    capabilities: [pairing]
     match: { hid: { vid: 0x046d, pids: [0xc518, 0xc51a, 0xc51b, 0xc521, 0xc525, 0xc526, 0xc52e, 0xc52f, 0xc531, 0xc534, 0xc535, 0xc537], interface: 1, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 4000 } }
   - vendor: Logitech
     model: LIGHTSPEED Receiver
     type: dongle
+    capabilities: [pairing]
     # Windows exposes the HID++ vendor interface as two collections. Receiver
     # enumeration uses HID++ 1.0 short reports, which must go to col01
     # (usage page FF00 / usage 1), never the long-report col02 collection.

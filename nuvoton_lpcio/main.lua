@@ -42,7 +42,7 @@ end
 local function variant_info(name)
   if name == "NCT6771F" then return { fans = 4, tach = {0x656,0x658,0x65a,0x65c}, pwm = {0x001,0x003,0x011,0x013}, cmd = {0x109,0x209,0x309,0x809}, mode = {0x102,0x202,0x302,0x802}, count16 = true } end
   if name == "NCT6776F" then return { fans = 5, tach = {0x656,0x658,0x65a,0x65c,0x65e}, pwm = {0x001,0x003,0x011,0x013,0x015}, cmd = {0x109,0x209,0x309,0x809,0x909}, mode = {0x102,0x202,0x302,0x802,0x902} } end
-  if name == "NCT610XD" then return { fans = 3, tach = {0x030,0x032,0x034}, pwm = {0x04a,0x04b,0x04c}, cmd = {0x119,0x129,0x139}, mode = {0x113,0x123,0x133} } end
+  if name == "NCT610XD" then return { fans = 3, tach = {0x030,0x032,0x034}, pwm = {0x04a,0x04b,0x04c}, cmd = {0x119,0x129,0x139}, mode = {0x113,0x123,0x133}, vendor_reg = 0xfe } end
   if name == "NCT6779D" then return { fans = 5, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8}, pwm = {0x001,0x003,0x011,0x013,0x015}, cmd = {0x109,0x209,0x309,0x809,0x909}, mode = {0x102,0x202,0x302,0x802,0x902} } end
   if name == "NCT6796D" or name == "NCT6796DR" or name == "NCT6797D" or name == "NCT6798D" or name == "NCT6799D" or name == "NCT5585D" then return { fans = 7, tach = {0x4b0,0x4b2,0x4b4,0x4b6,0x4b8,0x4ba,0x4cc}, pwm = {0x001,0x003,0x011,0x013,0x015,0xa09,0xb09}, cmd = {0x109,0x209,0x309,0x809,0x909,0xa09,0xb09}, mode = {0x102,0x202,0x302,0x802,0x902,0xa02,0xb02} } end
   if name == "NCT6683D" or name == "NCT6686D" or name == "NCT6687D" or name == "NCT6687DR" then return { fans = 8, tach = {0x140,0x142,0x144,0x146,0x148,0x14a,0x14c,0x14e}, pwm = {0x160,0x161,0x162,0x163,0x164,0x165,0x166,0x167}, ec = true } end
@@ -59,12 +59,14 @@ local function needs_io_unlock(name)
 end
 
 -- The BIOS may reassert CR 0x28 bit 4 after initial discovery. Validate the
--- HWM vendor id first and only re-enter extended-function mode when needed.
+-- HWM vendor id first and only re-enter extended-function mode when needed;
+-- EC-family chips expose no vendor id through the window and always re-enter.
 local function keep_io_unlocked(dev)
+  if not dev.info.ec and telemetry.hwm_ready(dev.transport, dev.match.hwm_base, dev.info.vendor_reg or 0x4f) then
+    return true
+  end
   local now = halod.monotonic_ms()
   if now < (dev.lpcio_retry_after or 0) then return false end
-  -- The broker executes the config-space sequence and registers this worker's
-  -- HWM BAR atomically. Lua only receives access to that registered HWM window.
   local ok = pcall(function()
     dev.transport:lpcio_prepare_hwm(dev.match.slot or 0, needs_io_unlock(dev.variant))
   end)
@@ -129,6 +131,8 @@ return {
       result.cooling = { channels = {
         { id = "fan", name = dev.match.name or ("Fan " .. (channel(dev) + 1)), kind = "fan", controllable = not dev.info.ec },
       } }
+    else
+      result.capabilities = { "sensors" }
     end
     return result
   end,

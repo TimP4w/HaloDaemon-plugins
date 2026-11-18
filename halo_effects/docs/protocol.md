@@ -58,7 +58,7 @@ Direct callbacks receive the actual device zone and `leds`, an array of records 
 | `led_effect_breathing` | direct | Uniform brightness pulse `sin(t * speed * pi)^2`; pure function of `t`, no persisted state. |
 | `led_effect_audio_beat` | direct | Flashes to full brightness when `ctx.audio.flux` crosses the threshold `0.6 - 0.5 * sensitivity` on a new DSP frame (`audio.seq` change), otherwise decays with time constant `decay / 3`. Stateful, `ctx.frame`-guarded. |
 | `led_effect_audio_level` | direct | Brightness eases toward `clamp01(audio.level * sensitivity)` with tau `clamp01(smoothing) * 0.5` s; optional `hue_shift` maps brightness to hue `0.66 - 0.66 * level` instead of the fixed color. Stateful, `ctx.frame`-guarded. |
-| `led_effect_sensor_gradient` | direct | Colors the zone along a two-stop gradient (`mode = "gradient"`) or fills it up to the reading (`mode = "meter"`), with the sensor value normalized against `[min, max]`. Smoothed with tau `clamp01(smoothing) * 5.0` s; fades to black rather than snapping when the sensor disappears. |
+| `led_effect_sensor_gradient` | direct | Blends the zone along the `stops` list (`mode = "gradient"`) or fills it up to the reading (`mode = "meter"`, spanning the first to the last stop). Stop values are raw sensor units; readings outside the stops take the nearest stop's color. Smoothed with tau `clamp01(smoothing) * 5.0` s; fades to black rather than snapping when the sensor disappears. |
 | `led_effect_sensor_steps` | direct | Snaps to the color of the highest step whose threshold the smoothed sensor reading has reached (steps sorted by value). Same sensor lookup and fade-to-black semantics as `sensor_gradient`. |
 
 Sensor effects resolve the selected sensor id through `ctx:data("host.sensors.catalog")`, then read the matching snapshot key; an unavailable catalog or snapshot yields nil (no reading). This requires the manifest `consumes: [host.sensors.*]` declaration.
@@ -96,10 +96,7 @@ Manifest-declared editor params, delivered in `ctx.params`. Each callback falls 
 | `audio_level` | `sensitivity` | range | 1.0 | 0.1 to 3.0, step 0.1 |
 | `sensor_gradient` | `sensor` | sensor | (unset) | - |
 | `sensor_gradient` | `mode` | enum | `gradient` | `gradient`, `meter` |
-| `sensor_gradient` | `color_a` | color | r 0, g 128, b 255 | - |
-| `sensor_gradient` | `color_b` | color | r 255, g 0, b 0 | - |
-| `sensor_gradient` | `min` | number | 20.0 | -100000 to 100000 |
-| `sensor_gradient` | `max` | number | 90.0 | -100000 to 100000 |
+| `sensor_gradient` | `stops` | gradient | 20 blue, 90 red | - |
 | `sensor_gradient` | `smoothing` | range | 0.3 | 0.0 to 1.0, step 0.05 |
 | `sensor_steps` | `sensor` | sensor | (unset) | - |
 | `sensor_steps` | `steps` | steps | 40 green, 60 orange, 80 red | - |

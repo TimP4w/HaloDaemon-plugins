@@ -3,8 +3,8 @@
 id: logitech_g560
 name: Logitech G560
 author: HaloDaemon
-version: 1.0.0
-api: "3.0"
+version: 1.0.1
+api: "1.0"
 license: MIT
 description: Logitech G560 speaker lighting and subwoofer volume.
 translations:
