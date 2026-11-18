@@ -5,8 +5,8 @@ id: openrgb
 type: integration
 name: OpenRGB
 author: HaloDaemon
-version: 1.1.0
-api: "3.0"
+version: 1.1.1
+api: "1.0"
 license: GPL-3.0-or-later
 description: OpenRGB integration that exposes its controllers as devices.
 translations:

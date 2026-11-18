@@ -30,7 +30,7 @@ outside its own package.
 id: example_ring
 name: Example Ring
 version: 1.0.0
-api: "3.0"
+api: "1.0"
 license: GPL-3.0-or-later
 platforms: [linux, windows]
 capabilities: [lighting]

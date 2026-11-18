@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: LibreHardwareMonitor contributors
 id: amd_smn
 name: AMD SMN
-version: 1.0.0
-api: "3.0"
+version: 1.0.1
+api: "1.0"
 license: MPL-2.0
 description: AMD Zen thermal sensors.
 translations:

@@ -131,6 +131,8 @@ return {
       result.cooling = { channels = {
         { id = "fan", name = dev.match.name or ("Fan " .. (channel(dev) + 1)), kind = "fan", controllable = not dev.info.ec },
       } }
+    else
+      result.capabilities = { "sensors" }
     end
     return result
   end,
