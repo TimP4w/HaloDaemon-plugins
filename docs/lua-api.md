@@ -502,6 +502,9 @@ lpcio_superio_outb(register, value)
 
 These methods are available only on Windows and only with the matching
 transport declared. They do not expose the raw broker handle.
+`lpcio_hwm_read`/`lpcio_hwm_write` raise unless a `lpcio_prepare_hwm` call on
+the same transport succeeded and discovered that `base`; firmware can re-lock the
+window, so re-run `lpcio_prepare_hwm` when reads stop answering.
 
 ## Linux hwmon transport
 

@@ -95,8 +95,8 @@ Notation: `inb(cr)` / `outb(cr,v)` are config-space `superio_inb`/`superio_outb`
 | `detect` | `enter` → `inb(0x20)`,`inb(0x21)` → `find_bars` → `outb(0x07,0x0B)` → `inb(0x60)`,`inb(0x61)` → (lock clear) → `exit` | `port` | see **detect** |
 | `read_hwm` | `outb_port'(0x4E)`→`data←bank`→`outb_port'(reg)`→read `data` | `hwm_base, reg16` | bank-then-index, see **read_hwm** |
 | `write_hwm` | `outb_port'(0x4E)`→`data←bank`→`outb_port'(reg)`→`data←v` | `hwm_base, reg16, v` | see **write_hwm** |
-| `keep_io_unlocked` | `is_io_unlocked`; if locked: `enter`→`inb(0x28)`→`outb(0x28, v & !0x10)`→`exit` | `chip` | re-assert each cycle, see **I/O-space unlock** |
-| `is_io_unlocked` | `rd(hi_reg)`,`rd(lo_reg)`; true iff `(hi<<8) \| lo == 0x5CA3` | `chip` | vendor-ID regs `0x804F/0x004F` (modern) or `0x80FE/0x00FE` |
+| `keep_io_unlocked` | `is_io_unlocked`; if locked: `lpcio_prepare_hwm` (**detect** steps 1, 3–7) | `chip` | re-assert each cycle, see **I/O-space unlock** |
+| `is_io_unlocked` | `rd(hi_reg)`,`rd(lo_reg)`; true iff `(hi<<8) \| lo == 0x5CA3` | `chip` | vendor-ID regs `0x804F/0x004F`, or `0x80FE/0x00FE` on NCT610XD; a failed read counts as locked |
 | `read_all_temperatures` | per slot: `rd(source_reg) & 0x1F`, `rd(int_reg)`, `rd(half_reg)` | `chip` | see **read temperature** |
 | `read_rpm` | `hi=rd(reg)`, `lo=rd(reg+1)` | `chip, channel` | `reg = fan_count_regs[channel]`, see **read fan RPM** |
 | `read_duty` | `raw = rd(fan_pwm_out_regs[channel])` | `chip, channel` | trivial, returns `(raw*100+127)/255` rounded (§3) |
@@ -142,9 +142,8 @@ Identical to *read_hwm* but the final step writes instead of reads:
 
 The modern NCT679xD locked variants can **re-engage the HWM I/O-space lock between accesses** under BIOS power management; while locked, every read at `hwm_base + 5/+6` returns `0`. This routine re-opens the window and is run at the start of every poll cycle and before every fan write.
 
-1. If the variant doesn't carry the lock (see §3 chip-ID *Family*), return immediately.
-2. **Liveness check** (`is_io_unlocked`): `rd(hi_reg)`, `rd(lo_reg)` from the vendor-ID register pair; if `(hi << 8) | lo == 0x5CA3` (the Nuvoton vendor ID), the window is open → return.
-3. Otherwise re-clear the lock: `enter` EFM, `options = inb(0x28)`, and if bit 4 (`0x10`) is set `outb(0x28, options & !0x10)`, then `exit`.
+1. **Liveness check** (`is_io_unlocked`, skipped for the EC-family, which exposes no vendor ID through the window): `rd(hi_reg)`, `rd(lo_reg)` from the vendor-ID register pair; if `(hi << 8) | lo == 0x5CA3` (the Nuvoton vendor ID), the window is open → return. A read that raises (window not yet prepared on this transport, or lost to a concurrent Super-I/O user) counts as locked.
+2. Otherwise re-run `lpcio_prepare_hwm(slot, unlock)`: **detect** steps 1 and 3–7, with the lock clear (step 6) only for the locked variants (see §3 chip-ID *Family*). The transport runs the sequence under the ISA-bus mutex shared with other monitoring tools and verifies the HWM window before returning. On failure the plugin keeps its last sample and retries after 5 s.
 
 ### read temperature (`read_all_temperatures`)
 

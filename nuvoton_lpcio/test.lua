@@ -19,5 +19,11 @@ return function(h)
   local count=#writes
   h:assert(not pcall(function() telemetry.ec_read(io,0x600,0x1234) end),"busy EC window times out")
   h:assert_eq(#writes,count,"busy ownership is never stolen")
+  local regs={[0x804f]=0x5c,[0x004f]=0xa3}
+  local hwm={lpcio_hwm_read=function(_,_,reg) return regs[reg] or error("no HWM window prepared") end}
+  h:assert(telemetry.hwm_ready(hwm,0x290,0x4f),"Nuvoton vendor id means the window is open")
+  h:assert(not telemetry.hwm_ready(hwm,0x290,0xfe),"an unprepared window reads as closed")
+  regs[0x004f]=0
+  h:assert(not telemetry.hwm_ready(hwm,0x290,0x4f),"a foreign vendor id reads as closed")
 
 end
