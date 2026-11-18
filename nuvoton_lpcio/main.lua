@@ -149,6 +149,8 @@ return {
     return out
   end,
   get_sensors = function(dev)
+    -- Fan children own no temperatures; an uninitialized dev has no `info`.
+    if dev.match.key or not dev.info then return {} end
     if not keep_io_unlocked(dev) then return dev.sensor_cache or {} end
     local out, seen = {}, {}
     for _, slot in ipairs(temp_slots(dev.variant)) do
