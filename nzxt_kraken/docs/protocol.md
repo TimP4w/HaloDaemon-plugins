@@ -217,7 +217,11 @@ Answer to `30 01`. Brightness percent at offset `0x18`, rotation index at offset
 
 ### Transfer ACK - `37 xx`
 
-Every `36 01` and `36 02` must be answered by `37 01` / `37 02`. Up to 8 reports are read, discarding non-matching ones; a missing ACK aborts the transfer, because proceeding desyncs the panel firmware (it can crash into the bootloader).
+Every `36 01` and `36 02` must be answered by `37 01` / `37 02`. Reports are read for up to one second, discarding non-matching ones (`0x75` telemetry and `FF 01` lighting replies, see below); a missing ACK aborts the transfer, because proceeding desyncs the panel firmware (it can crash into the bootloader).
+
+### Lighting reply - `FF 01`
+
+The firmware answers every `26 14` / `26 16` lighting write with an `FF 01` report that echoes the command bytes at offsets 14..15. One RGB frame (ring and accessory channel) therefore queues four of them, and they arrive after the write returns, so they interleave with the LCD transfer ACKs of a frame streamed right after. They carry no information and are skipped.
 
 ### Accessory reply - `21 03`
 
@@ -248,7 +252,7 @@ Bucket commands follow the increment rule: `30 04` is answered by `31 04`, `32 0
 
 ## 5. Polling & notifications
 
-After `10 01` the device pushes `0x75` status reports continuously; the host drains them non-blocking each poll cycle and keeps the newest valid sample. During LCD transfers the HID stream keeps carrying telemetry and ACKs while bulk traffic owns the endpoint, so ACK matching must skip interleaved status reports. Queued unread ACKs must be drained on open and close; leaving them accumulates state that desyncs the firmware on the next handshake.
+After `10 01` the device pushes `0x75` status reports continuously; the host drains them non-blocking each poll cycle and keeps the newest valid sample. During LCD transfers the HID stream keeps carrying telemetry, lighting replies and ACKs while bulk traffic owns the endpoint, so ACK matching must skip interleaved reports for as long as the transport timeout allows rather than for a fixed count. Queued unread ACKs must be drained on open and close; leaving them accumulates state that desyncs the firmware on the next handshake.
 
 ---
 

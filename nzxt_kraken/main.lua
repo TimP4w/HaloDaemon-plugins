@@ -114,15 +114,20 @@ local function bulk_header(payload_len, asset_mode)
   return b
 end
 
--- Read up to 8 reports, consuming the matching 0x37 <sub> ACK. Not consuming it
--- desyncs the firmware, so this drains stray reports while searching.
+-- Consume the matching 0x37 <sub> ACK, discarding whatever the firmware queued
+-- ahead of it: 0x75 telemetry and one `FF 01` reply per lighting write (four
+-- per RGB frame). Bounded by time, not by report count, so a lighting frame
+-- landing between two LCD frames cannot exhaust the budget. Not consuming the
+-- ACK desyncs the firmware.
+local ACK_TIMEOUT_MS = 1000
 local function await_xfer_ack(dev, sub)
-  for _ = 1, 8 do
+  local deadline = halod.monotonic_ms() + ACK_TIMEOUT_MS
+  repeat
     local ok, s = pcall(function() return dev.transport:read(REPORT) end)
     if not ok then return false end
     local r = halod.buffer(s)
     if #r >= 2 and r:get_u8(0) == 0x37 and r:get_u8(1) == sub then return true end
-  end
+  until #s == 0 or halod.monotonic_ms() >= deadline
   return false
 end
 
