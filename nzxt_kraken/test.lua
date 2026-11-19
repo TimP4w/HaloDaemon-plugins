@@ -90,6 +90,20 @@ return function(h)
   h:assert_eq(uw[1].endpoint, 0x02, "LCD header uses bulk OUT endpoint")
   h:assert_eq(uw[1].data[13], 0x08, "LCD bulk header selects Q565 mode")
   h:assert(#uw[2].data > 0, "LCD payload is non-empty")
+  dev:clear()
+
+  -- The firmware answers every lighting write with an `FF 01` report; at
+  -- canvas rate those queue up ahead of the transfer ACKs. The ACK wait must
+  -- skip all of them rather than give up after a fixed number of reports.
+  local lighting_reply = {}
+  for i = 1, 64 do lighting_reply[i] = 0 end
+  lighting_reply[1], lighting_reply[2], lighting_reply[15], lighting_reply[16] = 0xFF, 0x01, 0x26, 0x14
+  dev:queue_read({})
+  for _ = 1, 12 do dev:queue_read(lighting_reply) end
+  dev:queue_read({ 0x37, 0x01 })
+  dev:queue_read({ 0x37, 0x02 })
+  dev:lcd_stream_frame({ 1, 2, 3, 255 }, 1, 1, 0, false, 80)
+  h:assert_eq(#dev:usb_writes(), 2, "ACK wait skips queued lighting replies")
 
  do
  local dev = h:open({ reads = { {} } })
