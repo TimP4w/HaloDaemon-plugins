@@ -44,7 +44,7 @@ The entry script returns a table with one `render_widget_<id>` and one `preview_
 | `image` | User image with fit and shape options, placeholder graphic on failure | host-decoded image |
 | `logo` | Packaged `logo.svg` asset plus brand wordmark | packaged asset |
 | `debug` | Current FPS derived from `dt` | none |
-| `audio_spectrum` | Bar spectrum, 8 to 64 bands, flip and mirror options | `ctx:audio()` bands |
+| `audio_spectrum` | Bar spectrum, 8 to 64 bands, sensitivity, flip and mirror options | `ctx:audio()` bands |
 | `gauge` | Ring, arc, or bar level display | `ctx:audio()` level or a sensor key, by `input` param |
 | `now_playing` | Album art, title, artist | `host.media.playback`, media art via `ctx:draw_media_art` |
 | `shape` | Circle, rectangle, triangle, or line with rotation | none |
