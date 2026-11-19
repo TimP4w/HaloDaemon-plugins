@@ -114,7 +114,7 @@ local function render_spectrum(canvas, w, h, params, ctx)
   for i = 0, count - 1 do
     local src = math.floor(i * math.max(1, available) / count)
     if params.mirror then src = math.floor(math.abs(i - (count - 1) / 2) * math.max(1, available) * 2 / count) end
-    local level = levels.spectrum(available > 0 and audio.bands[src + 1] or nil, i, ctx:is_preview())
+    local level = levels.spectrum(available > 0 and audio.bands[src + 1] or nil, i, ctx:is_preview(), params.gain)
     local x = params.flip_h and (count - 1 - i) or i
     local bh = math.max(1, h * 0.82 * math.max(0, math.min(1, level)))
     local y = params.flip_v and h * 0.09 or h * 0.91 - bh

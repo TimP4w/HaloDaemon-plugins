@@ -11,6 +11,9 @@ return function(h)
   local levels=halod.require("lib.levels")
   h:assert_eq(levels.gauge(nil,false),nil,"live missing gauge has no synthetic reading")
   h:assert_eq(levels.spectrum(nil,2,false),0,"live missing spectrum is empty")
+  h:assert_eq(levels.spectrum(0.25,0,false,2),0.5,"spectrum gain scales live bands")
+  h:assert_eq(levels.spectrum(0.75,0,false,4),1,"spectrum gain clamps at full scale")
+  h:assert_eq(levels.spectrum(0.3,0,false),0.3,"spectrum without gain is unscaled")
   h:assert(levels.gauge(nil,true)>0,"preview retains sample gauge")
   local now = { weekday = "Thu", day = 19, month = 3 }
 
