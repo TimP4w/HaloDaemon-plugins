@@ -8,7 +8,10 @@
 -- Protocol reference: nzxt_kraken/docs/protocol.md and liquidctl's nzxt_kraken driver.
 -- Verified offsets: status report 0x75; Z/Elite lighting 0x26 0x14 (GRB) / 0x26
 -- 0x16 (commit), ring channel 0x01 / accessory channel 0x02; speed profiles 0x72. LCD control 0x30
--- config / 0x36 transfer (+0x37 ACK) / 0x32 0x38 buckets, image over USB bulk.
+-- config (0x31 0x01 reports panel size and bucket count) / 0x36 transfer (+0x37 ACK) / 0x32 0x38
+-- buckets, image over USB bulk.
+
+local catalogue = halod.require("lib.accessories")
 
 local REPORT = 64
 local RING_LEDS = 24
@@ -95,13 +98,22 @@ end
 local LCD_BULK_MAGIC = "\x12\xFA\x01\xE8\xAB\xCD\xEF\x98\x76\x54\x32\x10"
 local LCD_TOTAL_MEMORY_KB = 24320
 
--- pid → native panel resolution (all Kraken LCD panels are square/circular).
-local LCD_SIZES = {
-  [0x3008] = { 320, 320 }, [0x300C] = { 640, 640 }, [0x300E] = { 240, 240 },
-  [0x3012] = { 640, 640 }, [0x3014] = { 240, 240 },
+-- `lcd` is the fallback panel size when the `31 01` reply omits it; Kraken Z
+-- predates the per-channel byte in the speed-profile header.
+local MODELS = {
+  [0x3008] = { lcd = 320, z_profile = true },
+  [0x300C] = { lcd = 640 },
+  [0x300E] = { lcd = 240 },
+  [0x3012] = { lcd = 640 },
+  [0x3014] = { lcd = 240 },
 }
 
+local function model(dev)
+  return MODELS[dev.match.pid] or { lcd = 320 }
+end
+
 local lcd_w, lcd_h = 320, 320
+local lcd_buckets = 16
 -- Cleared whenever the panel leaves raw streaming (Q565 frame, image, default).
 local raw_stream_entered = false
 
@@ -156,7 +168,8 @@ local function write_screen_config(dev, brightness, degrees)
   dev.transport:write(string.char(0x30, 0x02, 0x01, math.min(brightness, 100), 0x00, 0x00, 0x01, rot))
 end
 
--- (brightness, degrees) read back from the panel; defaults if it doesn't answer.
+-- `31 01` panel info: bucket count @0x13, width/height @0x14/0x16 (LE),
+-- brightness @0x18, orientation @0x1A. Nil if the panel doesn't answer.
 local function read_lcd_state(dev)
   dev.transport:write(string.char(0x30, 0x01))
   for _ = 1, 8 do
@@ -164,12 +177,16 @@ local function read_lcd_state(dev)
     if not ok then break end
     local r = halod.buffer(s)
     if #r >= 27 and r:get_u8(0) == 0x31 and r:get_u8(1) == 0x01 then
-      local rot_idx = r:get_u8(0x1A)
-      if rot_idx > 3 then rot_idx = 3 end
-      return r:get_u8(0x18), rot_idx * 90
+      return {
+        buckets = r:get_u8(0x13),
+        width = r:get_u16_le(0x14),
+        height = r:get_u16_le(0x16),
+        brightness = r:get_u8(0x18),
+        rotation = math.min(r:get_u8(0x1A), 3) * 90,
+      }
     end
   end
-  return 80, 0
+  return nil
 end
 
 -- Asset mode 0x08: Q565-compressed stream.
@@ -203,7 +220,7 @@ local function enter_streaming_mode(dev, brightness)
   write_then_read(dev, string.char(0x36, 0x03))
   write_then_read(dev, string.char(0x30, 0x02, 0x00, 0x00, 0x00, 0x00, 0x1E))
   write_then_read(dev, string.char(0x38, 0x01, 0x02))
-  for bi = 0, 15 do write_then_read(dev, string.char(0x32, 0x02, bi)) end
+  for bi = 0, lcd_buckets - 1 do write_then_read(dev, string.char(0x32, 0x02, bi)) end
   write_then_read(dev, string.char(0x30, 0x02, 0x01, pct, 0x00, 0x00, 0x00, 0x1E))
   drain_hid(dev)
 end
@@ -242,7 +259,7 @@ end
 
 local function query_buckets(dev)
   local buckets = {}
-  for i = 0, 15 do
+  for i = 0, lcd_buckets - 1 do
     local msg = lcd_command(dev, string.char(0x30, 0x04, i))
     if msg then buckets[i] = msg end
   end
@@ -251,7 +268,7 @@ end
 
 -- Lowest bucket whose info (bytes 15+) is all-zero.
 local function find_next_unoccupied(buckets)
-  for i = 0, 15 do
+  for i = 0, lcd_buckets - 1 do
     local b = buckets[i]
     if b then
       local occupied = false
@@ -273,7 +290,7 @@ local function bucket_memory_offset(buckets, bucket_index, data_units)
   if data_units <= cur_size then return cur_offset end
 
   local min_occupied, max_occupied, overlap = cur_offset, 0, false
-  for idx = 0, 15 do
+  for idx = 0, lcd_buckets - 1 do
     local b = buckets[idx]
     if b then
       local start = b:get_u8(17) | (b:get_u8(18) << 8)
@@ -301,7 +318,7 @@ end
 -- Walk forward from bucket_index deleting until landing on a free bucket.
 local function prepare_bucket(dev, bucket_index, bucket_filled)
   while true do
-    if bucket_index >= 16 then error("Kraken LCD: reached max bucket (16)") end
+    if bucket_index >= lcd_buckets then error("Kraken LCD: no free bucket") end
     if not delete_bucket(dev, bucket_index) then
       bucket_index = bucket_index + 1
       bucket_filled = true
@@ -335,7 +352,7 @@ local function run_bucket_pipeline(dev, data, bulk_info)
   if mem_start == nil then
     -- No contiguous room: wipe everything and restart at bucket 0.
     lcd_command(dev, string.char(0x38, 0x01, 0x02, 0x00)) -- back to liquid
-    for i = 0, 15 do delete_bucket(dev, i) end
+    for i = 0, lcd_buckets - 1 do delete_bucket(dev, i) end
     bucket_index, mem_start = 0, 0
   end
 
@@ -368,18 +385,6 @@ local function upload_gif(dev, resized)
   run_bucket_pipeline(dev, resized, bulk_info)
 end
 
-local accessories = {
-  { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
-  { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
-  { id=23, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
-  { id=24, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
-  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
-  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
-  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-}
-
 return {
   initialize = function(dev)
     -- Drain any stale HID reports from a previous session (e.g. unread LCD
@@ -388,9 +393,12 @@ return {
     dev.transport:write(string.char(0x70, 0x02, 0x01, 0xB8, 0x01)) -- INIT_SET
     dev.transport:write(string.char(0x70, 0x01))                   -- firmware push
     dev.transport:write(string.char(0x10, 0x01))                   -- enable status stream
-    local size = LCD_SIZES[dev.match.pid] or { 320, 320 }
-    lcd_w, lcd_h = size[1], size[2]
-    local brightness, rotation = read_lcd_state(dev)
+    local panel = read_lcd_state(dev) or {}
+    local fallback = model(dev).lcd
+    lcd_w = (panel.width or 0) > 0 and panel.width or fallback
+    lcd_h = (panel.height or 0) > 0 and panel.height or fallback
+    lcd_buckets = (panel.buckets or 0) > 0 and panel.buckets or 16
+    local brightness, rotation = panel.brightness or 80, panel.rotation or 0
     log(string.format(
       "NZXT Kraken initialized with LCD %dx%d, brightness %d%%, rotation %d°",
       lcd_w, lcd_h, brightness, rotation))
@@ -414,7 +422,7 @@ return {
         { id="pump", name="Pump", kind="pump", controllable=true },
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
-      accessories = accessories,
+      accessories = catalogue.list(true),
     }
   end,
 
@@ -470,10 +478,11 @@ return {
     error("unknown cooling channel: " .. tostring(id))
   end,
   set_cooling_duty = function(dev, id, duty)
+    local ch = model(dev).z_profile and 0 or 1
     if id == "pump" then
-      dev.transport:write(duty_packet(0x72, 0x01, dev.match.pid == 0x3008 and 0 or 1, 0x00, duty, 20))
+      dev.transport:write(duty_packet(0x72, 0x01, ch, 0x00, duty, 20))
     elseif id == "fan1" then
-      dev.transport:write(duty_packet(0x72, 0x02, dev.match.pid == 0x3008 and 0 or 1, dev.match.pid == 0x3008 and 0 or 1, duty, 0))
+      dev.transport:write(duty_packet(0x72, 0x02, ch, ch, duty, 0))
     else error("unknown cooling channel: " .. tostring(id)) end
   end,
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
@@ -515,19 +524,11 @@ return {
     }
   end,
 
-  -- Accessory detection (0x20 0x03 -> 0x21 0x03); accessory id at byte 15.
+  -- Elite V2 reports its own pump ring on channel 0 and the radiator chain on
+  -- channel 1; older coolers report only the chain.
   detect_accessories = function(dev)
-    dev.transport:write(string.char(0x20, 0x03))
-    for _ = 1, 8 do
-      local reply = halod.buffer(dev.transport:read(REPORT))
-      if #reply >= 16 and reply:get_u8(0) == 0x21 and reply:get_u8(1) == 0x03 then
-        local acc = reply:get_u8(15)
-        if acc ~= 0 then
-          return { { channel = 0, accessory = acc } }
-        end
-        return {}
-      end
-    end
+    local acc = catalogue.first_external(catalogue.query(dev, REPORT))
+    if acc then return { { channel = 0, accessory = acc } } end
     return {}
   end,
 

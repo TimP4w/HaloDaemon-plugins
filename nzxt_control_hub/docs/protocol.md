@@ -1,6 +1,6 @@
 # NZXT RGB & Fan Control Hub protocol
 
-NZXT Control Hub (USB PID `0x2022`) HID protocol for five fan/RGB channels driving chained accessories, as implemented by [`nzxt_control_hub`](../main.lua).
+NZXT Control Hub (USB PID `0x2022`) HID protocol for five fan/RGB channels driving chained accessories, as implemented by [`nzxt_control_hub`](../main.lua). The same commands drive the Smart Device V2 (`0x2006`, `0x200D`, `0x200F`) and RGB & Fan Controller (`0x2009`, `0x200E`, `0x2010`, `0x2011`, `0x2019`, `0x2020`), which have three fan channels and separate RGB ports.
 
 **Credits:** reference implementation from the Linux kernel [`nzxt-smart2`](https://github.com/torvalds/linux/blob/master/drivers/hwmon/nzxt-smart2.c) hwmon driver by Aleksandr Mezin (GPL-2.0-or-later); the firmware/accessory handshake and RGB commands were reconstructed from device behavior.
 
@@ -98,10 +98,9 @@ Two-byte request; the reply is `21 03` (see section 4).
 
 ### Init sequence
 
-1. `10 02`: firmware query; reply `11 02` stores the version at offsets `0x11..0x13`.
-2. `20 03`: RGB accessory detection.
-3. `60 03`: fan-type detection.
-4. `60 02 01 E8 <ctl> 01 E8 <ctl>`: configure periodic status reports.
+1. `60 02 01 E8 <ctl> 01 E8 <ctl>`: configure periodic status reports.
+2. `60 03`: fan-type detection.
+3. `20 03`: lighting info; the `21 03` channel count sizes the RGB channels.
 
 ---
 
@@ -109,7 +108,9 @@ Two-byte request; the reply is `21 03` (see section 4).
 
 ### Channels
 
-The hub exposes five physical channels, numbered `0..4`. Commands address a channel with the bitmask `1 << channel`. Each channel is one output carrying both an RGB chain and a fan header, so the plugin declares channel `N` as a chain output whose `cooling_channel` is `N`. A detected accessory becomes a child device and takes that fan over; a channel with nothing attached keeps its fan on the hub itself.
+The Control Hub exposes five physical channels, numbered `0..4`. Commands address a channel with the bitmask `1 << channel`. Each channel is one output carrying both an RGB chain and a fan header, so the plugin declares channel `N` as a chain output whose `cooling_channel` is `N`. A detected accessory becomes a child device and takes that fan over; a channel with nothing attached keeps its fan on the hub itself.
+
+The three-fan controllers have independent RGB ports (40 LEDs each) and fan headers, so no RGB channel claims a fan. On every model the number of RGB channels is taken from the `21 03` channel count read during initialization, falling back to the model default (5 on the Control Hub, 2 otherwise).
 
 ### Fan types
 
@@ -154,7 +155,7 @@ Sent in response to `60 03`. Carries the same fan-type values at offset `16+i` a
 
 ### Accessory list, `21 03`
 
-Sent in response to `20 03`. The accessory count is at offset 14 and each record begins at `15 + channel*6`. Reported accessory types are resolved through the plugin's catalog to determine names and LED counts.
+Sent in response to `20 03`. The channel count is at offset 14 and each channel's six accessory slots begin at `15 + channel*6`. Reported accessory IDs are resolved through the shared catalogue in [accessories.md](accessories.md) to determine names, LED counts and layouts.
 
 ### Firmware, `11 02`
 

@@ -202,10 +202,13 @@ Colors are **G, R, B** byte order, one byte per component. LED `i` occupies byte
 
 | Mode | Payload | Path |
 | --- | --- | --- |
-| `0x01` | GIF | Bucket pipeline |
-| `0x02` | Static image | Bucket pipeline (liquidctl; this plugin uploads stills as Q565) |
+| `0x00` | Single-frame GIF | Bucket pipeline (unused) |
+| `0x01` | Animated GIF | Bucket pipeline |
+| `0x02` | Raw RGBA8888, big-endian | Unused; stills are streamed as Q565 |
+| `0x03` / `0x04` | Compressed raw variants | Unused |
+| `0x05` / `0x06` / `0x07` | RGB888 BE / RGB565 BE / RGB565 LE | Unused |
 | `0x08` | Q565-compressed frame | Streaming transfer |
-| `0x09` | Raw BGR888 frame | Raw streaming transfer |
+| `0x09` | RGB888 LE (B,G,R byte order) | Raw streaming transfer |
 
 ---
 
@@ -213,7 +216,7 @@ Colors are **G, R, B** byte order, one byte per component. LED `i` occupies byte
 
 ### LCD state reply - `31 01`
 
-Answer to `30 01`. Brightness percent at offset `0x18`, rotation index at offset `0x1A` (clamped to 0..3, times 90 gives degrees). Defaults of 80 percent and 0 degrees are assumed if no reply arrives within 8 reads.
+Answer to `30 01`. Bucket count at offset `0x13`, panel width and height as little-endian u16 at `0x14` and `0x16`, brightness percent at `0x18`, sleep mode at `0x19`, rotation index at `0x1A` (clamped to 0..3, times 90 gives degrees). The plugin takes the panel size and bucket count from here; if no reply arrives within 8 reads it falls back to the per-model panel size, 16 buckets, 80 percent and 0 degrees.
 
 ### Transfer ACK - `37 xx`
 
@@ -225,7 +228,7 @@ The firmware answers every `26 14` / `26 16` lighting write with an `FF 01` repo
 
 ### Accessory reply - `21 03`
 
-Answer to `20 03`. The channel count is at offset 14; each channel's accessory records start at `15 + channel*6`. A non-zero accessory ID byte indicates a connected accessory.
+Answer to `20 03`. The channel count is at offset 14; each channel's accessory records start at `15 + channel*6`. A non-zero accessory ID byte indicates a connected accessory. IDs, layouts and the full table are in [accessories.md](accessories.md). The Elite V2 lists its own pump ring (`0x1E`) on channel 0 and the radiator chain on channel 1, so the plugin takes the first ID on any channel that is not one of the pump head's own zones.
 
 The Kraken has one such output, chain channel `0`, and it shares the radiator fan header. The plugin declares it with `cooling_channel = "fan1"`, so a detected accessory becomes a child device that owns `fan1` outright; with nothing attached the Kraken exposes `fan1` itself. The pump is never part of this and always stays on the Kraken.
 

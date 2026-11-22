@@ -47,4 +47,13 @@ return function(h)
   h:assert_eq({pump[1],pump[2],pump[3],pump[4]},{0x72,1,0,0},"X3 pump header")
   h:assert_eq(pump[5],25,"X3 pump fixed duty")
   h:assert_eq(pump[44],100,"X3 critical temperature overrides fixed duty")
+
+  local reply = {}
+  for i = 1, 64 do reply[i] = 0 end
+  reply[1], reply[2], reply[15], reply[16], reply[22] = 0x21, 0x03, 2, 16, 20
+  dev:queue_read(reply)
+  local found = dev:enumerate_controllers()
+  h:assert_eq(#found, 1, "the pump ring is not a chained accessory")
+  h:assert_eq(found[1].name, "F140 RGB", "chained fan is found on any channel")
+  h:assert(not found[1].has_cooling, "the X3 accessory header carries lighting only")
 end

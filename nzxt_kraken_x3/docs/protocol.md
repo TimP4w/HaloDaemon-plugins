@@ -78,7 +78,7 @@ byte 59   0x03
 | Function | Bytes sent | Notes |
 | --- | --- | --- |
 | Initialize | `70 02 01 B8 01`, then `70 01`, then `10 01` | Run once at device open, in this order |
-| Detect accessories | `20 03` | Reply `21 03`; issued by the daemon's accessory-discovery path, not at init |
+| Detect accessories | `20 03` | Reply `21 03` ([layout and IDs](accessories.md)); issued by the daemon's accessory-discovery path, not at init |
 | Write channel colors | `22 10 …`, `22 11 …`, `22 A0 …` | Per-LED update for ring or external channel; see below |
 | Write logo | `2A 04 …` | Single report, applies immediately |
 | Read status | none | Unsolicited `75 02` reports; see section 5 |

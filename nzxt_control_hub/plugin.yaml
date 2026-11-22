@@ -3,7 +3,7 @@
 id: nzxt_control_hub
 name: NZXT RGB & Fan Controller
 author: HaloDaemon
-version: 1.0.1
+version: 1.1.0
 api: "1.0"
 license: GPL-3.0-or-later
 description: NZXT Control Hub with chained RGB fan accessories.
@@ -18,5 +18,14 @@ devices:
     type: hub
     match:
       hid: { vid: 0x1E71, pid: 0x2022 }
+  - { vendor: NZXT, model: Smart Device V2, type: hub, match: { hid: { vid: 0x1E71, pid: 0x2006 } } }
+  - { vendor: NZXT, model: Smart Device V2, type: hub, match: { hid: { vid: 0x1E71, pid: 0x200D } } }
+  - { vendor: NZXT, model: Smart Device V2, type: hub, match: { hid: { vid: 0x1E71, pid: 0x200F } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x2009 } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x200E } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x2010 } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x2011 } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x2019 } } }
+  - { vendor: NZXT, model: "RGB & Fan Controller", type: hub, match: { hid: { vid: 0x1E71, pid: 0x2020 } } }
 transports:
   hid: { report_size: 64, timeout_ms: 1000, feature_report: false }

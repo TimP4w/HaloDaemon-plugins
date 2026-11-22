@@ -5,9 +5,10 @@ return function(h)
 
   h:assert(dev:initialize(), "initialize succeeds")
   local w = dev:writes()
-  h:assert_eq(#w, 2, "status-push interval config + detect_fans")
+  h:assert_eq(#w, 3, "status-push interval config + detect_fans + lighting info")
   h:assert_eq(w[1].data, { 0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03 }, "status push interval (~1000ms)")
   h:assert_eq(w[2].data, { 0x60, 0x03 }, "detect_fans")
+  h:assert_eq(w[3].data, { 0x20, 0x03 }, "lighting info query")
 
   local function cooling_ids()
     local out = {}
@@ -71,4 +72,27 @@ return function(h)
   h:assert_eq(w[1].data[2], 0x01, "cooling subcommand")
   h:assert_eq(w[1].data[3], 0x08, "fan channel 3 bitmask")
   h:assert_eq(w[1].data[7], 73, "duty stored in selected channel slot")
+
+  -- Smart Device V2: three fans and RGB ports that are not tied to them.
+  local info = {}
+  for i = 1, 64 do info[i] = 0 end
+  info[1], info[2], info[15] = 0x21, 0x03, 2
+  local sd = h:open({ pid = 0x2006, reads = { info } })
+  h:assert(sd:initialize(), "Smart Device V2 initializes")
+  local rgb, fans = {}, {}
+  for _, capability in ipairs(sd:serialize().capabilities or {}) do
+    if capability.kind == "lighting" then
+      for _, channel in ipairs(capability.data.descriptor.channels) do rgb[#rgb + 1] = channel.id end
+    end
+    if capability.kind == "cooling" then
+      for _, channel in ipairs(capability.data.channels) do fans[#fans + 1] = channel.id end
+    end
+  end
+  h:assert_eq(rgb, { "0", "1" }, "RGB channel count comes from the device")
+  h:assert_eq(fans, { "0", "1", "2" }, "three fan channels")
+  info[16] = 29
+  sd:queue_read(info)
+  local found = sd:enumerate_controllers()
+  h:assert_eq(#found, 1, "accessory detected on an unpaired port")
+  h:assert(not found[1].has_cooling, "an RGB-only port never claims a fan")
 end
