@@ -73,8 +73,18 @@ Requires `len ≥ 0x13`, byte 0 = `0x06`, byte 1 = `0x20`. Always carries the **
 byte 0x04        microphone gain   0x02=high, else low
 byte 0x06        EQ preset byte    raw (see §3 preset table)
 bytes 0x07-0x10  EQ bands 0-9      one raw byte/band (raw 0x14 = 0 dB)
+byte 0x11        mic volume        1-10
 byte 0x12        sidetone          0-3
+byte 0x13        line-out mode     raw
+byte 0x14        ChatMix game      0-100 (not parsed, see 0x45)
+byte 0x15        stream mix main   0-100
+byte 0x16        stream mix aux    0-100
+byte 0x17        stream mix mic    0-100
+byte 0x18        ChatMix chat      0-100 (not parsed, see 0x45)
 ```
+
+Bytes `0x14` and `0x18` carry the ChatMix game and chat levels; the plugin takes
+ChatMix from the `0x45` notification instead and does not parse them.
 
 ### ChatMix unsolicited packet (`0x07 0x45`)
 
@@ -122,7 +132,7 @@ Every write uses report ID `0x06`.
 
 | Function | Bytes sent (exact, `<param>`) | Params | Notes |
 |----------|-------------------------------|--------|-------|
-| NC mode | `06 BD <mode>` | `mode` 0-2 (`min(2)`) | shared write flow; opcode inferred. See subsection |
+| NC mode | `06 BD <mode>` | `mode` 0-2 (`min(2)`) | shared write flow. See subsection |
 | NC level | `06 B9 <level>` | `level` 0-10 (`min(10)`) | shared write flow. See subsection |
 | Sidetone | `06 39 <level>` | `level` 0-3 (`min(3)`) | shared write flow |
 | Mic gain | `06 27 <raw>` | `0x02` high / `0x01` low | shared write flow |
@@ -131,6 +141,7 @@ Every write uses report ID `0x06`.
 | Sonar EQ enable | `06 8D <en>` | `en` 0/1 | shared write flow; not read back |
 | Screen mode | `06 89 <simple>` | `simple` 0/1 | shared write flow; not read back |
 | Mic LED brightness | `06 BF <raw>` | `raw` 0-10 = `(percent/10).min(10)` | shared write flow |
+| OLED brightness | `06 85 <raw>` | `raw` 0-10 = `(percent/10).min(10)` | base-station screen; shared write flow |
 | Mic volume | `06 37 <level>` | `level` 1-10 (`clamp(1,10)`) | shared write flow; not read back |
 | EQ preset select | `06 2E <preset>` | raw preset byte (not clamped) | shared write flow. See *Set custom EQ* |
 | EQ band write | `06 33 <b0>…<b9>` | 10 raw band bytes | preceded by preset `0x04`; shared write flow. See *Set custom EQ* |
@@ -152,7 +163,7 @@ The plugin does not run a read-back suppression window. Choice/range values are 
 
 ### NC mode (`06 BD <mode>`)
 
-`mode` 0 = off, 1 = transparent, 2 = noise cancelling; clamped with `min(2)`. The opcode `0xBD` is **inferred and unconfirmed on hardware**. NC mode is read back from the status response at byte `0x0A`.
+`mode` 0 = off, 1 = transparent, 2 = noise cancelling; clamped with `min(2)`. NC mode is read back from the status response at byte `0x0A`.
 
 ### NC level / transparency (`06 B9 <level>`)
 
@@ -278,6 +289,14 @@ Capture level **1-10** (`clamp(1,10)`): **1 = muted**, 10 = 100 %.
 
 On the wire a raw level **0-10**. The plugin encodes a percentage as `raw = (percent / 10).min(10)` and surfaces it as UI values 0-100 % in steps of 10.
 
+### OLED brightness
+
+The base-station screen brightness, raw level **0-10**, written with `06 85 <raw>`
+and reported by the `07 85 <level>` notification. Same encoding as mic LED
+brightness: UI 0-100 % in steps of 10, `raw = (percent / 10).min(10)`. It does not appear in the
+aggregate `0x20`/`0xB0` poll replies, so the plugin seeds the default, reflects
+writes immediately, and updates from the `07 85` notification.
+
 ### Auto-off timeout
 
 The byte is an index into a fixed table:
@@ -315,9 +334,9 @@ The byte is an index into a fixed table:
 
 | Offset | Field | Encoding |
 |--------|-------|----------|
-| `0x02` | BT powerup state | raw (X/BT variants only; encoding unconfirmed) |
+| `0x02` | BT powerup state | raw (X/BT variants only) |
 | `0x03` | BT auto-mute | raw, surfaced as read-only boolean `!= 0` (X/BT variants only) |
-| `0x04` | BT power status | raw (X/BT variants only; encoding unconfirmed) |
+| `0x04` | BT power status | raw (X/BT variants only) |
 | `0x05` | BT connection | raw, surfaced as read-only boolean `!= 0` (X/BT variants only) |
 | `0x06` | Headset battery | raw 0-8 → `× 100 / 8` % (§3) |
 | `0x07` | Slot/dock battery | raw 0-8 → `× 100 / 8` % (§3) |
@@ -327,7 +346,7 @@ The byte is an index into a fixed table:
 | `0x0B` | Mic LED brightness | `min(10)` → `× 10` % |
 | `0x0C` | Auto-off timeout | `min(6)` → index 0-6 |
 | `0x0D` | Wireless mode | `min(1)`: 0=speed, 1=range |
-| `0x0E` | BT wireless pairing | raw (X/BT variants only; encoding unconfirmed) |
+| `0x0E` | BT wireless pairing | raw (X/BT variants only) |
 | `0x0F` | Power status | `0x01` offline / `0x02` charging / `0x08` online (default offline if absent) |
 
 ### Settings-poll reply (`0x06 0x20`)
@@ -337,11 +356,15 @@ The byte is an index into a fixed table:
 | `0x04` | Microphone gain | `0x02` → high, else low (default `0x01`) |
 | `0x06` | EQ preset | raw preset byte (kept raw) |
 | `0x07`-`0x10` | Custom-EQ bands 0-9 | each raw → `(raw − 20) × 0.5` dB (default `0x14` = 0 dB) |
+| `0x11` | Mic volume | 1-10 |
 | `0x12` | Sidetone | `min(3)`: 0-3 |
+| `0x13` | Line-out mode | raw |
+| `0x14` / `0x18` | ChatMix game / chat level | 0-100 each; not parsed, ChatMix comes from `07 45` |
+| `0x15`-`0x17` | Stream mix main/aux/mic | 0-100 each |
 
 ### Settings absent from aggregate poll replies
 
-`sonar_eq` (`0x8D`), `screen_mode` (`0x89`), and `mic_volume` (`0x37`) appear in neither aggregate poll reply. The plugin retains their initial/default value, reflects host writes immediately, and decodes a matching dedicated reply or notification whenever the station emits one.
+`sonar_eq` (`0x8D`) and `screen_mode` (`0x89`) appear in neither aggregate poll reply. The plugin retains their initial/default value, reflects host writes immediately, and decodes a matching dedicated reply or notification whenever the station emits one. `mic_volume` *does* appear in the `0x20` reply (byte `0x11`), but the plugin intentionally does **not** poll-refresh it: it is a writable host-cached control, so a stale poll could clobber a just-written value (see §5). It is updated only from writes and the `0x37` notification. Only the read-only stream submix (`0x15`-`0x17`) is consumed from the poll.
 
 ---
 
@@ -364,6 +387,7 @@ On `initialize` the plugin registers two virtual audio sinks, **Media** and **Ch
 - **ChatMix** - `07 45 <game> <chat>`, each 0-100. Drives the Media/Chat sink volumes (see above).
 - **Mic volume** - `07 37 <level>`, level 1-10. Updates the microphone-volume control.
 - **Station volume** - `07 25 <level>`, unsigned attenuation steps `0x00`-`0x38`. Updates the 0-100 volume control.
+- **OLED brightness** - `07 85 <level>`, level 0-10. Emitted while the base-station screen brightness changes (also streamed as the hardware animates between levels). Updates the OLED-brightness control.
 
 ### Read-only controls
 
@@ -377,7 +401,7 @@ their declared default until the corresponding dial is first moved.
 
 ## Notes
 
-- **NC mode opcode `0xBD` is inferred** and needs hardware confirmation.
+- **No write opcode** for the OLED dim timer, line-out mode, stream mix, or BT startup/call behaviour. Stream mix is read from the `0x20` poll only; line-out mode is documented but not surfaced.
 - **Mic mute is read-only** - no write opcode exists for it.
 - **Main volume is read-only** - no host→device opcode exists for it; `0x25` is a notification only.
 - **`0x47` sets the ChatMix balance** - the host→device frame `06 47 <game> 00 <chat>` writes the game/chat split, mirroring the `07 45` notification. The plugin does not emit it: it balances ChatMix through two virtual audio sinks (see §5) rather than the device's hardware split. Documented here for reference only.

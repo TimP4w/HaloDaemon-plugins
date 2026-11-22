@@ -20,26 +20,36 @@ local DDC_BREQ_READ  = 0xA3
 local DDC_READ_W_INDEX = 0x006F
 local WRITE_GAP_MS = 50   -- minimum gap between DDC writes (MCCS §4.5)
 local READ_DELAY_MS = 150 -- time the monitor needs to assemble a reply
+local MODE_CHECK_S = 30   -- idle cadence of the SmartImage change check in read_status
+local REFRESH_DELAY_S = 2 -- quiet time after the last mode change before re-reading
+local ERROR_BACKOFF_S = 60 -- no polling reads for this long after a transport error
+local ERROR_RECOVER_MS = 500
+local DDC_TIMEOUT_MS = 250
+local MAX_FAIL_STREAK = 3 -- consecutive transport errors before the remaining reads are skipped
 
 -- ── Ambiglow (ENE) control-transfer parameters ───────────────────────────────
 local AMBI_BMREQ_OUT = 0x40
 local AMBI_BREQ = 0x80
 local LED_COUNT = 44
 local FRAME_ADDR = 0xE100
+local EFFECT_COLOR_SLOTS = { 0xE980, 0xE983, 0xE986, 0xE989 }
 local CONTROL_BLOCKS = { 0xE020, 0xE030 }
 local BASELINE_ADDR = 0xE020
+local HOST_LINK_ADDR = 0x0023 -- 0x04: host owns the LEDs, 0x00: monitor scaler owns them
+local HOST_LINK_ON, HOST_LINK_OFF = 0x04, 0x00
 local FRAME_SETTLE_MS = 10 -- let a frame settle before a baseline restore
 -- Full 132-byte frame writes can take longer than the short DDC probe window.
 -- This matches the companion transport's declared control-transfer limit and
 -- preserves the timeout behavior of the pre-usb_control API.
 local AMBI_TIMEOUT_MS = 1000
 
--- 16-byte block that hands direct frame control to the host.
+-- 16-byte zone block selecting the host frame buffer as the LED source.
 local CAPTURE_BLOCK = string.char(
   0x01, 0x00, 0x02, 0x04, 0x00, 0x05, 0x00, 0x00,
   0x00, 0x02, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x01)
 
--- 64-byte region that returns control to the monitor's own Ambiglow firmware.
+-- 64-byte region selecting the controller's static effect; only a hand-back
+-- together with the host-link register (see release).
 local BASELINE_REGION = string.char(
   0x00, 0x01, 0x02, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -53,6 +63,12 @@ local function clamp(v, lo, hi)
   if v < lo then return lo elseif v > hi then return hi else return v end
 end
 
+local function set_of(list)
+  local t = {}
+  for _, v in ipairs(list) do t[v] = true end
+  return t
+end
+
 -- ── DDC/CI packet encode / decode ────────────────────────────────────────────
 -- Each builder takes the payload bytes and appends the XOR-fold checksum.
 local function pack_with_xor(bytes)
@@ -63,7 +79,7 @@ local function pack_with_xor(bytes)
 end
 
 local function build_write(vcp, value)
-  return pack_with_xor({ 0x6e, 0x51, 0x84, 0x03, vcp, 0x00, value })
+  return pack_with_xor({ 0x6e, 0x51, 0x84, 0x03, vcp, (value >> 8) & 0xFF, value & 0xFF })
 end
 
 local function build_extended_set(sub, value)
@@ -111,10 +127,11 @@ local function parse_info_reply(s)
   return (payload:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
--- ── VCP value tables (code, id/label) ────────────────────────────────────────
+-- ── VCP value tables (code, label) ───────────────────────────────────────────
+-- Option indexes are persisted by the host, so entries are never reordered.
 local INPUT_PORTS = {
   { code = 0x0F, label = "DisplayPort 1" },
-  { code = 0x10, label = "DisplayPort 2" },
+  { code = 0x15, label = "USB-C" },
   { code = 0x11, label = "HDMI 1" },
   { code = 0x12, label = "HDMI 2" },
 }
@@ -133,23 +150,28 @@ local OSD_LANGUAGES = {
   { code = 0x24, label = "Ukrainian" },
 }
 
--- Unified SmartImage selector (SDR + HDR presets share VCP 0xDC).
+-- SDR and HDR presets share VCP 0xDC. The monitor only accepts presets from the
+-- family matching the current signal, so each family is its own choice.
 local SMART_IMAGE_MODES = {
   { code = 0x00, label = "Standard" }, { code = 0x01, label = "FPS" },
   { code = 0x03, label = "Movie" }, { code = 0x04, label = "Game 1" },
   { code = 0x05, label = "Game 2" }, { code = 0x06, label = "Racing" },
   { code = 0x07, label = "RTS" }, { code = 0x08, label = "Economy" },
   { code = 0x0B, label = "LowBlue Mode" }, { code = 0x0E, label = "EasyRead" },
-  { code = 0x11, label = "Console Mode" }, { code = 0x21, label = "HDR Game" },
-  { code = 0x22, label = "HDR Movie" }, { code = 0x23, label = "HDR Vivid" },
-  { code = 0x30, label = "HDR True Black" }, { code = 0x24, label = "HDR Personal" },
-  { code = 0x20, label = "HDR Off" },
+  { code = 0x11, label = "Console Mode" },
 }
 
--- Indices (0-based) 11..15 mean "HDR is being applied"; HDR Off (16) does not.
-local function smart_image_is_hdr_active(idx)
-  return idx >= 11 and idx <= 15
-end
+local SMART_IMAGE_HDR_MODES = {
+  { code = 0x21, label = "HDR Game" }, { code = 0x22, label = "HDR Movie" },
+  { code = 0x23, label = "HDR Photo" }, { code = 0x30, label = "HDR True Black" },
+  { code = 0x24, label = "HDR Personal" }, { code = 0x20, label = "HDR Off" },
+}
+
+local SI_LOWBLUE, SI_EASYREAD = 0x0B, 0x0E
+local SI_HDR_OFF, SI_HDR_TRUE_BLACK = 0x20, 0x30
+local HDR_CODES = set_of({ 0x20, 0x21, 0x22, 0x23, 0x24, 0x30 })
+
+local function is_hdr_code(code) return HDR_CODES[code] == true end
 
 local COLOR_TEMPERATURES = {
   { code = 0x02, label = "Native" }, { code = 0x04, label = "5000K" },
@@ -157,6 +179,7 @@ local COLOR_TEMPERATURES = {
   { code = 0x07, label = "8200K" }, { code = 0x08, label = "9300K" },
   { code = 0x0A, label = "11500K" }, { code = 0x0D, label = "Preset" },
 }
+local CT_USER_RGB = 0x0D
 
 local GAMMA_VALUES = {
   { code = 0x50, label = "1.0" }, { code = 0x64, label = "2.0" },
@@ -175,50 +198,111 @@ local SCREEN_SAVER = {
 
 local POWER_MODES = { { code = 0x01, label = "On" }, { code = 0x04, label = "Standby" } }
 
-local function options_from(tbl)
-  local opts = {}
-  for i, e in ipairs(tbl) do
-    opts[i] = { id = tostring(i - 1), label = e.label }
-  end
-  return opts
-end
-
 -- Selected 0-based index -> raw VCP code.
 local function code_at(tbl, selected)
   return tbl[math.min(selected, #tbl - 1) + 1].code
 end
 
--- Raw VCP value -> selected 0-based index (low byte carries the code).
+-- Raw VCP value -> selected 0-based index (low byte carries the code), or nil
+-- for codes outside the table (e.g. color temperature 0x0B while sRGB is on).
 local function index_of_code(tbl, raw)
   local code = raw & 0xFF
   for i, e in ipairs(tbl) do
     if e.code == code then return i - 1 end
   end
-  return 0
+  return nil
+end
+
+local function indexes_where(tbl, pred)
+  local out = {}
+  for i, e in ipairs(tbl) do
+    if pred(e.code) then out[#out + 1] = i - 1 end
+  end
+  return out
 end
 
 -- ── Ambiglow LED geometry (front-facing, x left→right, y top→bottom) ──────────
 local function ambiglow_positions()
   local leds = {}
   local function push(id, x, y) leds[#leds + 1] = { id = id, x = x, y = y } end
-  for i = 0, 3 do push(i, 0.98, 1.0 - i / 3.0) end            -- right edge, bottom→top
-  for j = 0, 7 do push(4 + j, 0.90 - 0.38 * j / 7.0, 0.0) end -- top, right of center
-  for j = 0, 7 do push(12 + j, 0.48 - 0.38 * j / 7.0, 0.0) end -- top, left of center
-  for i = 0, 3 do push(20 + i, 0.02, i / 3.0) end             -- left edge, top→bottom
+  for i = 0, 2 do push(i, 0.98, 1.0 - i / 2.0) end             -- right edge, bottom→top
+  for j = 0, 8 do push(3 + j, 0.90 - 0.38 * j / 8.0, 0.0) end  -- top, right of center
+  for j = 0, 8 do push(12 + j, 0.48 - 0.38 * j / 8.0, 0.0) end -- top, left of center
+  for i = 0, 2 do push(21 + i, 0.02, i / 2.0) end              -- left edge, top→bottom
   for k = 0, 10 do push(24 + k, 0.5, 0.05 + 0.40 * k / 10.0) end -- upper center column
   for k = 0, 8 do push(35 + k, 0.5, 0.55 + 0.40 * k / 8.0) end   -- lower center column
   return leds
 end
 
+-- ── Ambiglow native effects ──────────────────────────────────────────────────
+-- Scaler effects are selected over DDC (E2A0 19, brightness E2A0 1C). Colour
+-- effects run on the ENE controller itself and take their colour from the
+-- frame buffer; their "rainbow" variant is the next mode number.
+local AMBI_MODE_SUB, AMBI_BRIGHTNESS_SUB = 0x19, 0x1C
+
+local SCALER_LEVELS = { { label = "Bright", code = 0 }, { label = "Brighter", code = 1 },
+  { label = "Brightest", code = 2 } }
+local ENE_LEVELS = { { label = "Bright", code = 0x04 }, { label = "Brighter", code = 0x02 },
+  { label = "Brightest", code = 0x00 } }
+local ENE_SPEEDS = { { label = "Low", code = 0x02 }, { label = "Normal", code = 0x00 },
+  { label = "High", code = 0xFE } }
+
+local function enum_param(id, label, options, default)
+  local labels = {}
+  for i, e in ipairs(options) do labels[i] = e.label end
+  return { id = id, label = label, kind = { kind = "enum", options = labels }, default = default }
+end
+
+local P_COLOR = { id = "color", label = "Color", kind = { kind = "color" }, default = { r = 255, g = 255, b = 255 } }
+local P_RAINBOW = { id = "rainbow", label = "Rainbow", kind = { kind = "boolean" }, default = false }
+local P_SCALER_BRIGHTNESS = enum_param("brightness", "Brightness", SCALER_LEVELS, "Brightest")
+local P_BRIGHTNESS = enum_param("brightness", "Brightness", ENE_LEVELS, "Brightest")
+local P_SPEED = enum_param("speed", "Speed", ENE_SPEEDS, "Normal")
+
+local NATIVE_EFFECTS = {
+  { id = "off", name = "Off", scaler = 0, params = {} },
+  { id = "follow_video", name = "Follow Video", scaler = 1, params = { P_SCALER_BRIGHTNESS } },
+  { id = "follow_audio", name = "Follow Audio", scaler = 2, params = {} },
+  { id = "static", name = "Static", ene = 1, params = { P_COLOR, P_RAINBOW, P_BRIGHTNESS } },
+  { id = "color_shift", name = "Color Shift", ene = 3, params = { P_COLOR, P_RAINBOW, P_BRIGHTNESS, P_SPEED } },
+  { id = "color_wave", name = "Color Wave", ene = 5, params = { P_COLOR, P_RAINBOW, P_BRIGHTNESS, P_SPEED } },
+  { id = "breathing", name = "Breathing", ene = 7, params = { P_COLOR, P_RAINBOW, P_BRIGHTNESS, P_SPEED } },
+  { id = "starry_night", name = "Starry Night", ene = 12, params = { P_COLOR, P_RAINBOW, P_BRIGHTNESS, P_SPEED } },
+}
+
+local function find_effect(id)
+  for _, e in ipairs(NATIVE_EFFECTS) do
+    if e.id == id then return e end
+  end
+  return nil
+end
+
+local function option_code(list, label, fallback)
+  for _, e in ipairs(list) do
+    if e.label == label then return e.code end
+  end
+  return fallback
+end
+
+-- Zone block: source 0x00 (controller effect), mode, speed, direction, …,
+-- brightness at +9. Written uncommitted; the +F commit byte follows the frame
+-- so the controller switches effect and colour in one step.
+local COMMIT_OFFSET = 0x0F
+
+local function effect_block(mode, speed, brightness)
+  return string.char(0x00, mode, speed, 0x00, 0x00, 0x05, 0x00, 0x00,
+    0x00, brightness, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00)
+end
+
 -- ── Transport helpers ────────────────────────────────────────────────────────
 local function ddc_write(dev, payload)
   halod.sleep_ms(WRITE_GAP_MS)
-  dev.transport:usb_control(DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload, 0, 50)
+  dev.transport:usb_control(DDC_BMREQ_OUT, DDC_BREQ_WRITE, 0x00, 0x00, payload, 0, DDC_TIMEOUT_MS)
 end
 
 local function ddc_read(dev)
   halod.sleep_ms(READ_DELAY_MS)
-  return dev.transport:usb_control(DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, "", 32, 50)
+  return dev.transport:usb_control(DDC_BMREQ_IN, DDC_BREQ_READ, 0x00, DDC_READ_W_INDEX, "", 32, DDC_TIMEOUT_MS)
 end
 
 -- Reading the startup snapshot is best-effort. Some VCPs are unavailable in
@@ -228,14 +312,19 @@ end
 -- Writes initiated by the user deliberately do not use this wrapper, so their
 -- transport errors still propagate to the daemon.
 local function ddc_query(dev, payload, parse)
+  if (dev.polling and dev.ddc_failed) or (dev.fail_streak or 0) >= MAX_FAIL_STREAK then return nil end
   local ok, value = pcall(function()
     ddc_write(dev, payload)
     return parse(ddc_read(dev))
   end)
   if not ok then
     log("Philips Evnia 49: DDC probe failed: " .. tostring(value))
+    dev.ddc_failed = true
+    dev.fail_streak = (dev.fail_streak or 0) + 1
+    halod.sleep_ms(ERROR_RECOVER_MS)
     return nil
   end
+  dev.fail_streak = 0
   return value
 end
 
@@ -258,8 +347,15 @@ local function ambiglow_write(dev, address, data)
 end
 
 -- Arm direct frame control once (idempotent until a release).
+local function take_host_link(dev)
+  if dev.host_link then return end
+  ambiglow_write(dev, HOST_LINK_ADDR, string.char(HOST_LINK_ON))
+  dev.host_link = true
+end
+
 local function ensure_capture(dev)
   if dev.captured then return end
+  take_host_link(dev)
   for _, addr in ipairs(CONTROL_BLOCKS) do
     ambiglow_write(dev, addr, CAPTURE_BLOCK)
   end
@@ -287,11 +383,121 @@ local function write_colors(dev, colors)
   dev.has_frame = true
 end
 
--- Hand the LEDs back to monitor firmware (wait out any in-flight frame first).
+-- Hand the LEDs back to the monitor scaler (wait out any in-flight frame
+-- first); the scaler then resumes its DDC E2A0 19 effect.
 local function release(dev)
+  if dev.host_link == false then return end
   if dev.has_frame then halod.sleep_ms(FRAME_SETTLE_MS) end
   ambiglow_write(dev, BASELINE_ADDR, BASELINE_REGION)
+  ambiglow_write(dev, HOST_LINK_ADDR, string.char(HOST_LINK_OFF))
+  dev.host_link = false
   dev.captured = false
+  dev.has_frame = false
+end
+
+local function apply_scaler_effect(dev, effect, params)
+  release(dev)
+  ddc_write(dev, build_extended_set(AMBI_MODE_SUB, effect.scaler))
+  dev.state.ambi_mode = effect.scaler
+  if effect.scaler == 1 then
+    local level = option_code(SCALER_LEVELS, params.brightness, 2)
+    ddc_write(dev, build_extended_set(AMBI_BRIGHTNESS_SUB, level))
+  end
+end
+
+-- Keeps the host link on; the controller animates the colour in its effect
+-- colour slots (one RGB triple per zone block), not the frame buffer.
+local function apply_ene_effect(dev, effect, params)
+  local color = params.color or P_COLOR.default
+  local mode = effect.ene + (params.rainbow == true and 1 or 0)
+  if dev.has_frame then halod.sleep_ms(FRAME_SETTLE_MS) end
+  take_host_link(dev)
+  local block = effect_block(mode, option_code(ENE_SPEEDS, params.speed, 0x00),
+    option_code(ENE_LEVELS, params.brightness, 0x00))
+  for _, addr in ipairs(CONTROL_BLOCKS) do
+    ambiglow_write(dev, addr, block)
+  end
+  local rgb = string.char(color.r, color.g, color.b)
+  for _, addr in ipairs(EFFECT_COLOR_SLOTS) do
+    ambiglow_write(dev, addr, rgb)
+  end
+  for _, addr in ipairs(CONTROL_BLOCKS) do
+    ambiglow_write(dev, addr + COMMIT_OFFSET, string.char(0x01))
+  end
+  dev.captured = false
+  dev.has_frame = false
+end
+
+local function resume_monitor_effect(dev)
+  release(dev)
+  local mode = dev.state.ambi_mode
+  if mode and mode ~= 0 then ddc_write(dev, build_extended_set(AMBI_MODE_SUB, mode)) end
+end
+
+-- ── Mode-scoped picture state ────────────────────────────────────────────────
+local function sdr(s) return s.dc == nil or not is_hdr_code(s.dc) end
+local function hdr(s) return s.dc == nil or is_hdr_code(s.dc) end
+local function picture_adjustable(s) return s.dc ~= SI_HDR_OFF and s.dc ~= SI_HDR_TRUE_BLACK end
+local function color_managed(s) return sdr(s) and s.dc ~= SI_LOWBLUE and s.dc ~= SI_EASYREAD end
+local function single_input(s) return not s.pbp end
+
+-- Which controls the monitor accepts in its current state. A gated write is
+-- skipped; the control is hidden in that state, so nothing needs re-reading.
+local GATES = {
+  brightness = picture_adjustable,
+  contrast = function(s) return picture_adjustable(s) and s.dc ~= SI_EASYREAD end,
+  sharpness = sdr,
+  gamma = sdr,
+  color_temperature = color_managed,
+  srgb = color_managed,
+  gain_red = function(s) return sdr(s) and s.ct == CT_USER_RGB end,
+  light_enhancement = function(s) return hdr(s) and picture_adjustable(s) end,
+  adaptive_sync = single_input,
+  crosshair = single_input,
+  smart_response = single_input,
+  low_input_lag = function(s) return single_input(s) and not s.sharpshooter end,
+}
+GATES.gain_green = GATES.gain_red
+GATES.gain_blue = GATES.gain_red
+GATES.color_enhancement = GATES.light_enhancement
+
+local function allowed(dev, key)
+  local gate = GATES[key]
+  if not gate or gate(dev.state) then return true end
+  log("Philips Evnia 49: " .. key .. " is not available in the current monitor mode; skipped")
+  return false
+end
+
+-- Mode-scoped picture values: the monitor keeps them per SmartImage preset and
+-- only answers the set belonging to the current SDR/HDR family.
+local function read_picture(dev, ranges, choices)
+  local s = dev.state
+  local v = ddc_get_standard(dev, 0xDC)
+  if v then
+    s.dc = v & 0xFF
+    choices.smart_image = index_of_code(SMART_IMAGE_MODES, v)
+    choices.smart_image_hdr = index_of_code(SMART_IMAGE_HDR_MODES, v)
+  end
+  v = ddc_get_standard(dev, 0x10); if v then ranges.brightness = clamp(v, 0, 100) end
+  v = ddc_get_standard(dev, 0x12); if v then ranges.contrast = clamp(v, 0, 100) end
+  if s.dc ~= nil and is_hdr_code(s.dc) then
+    v = ddc_get_extended(dev, 0x3D); if v then ranges.light_enhancement = clamp(v, 0, 3) end
+    v = ddc_get_extended(dev, 0x3E); if v then ranges.color_enhancement = clamp(v, 0, 3) end
+    return
+  end
+  v = ddc_get_standard(dev, 0x72); if v then choices.gamma = index_of_code(GAMMA_VALUES, v) end
+  v = ddc_get_standard(dev, 0x87); if v then ranges.sharpness = clamp(v, 0, 100) end
+  v = ddc_get_extended(dev, 0x20); if v then s.srgb = v ~= 0 end
+  v = ddc_get_standard(dev, 0x14)
+  if v then
+    s.ct = v & 0xFF
+    choices.color_temperature = index_of_code(COLOR_TEMPERATURES, v)
+  end
+  if s.ct == CT_USER_RGB then
+    v = ddc_get_standard(dev, 0x16); if v then ranges.gain_red = clamp(v, 0, 100) end
+    v = ddc_get_standard(dev, 0x18); if v then ranges.gain_green = clamp(v, 0, 100) end
+    v = ddc_get_standard(dev, 0x1A); if v then ranges.gain_blue = clamp(v, 0, 100) end
+  end
 end
 
 -- ── Manifest ─────────────────────────────────────────────────────────────────
@@ -299,9 +505,6 @@ local CAT_PICTURE, CAT_COLOR, CAT_AUDIO = "picture", "color", "audio"
 local CAT_OSD, CAT_SETUP, CAT_GAMING = "osd", "setup", "gaming"
 local CAT_SYSTEM_USB, CAT_SMART_IMAGE = "system_usb", "smart_image"
 
--- The catalog intentionally contains only inert identity and transport data.
--- These descriptors are runtime data: firmware can expose a different set of
--- controls, so they travel with initialize instead of plugin.yaml.
 local function table_choice(key, label, category, values, default)
   local options = {}
   for index, value in ipairs(values) do
@@ -318,12 +521,28 @@ local function numeric_choice(key, label, category, labels, default)
   return { key = key, label = label, category = category, options = options, default = default or 0 }
 end
 
+local function visible(control, rule)
+  control.visible_when = rule
+  return control
+end
+
+local VISIBLE_SDR = { key = "hdr_active", equals = { 0 } }
+local VISIBLE_HDR = { key = "hdr_active", equals = { 1 } }
+local VISIBLE_GAINS = {
+  key = "color_temperature",
+  equals = indexes_where(COLOR_TEMPERATURES, function(c) return c == CT_USER_RGB end),
+}
+
+-- The catalog intentionally contains only inert identity and transport data.
+-- These descriptors are runtime data: firmware can expose a different set of
+-- controls, so they travel with initialize instead of plugin.yaml.
 local RUNTIME_CONTROLS = {
   choices = {
     table_choice("input_source", "Input Source", CAT_SYSTEM_USB, INPUT_PORTS),
-    table_choice("smart_image", "SmartImage", CAT_SMART_IMAGE, SMART_IMAGE_MODES),
-    table_choice("color_temperature", "Color Temperature", CAT_COLOR, COLOR_TEMPERATURES),
-    table_choice("gamma", "Gamma", CAT_PICTURE, GAMMA_VALUES, 2),
+    visible(table_choice("smart_image", "SmartImage", CAT_SMART_IMAGE, SMART_IMAGE_MODES), VISIBLE_SDR),
+    visible(table_choice("smart_image_hdr", "SmartImage HDR", CAT_SMART_IMAGE, SMART_IMAGE_HDR_MODES), VISIBLE_HDR),
+    visible(table_choice("color_temperature", "Color Temperature", CAT_COLOR, COLOR_TEMPERATURES), VISIBLE_SDR),
+    visible(table_choice("gamma", "Gamma", CAT_PICTURE, GAMMA_VALUES, 2), VISIBLE_SDR),
     table_choice("osd_language", "OSD Language", CAT_OSD, OSD_LANGUAGES),
     numeric_choice("smart_response", "SmartResponse", CAT_GAMING, { "Off", "Fast", "Faster", "Fastest" }),
     table_choice("power_mode", "Power", CAT_SETUP, POWER_MODES),
@@ -339,15 +558,21 @@ local RUNTIME_CONTROLS = {
     { key = "brightness", label = "Brightness", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
     { key = "contrast", label = "Contrast", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
     { key = "volume", label = "Volume", category = CAT_AUDIO, min = 0, max = 100, default = 0 },
-    { key = "sharpness", label = "Sharpness", category = CAT_PICTURE, min = 0, max = 100, default = 50 },
-    { key = "light_enhancement", label = "Light Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0 },
-    { key = "color_enhancement", label = "Color Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0 },
+    { key = "sharpness", label = "Sharpness", category = CAT_PICTURE, min = 0, max = 100, default = 50,
+      visible_when = VISIBLE_SDR },
+    { key = "light_enhancement", label = "Light Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0,
+      visible_when = VISIBLE_HDR },
+    { key = "color_enhancement", label = "Color Enhancement", category = CAT_PICTURE, min = 0, max = 3, default = 0,
+      visible_when = VISIBLE_HDR },
     { key = "osd_h_position", label = "OSD Horizontal Position", category = CAT_OSD, min = 0, max = 100, default = 50 },
     { key = "osd_v_position", label = "OSD Vertical Position", category = CAT_OSD, min = 0, max = 100, default = 50 },
     { key = "power_led", label = "Power LED Brightness", category = CAT_SETUP, min = 0, max = 4, default = 2 },
-    { key = "gain_red", label = "Red Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
-    { key = "gain_green", label = "Green Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
-    { key = "gain_blue", label = "Blue Gain", category = CAT_COLOR, min = 0, max = 100, default = 100 },
+    { key = "gain_red", label = "Red Gain", category = CAT_COLOR, min = 0, max = 100, default = 100,
+      visible_when = VISIBLE_GAINS },
+    { key = "gain_green", label = "Green Gain", category = CAT_COLOR, min = 0, max = 100, default = 100,
+      visible_when = VISIBLE_GAINS },
+    { key = "gain_blue", label = "Blue Gain", category = CAT_COLOR, min = 0, max = 100, default = 100,
+      visible_when = VISIBLE_GAINS },
   },
   booleans = {
     { key = "adaptive_sync", label = "Adaptive Sync", category = CAT_GAMING },
@@ -364,11 +589,39 @@ local RUNTIME_CONTROLS = {
   actions = { { key = "pixel_refresh", label = "Pixel Refresh", category = CAT_SETUP } },
 }
 
+local function native_effects()
+  local list = { { id = "monitor", name = "Monitor (firmware control)", params = {} } }
+  for _, e in ipairs(NATIVE_EFFECTS) do
+    list[#list + 1] = { id = e.id, name = e.name, params = e.params }
+  end
+  return list
+end
+
+local RANGE_WRITES = {
+  brightness = { std = 0x10, max = 100 }, contrast = { std = 0x12, max = 100 },
+  volume = { std = 0x62, max = 100 }, sharpness = { std = 0x87, max = 100 },
+  power_led = { std = 0xF2, max = 4 }, gain_red = { std = 0x16, max = 100 },
+  gain_green = { std = 0x18, max = 100 }, gain_blue = { std = 0x1A, max = 100 },
+  light_enhancement = { ext = 0x3D, max = 3 }, color_enhancement = { ext = 0x3E, max = 3 },
+  osd_h_position = { ext = 0x0E, max = 100 }, osd_v_position = { ext = 0x0F, max = 100 },
+}
+
+local BOOLEAN_WRITES = {
+  adaptive_sync = { ext = 0x40 }, low_input_lag = { ext = 0x07 },
+  audio_mute = { std = 0x8D, on = 0x01, off = 0x02 },
+  resolution_notice = { std = 0xE9, on = 0x02, off = 0x00 },
+  usb_standby = { ext = 0x13 }, smart_power = { ext = 0x16 }, cec = { ext = 0x17 },
+  auto_warning = { ext = 0x43 }, srgb = { ext = 0x20, on = 0x02, off = 0x00 },
+}
+
+local MODE_CHANGING = set_of({ "smart_image", "smart_image_hdr", "color_temperature", "input_source" })
+
 return {
   initialize = function(dev)
-    dev.state = {}
+    dev.state = { checked_at = os.time() }
     dev.captured = false
     dev.has_frame = false
+    dev.host_link = nil -- unknown until the first take or release
     local s = dev.state
     local ranges, choices = {}, {}
     local v
@@ -376,28 +629,24 @@ return {
     local model = ddc_get_info(dev, 0xE9, 0x0D, 0x00, 0x00)
     if model == "" then model = nil end
 
-    v = ddc_get_standard(dev, 0x10); if v then ranges.brightness = clamp(v, 0, 100) end
-    v = ddc_get_standard(dev, 0x12); if v then ranges.contrast = clamp(v, 0, 100) end
+    read_picture(dev, ranges, choices)
+
     v = ddc_get_standard(dev, 0x62); if v then ranges.volume = clamp(v, 0, 100) end
-    v = ddc_get_standard(dev, 0x87); if v then ranges.sharpness = clamp(v, 0, 100) end
     v = ddc_get_standard(dev, 0xF2); if v then ranges.power_led = clamp(v, 0, 4) end
-    v = ddc_get_standard(dev, 0x16); if v then ranges.gain_red = clamp(v, 0, 100) end
-    v = ddc_get_standard(dev, 0x18); if v then ranges.gain_green = clamp(v, 0, 100) end
-    v = ddc_get_standard(dev, 0x1A); if v then ranges.gain_blue = clamp(v, 0, 100) end
-    v = ddc_get_extended(dev, 0x3D); if v then ranges.light_enhancement = clamp(v, 0, 3) end
-    v = ddc_get_extended(dev, 0x3E); if v then ranges.color_enhancement = clamp(v, 0, 3) end
     v = ddc_get_extended(dev, 0x0E); if v then ranges.osd_h_position = clamp(v, 0, 100) end
     v = ddc_get_extended(dev, 0x0F); if v then ranges.osd_v_position = clamp(v, 0, 100) end
 
-    v = ddc_get_standard(dev, 0x60); if v then choices.input_source = index_of_code(INPUT_PORTS, v) end
-    v = ddc_get_standard(dev, 0xDC)
-    if v then choices.smart_image = index_of_code(SMART_IMAGE_MODES, v); s.smart_image = choices.smart_image end
-    v = ddc_get_standard(dev, 0x14); if v then choices.color_temperature = index_of_code(COLOR_TEMPERATURES, v) end
-    v = ddc_get_standard(dev, 0x72); if v then choices.gamma = index_of_code(GAMMA_VALUES, v) end
+    v = ddc_get_standard(dev, 0x60)
+    if v then
+      s.input_secondary = (v >> 8) & 0xFF
+      choices.input_source = index_of_code(INPUT_PORTS, v)
+    end
+    v = ddc_get_standard(dev, 0xA5); if v then s.pbp = v > 0 end
     v = ddc_get_standard(dev, 0xCC); if v then choices.osd_language = index_of_code(OSD_LANGUAGES, v) end
     v = ddc_get_standard(dev, 0xEB); if v then choices.smart_response = math.min(v, 3) end
     v = ddc_get_standard(dev, 0xD6); if v then choices.power_mode = index_of_code(POWER_MODES, v) end
     v = ddc_get_extended(dev, 0x04); if v then choices.crosshair = math.min(v, 2) end
+    v = ddc_get_extended(dev, 0x06); if v then s.sharpshooter = v ~= 0 end
     v = ddc_get_extended(dev, 0x10); if v then choices.osd_transparency = math.min(v, 4) end
     v = ddc_get_extended(dev, 0x11); if v then choices.osd_timeout = math.min(v, 4) end
     v = ddc_get_extended(dev, 0x12); if v then choices.usb_c_setting = math.min(v, 1) end
@@ -413,7 +662,8 @@ return {
     v = ddc_get_extended(dev, 0x16); if v then s.smart_power = v ~= 0 end
     v = ddc_get_extended(dev, 0x17); if v then s.cec = v ~= 0 end
     v = ddc_get_extended(dev, 0x43); if v then s.auto_warning = v ~= 0 end
-    v = ddc_get_extended(dev, 0x20); if v then s.srgb = v ~= 0 end
+
+    v = ddc_get_extended(dev, AMBI_MODE_SUB); if v then s.ambi_mode = v & 0xFF end
 
     log("Philips Evnia 49 initialized")
     return {
@@ -429,38 +679,73 @@ return {
         led_count = LED_COUNT,
         leds = ambiglow_positions(),
       } },
-      native_effects = { { id = "monitor", name = "Monitor (firmware control)", params = {} } },
+      native_effects = native_effects(),
     }
   end,
 
   close = function(dev)
-    if dev.captured then release(dev) end
+    if dev.host_link then resume_monitor_effect(dev) end
+  end,
+
+  -- Re-reads mode-scoped values after a mode change or when the monitor's
+  -- SmartImage changed on its own (OSD, HDR signal), correcting host caches.
+  read_status = function(dev)
+    local s = dev.state
+    if not s then return nil end
+    local now = os.time()
+    if s.backoff_until and now < s.backoff_until then return nil end
+    local due = s.refresh_at and now >= s.refresh_at
+    if s.refresh_at and not due then return nil end
+    if not due and now - (s.checked_at or 0) < MODE_CHECK_S then return nil end
+    s.checked_at = now
+    dev.ddc_failed = false
+    dev.fail_streak = 0
+    dev.polling = true
+    if not due then
+      local v = ddc_get_standard(dev, 0xDC)
+      if dev.ddc_failed then s.backoff_until = now + ERROR_BACKOFF_S end
+      if not v or (v & 0xFF) == s.dc then
+        dev.polling = false
+        return nil
+      end
+    end
+    s.refresh_at = nil
+    local ranges, choices = {}, {}
+    read_picture(dev, ranges, choices)
+    dev.polling = false
+    if dev.ddc_failed then s.backoff_until = os.time() + ERROR_BACKOFF_S end
+    return { ranges = ranges, choices = choices }
   end,
 
   set_range = function(dev, key, value)
-    if key == "brightness" then ddc_write(dev, build_write(0x10, clamp(value, 0, 100)))
-    elseif key == "contrast" then ddc_write(dev, build_write(0x12, clamp(value, 0, 100)))
-    elseif key == "volume" then ddc_write(dev, build_write(0x62, clamp(value, 0, 100)))
-    elseif key == "sharpness" then ddc_write(dev, build_write(0x87, clamp(value, 0, 100)))
-    elseif key == "power_led" then ddc_write(dev, build_write(0xF2, clamp(value, 0, 4)))
-    elseif key == "gain_red" then ddc_write(dev, build_write(0x16, clamp(value, 0, 100)))
-    elseif key == "gain_green" then ddc_write(dev, build_write(0x18, clamp(value, 0, 100)))
-    elseif key == "gain_blue" then ddc_write(dev, build_write(0x1A, clamp(value, 0, 100)))
-    elseif key == "light_enhancement" then ddc_write(dev, build_extended_set(0x3D, clamp(value, 0, 3)))
-    elseif key == "color_enhancement" then ddc_write(dev, build_extended_set(0x3E, clamp(value, 0, 3)))
-    elseif key == "osd_h_position" then ddc_write(dev, build_extended_set(0x0E, clamp(value, 0, 100)))
-    elseif key == "osd_v_position" then ddc_write(dev, build_extended_set(0x0F, clamp(value, 0, 100)))
-    else error("unknown range key: " .. key) end
+    local w = RANGE_WRITES[key]
+    if not w then error("unknown range key: " .. key) end
+    if not allowed(dev, key) then return end
+    value = clamp(value, 0, w.max)
+    if w.std then ddc_write(dev, build_write(w.std, value))
+    else ddc_write(dev, build_extended_set(w.ext, value)) end
   end,
 
   set_choice = function(dev, key, selected)
-    if key == "input_source" then ddc_write(dev, build_write(0x60, code_at(INPUT_PORTS, selected)))
+    local s = dev.state
+    if not allowed(dev, key) then return end
+    if key == "input_source" then
+      local code = code_at(INPUT_PORTS, selected)
+      ddc_write(dev, build_write(0x60, ((s.input_secondary or 0) << 8) | code))
     elseif key == "osd_language" then ddc_write(dev, build_write(0xCC, code_at(OSD_LANGUAGES, selected)))
-    elseif key == "smart_image" then
-      ddc_write(dev, build_write(0xDC, code_at(SMART_IMAGE_MODES, selected)))
-      dev.state = dev.state or {}
-      dev.state.smart_image = selected -- keep hdr_active (a derived boolean) in sync
-    elseif key == "color_temperature" then ddc_write(dev, build_write(0x14, code_at(COLOR_TEMPERATURES, selected)))
+    elseif key == "smart_image" or key == "smart_image_hdr" then
+      local code = code_at(key == "smart_image" and SMART_IMAGE_MODES or SMART_IMAGE_HDR_MODES, selected)
+      if s.dc ~= nil and is_hdr_code(code) ~= is_hdr_code(s.dc) then
+        log("Philips Evnia 49: " .. (is_hdr_code(code) and "HDR" or "SDR")
+          .. " SmartImage presets are only selectable while the monitor shows that signal; skipped")
+        return
+      end
+      ddc_write(dev, build_write(0xDC, code))
+      s.dc = code
+    elseif key == "color_temperature" then
+      local code = code_at(COLOR_TEMPERATURES, selected)
+      ddc_write(dev, build_write(0x14, code))
+      s.ct = code
     elseif key == "gamma" then ddc_write(dev, build_write(0x72, code_at(GAMMA_VALUES, selected)))
     elseif key == "power_mode" then ddc_write(dev, build_write(0xD6, code_at(POWER_MODES, selected)))
     elseif key == "smart_response" then ddc_write(dev, build_write(0xEB, math.min(selected, 3)))
@@ -472,6 +757,7 @@ return {
     elseif key == "usb_c_setting" then ddc_write(dev, build_extended_set(0x12, math.min(selected, 1)))
     elseif key == "kvm" then ddc_write(dev, build_extended_set(0x15, math.min(selected, 2)))
     else error("unknown choice key: " .. key) end
+    if MODE_CHANGING[key] then s.refresh_at = os.time() + REFRESH_DELAY_S end
   end,
 
   get_booleans = function(dev)
@@ -486,24 +772,19 @@ return {
       { key = "cec", value = s.cec or false },
       { key = "auto_warning", value = s.auto_warning or false },
       { key = "srgb", value = s.srgb or false },
-      { key = "hdr_active", value = smart_image_is_hdr_active(s.smart_image or 0), read_only = true },
+      { key = "hdr_active", value = s.dc ~= nil and is_hdr_code(s.dc), read_only = true },
     }
   end,
 
   set_boolean = function(dev, key, value)
-    local s = dev.state or {}
-    dev.state = s
-    local on = value and 1 or 0
-    if key == "adaptive_sync" then ddc_write(dev, build_extended_set(0x40, on)); s.adaptive_sync = value
-    elseif key == "low_input_lag" then ddc_write(dev, build_extended_set(0x07, on)); s.low_input_lag = value
-    elseif key == "audio_mute" then ddc_write(dev, build_write(0x8D, value and 0x01 or 0x02)); s.audio_mute = value
-    elseif key == "resolution_notice" then ddc_write(dev, build_write(0xE9, value and 0x02 or 0x00)); s.resolution_notice = value
-    elseif key == "usb_standby" then ddc_write(dev, build_extended_set(0x13, on)); s.usb_standby = value
-    elseif key == "smart_power" then ddc_write(dev, build_extended_set(0x16, on)); s.smart_power = value
-    elseif key == "cec" then ddc_write(dev, build_extended_set(0x17, on)); s.cec = value
-    elseif key == "auto_warning" then ddc_write(dev, build_extended_set(0x43, on)); s.auto_warning = value
-    elseif key == "srgb" then ddc_write(dev, build_extended_set(0x20, value and 0x02 or 0x00)); s.srgb = value
-    else error("unknown boolean key: " .. key) end
+    local w = BOOLEAN_WRITES[key]
+    if not w then error("unknown boolean key: " .. key) end
+    if not allowed(dev, key) then return end
+    local raw = value and (w.on or 1) or (w.off or 0)
+    if w.std then ddc_write(dev, build_write(w.std, raw))
+    else ddc_write(dev, build_extended_set(w.ext, raw)) end
+    dev.state[key] = value
+    if key == "srgb" then dev.state.refresh_at = os.time() + REFRESH_DELAY_S end
   end,
 
   trigger_action = function(dev, key)
@@ -513,8 +794,14 @@ return {
 
   -- ── Ambiglow RGB ──────────────────────────────────────────────────────────
   apply = function(dev, state)
-    if state.mode == "native_effect" and state.id == "monitor" then
-      release(dev)
+    if state.mode == "native_effect" then
+      if state.id == "monitor" then
+        resume_monitor_effect(dev)
+      else
+        local effect = find_effect(state.id)
+        if effect and effect.ene then apply_ene_effect(dev, effect, state.params or {})
+        elseif effect then apply_scaler_effect(dev, effect, state.params or {}) end
+      end
     elseif state.mode == "static" then
       local fill = {}
       for i = 1, LED_COUNT do fill[i] = state.color end
@@ -528,8 +815,8 @@ return {
   end,
 
   write_frame = function(dev, zone_id, bytes)
-  local colors = {}
-  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    local colors = {}
+    for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     if zone_id == "ambiglow" then write_colors(dev, colors) end
   end,
 }

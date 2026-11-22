@@ -211,7 +211,9 @@ can be controlled.
 Device settings such as report rate, sleep timeout, debounce, sidetone, and
 similar controls use the generic `controls` capability. Model them as choice,
 range, boolean, or action descriptors instead of adding standalone capability
-names.
+names. A choice or range descriptor may carry `visible_when = { key, equals }`:
+the control is shown only while the sibling control `key` (a choice's selected
+index, a range's value, or a boolean as `0`/`1`) is one of `equals`.
 
 ## Device entries and matches
 

@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: logitech
 name: Logitech HID++
-version: 1.0.2
+version: 1.1.0
 api: "1.0"
 license: GPL-3.0-or-later
-description: Logitech HID++ direct devices and receivers.
+description: Logitech HID++ mice, keyboards, headsets, speakers and receivers.
 translations:
   it:
     plugin.name: Logitech HID++
-    plugin.description: Dispositivi diretti e ricevitori Logitech HID++.
+    plugin.description: Mouse, tastiere, cuffie, altoparlanti e ricevitori Logitech HID++.
 platforms: [linux, windows]
 capabilities: [lighting, battery, connection, dpi, controls, key_remap, keyboard_layout, onboard_profiles, pairing, equalizer]
 dynamic_children: true
@@ -48,27 +48,31 @@ devices:
   - vendor: Logitech
     model: PRO X Wireless
     type: headset
-    match: { hid: { vid: 0x046d, pid: 0x0aba } }
+    match: { hid: { vid: 0x046d, pid: 0x0aba, interface: 3, usage_page: 0xff43, usage: 0x0202 } }
   - vendor: Logitech
     model: PRO X 2 LIGHTSPEED
     type: headset
-    match: { hid: { vid: 0x046d, pid: 0x0af7 } }
+    match: { hid: { vid: 0x046d, pid: 0x0af7, interface: 3, usage_page: 0xff43, usage: 0x0202 } }
   - vendor: Logitech
     model: G733 LIGHTSPEED
     type: headset
-    match: { hid: { vid: 0x046d, pids: [0x0ab5, 0x0afe] } }
+    match: { hid: { vid: 0x046d, pids: [0x0ab5, 0x0afe], interface: 3, usage_page: 0xff43, usage: 0x0202 } }
   - vendor: Logitech
     model: G535 LIGHTSPEED
     type: headset
-    match: { hid: { vid: 0x046d, pid: 0x0ac4 } }
+    match: { hid: { vid: 0x046d, pid: 0x0ac4, interface: 3, usage_page: 0xff43, usage: 0x0202 } }
   - vendor: Logitech
     model: G935
     type: headset
-    match: { hid: { vid: 0x046d, pid: 0x0a87 } }
+    match: { hid: { vid: 0x046d, pid: 0x0a87, interface: 3, usage_page: 0xff43, usage: 0x0202 } }
+  - vendor: Logitech
+    model: G560
+    type: speaker
+    match: { hid: { vid: 0x046d, pid: 0x0a78, interface: 2, usage_page: 0xff43, usage: 0x0202, max_bytes_per_sec: 1500 } }
   - vendor: Logitech
     model: G533
     type: headset
-    match: { hid: { vid: 0x046d, pid: 0x0a66 } }
+    match: { hid: { vid: 0x046d, pid: 0x0a66, interface: 3, usage_page: 0xff43, usage: 0x0202 } }
 transports:
   hid:
     report_size: 0

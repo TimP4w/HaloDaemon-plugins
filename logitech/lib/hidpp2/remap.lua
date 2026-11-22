@@ -48,45 +48,115 @@ local function remap_buttons(dev)
       end
     end
   end
-  dev.remap = { backend = backend, active = {}, previous = {} }
+  dev.remap = { backend = backend, base = {}, shifted = {}, layer = false, previous = {} }
+  if backend == "spy" then
+    local ok, reply = pcall(request, dev, devnum, features[MOUSE_BUTTON_SPY], 0x30)
+    if ok and #reply >= 16 then
+      local table_ = {}
+      for i = 1, 16 do table_[i] = reply:byte(i) end
+      dev.remap.spy_table = table_
+    end
+  end
   return buttons
 end
 
-local function set_remap_active(dev, cid, enabled)
-  local remap = assert(dev.remap, "remap unavailable")
-  local was_enabled = remap.active[cid] ~= nil
-  if was_enabled == enabled then return end
-  local had_any = next(remap.active) ~= nil
-  remap.active[cid] = enabled or nil
-  local any = next(remap.active) ~= nil
-  local ok, value = true, nil
-  if remap.backend == "reprog" then
-    local payload = { (cid >> 8) & 0xff, cid & 0xff, enabled and 0x03 or 0x02 }
-    for _ = 1, 13 do payload[#payload + 1] = 0 end
-    ok, value = pcall(feature, dev, REPROG_CONTROLS_V4, 0x30, bytes(table.unpack(payload)))
-  elseif remap.backend == "gkey" and had_any ~= any then
-    ok, value = pcall(feature, dev, GKEY, 0x20, bytes(any and 1 or 0))
-  elseif remap.backend == "spy" and had_any ~= any then
-    ok, value = pcall(feature, dev, MOUSE_BUTTON_SPY, 0x10, bytes(any and 1 or 0))
+-- MOUSE_BUTTON_SPY event bits are big-endian: physical button n is bit n-1 of
+-- the u16, while cids here number the bytes little-endian (bit 8 = cid 9).
+local function spy_button(cid) return ((cid - 1) ~ 8) + 1 end
+
+-- A button's native output is suppressed while its action on the current
+-- layer is non-native: base mappings always, shifted mappings only while the
+-- global layer shift is held. Reporting stays on while anything is mapped.
+local function suppressed(remap, cid)
+  return remap.base[cid] or (remap.layer and remap.shifted[cid]) or false
+end
+
+local function any_mapped(remap)
+  return next(remap.base) ~= nil or next(remap.shifted) ~= nil
+end
+
+-- Remap table entry n-1 is the HID button physical button n reports; 0
+-- suppresses the native report while the spy event still fires.
+local function write_spy_table(dev)
+  local remap = dev.remap
+  if not remap.spy_table then return end
+  local out = {}
+  for i, value in ipairs(remap.spy_table) do out[i] = value end
+  for cid in pairs(remap.base) do out[spy_button(cid)] = out[spy_button(cid)] and 0 end
+  if remap.layer then
+    for cid in pairs(remap.shifted) do out[spy_button(cid)] = out[spy_button(cid)] and 0 end
   end
-  if not ok then
-    remap.active[cid] = was_enabled and true or nil
-    error(value)
+  feature(dev, MOUSE_BUTTON_SPY, 0x40, bytes(table.unpack(out)))
+end
+
+local function write_divert(dev, cid, divert)
+  local payload = { (cid >> 8) & 0xff, cid & 0xff, divert and 0x03 or 0x02 }
+  for _ = 1, 13 do payload[#payload + 1] = 0 end
+  feature(dev, REPROG_CONTROLS_V4, 0x30, bytes(table.unpack(payload)))
+end
+
+-- Push the backend state that changed between `before` (a snapshot of
+-- suppressed cids and whether anything was mapped) and now.
+local function sync(dev, before)
+  local remap = dev.remap
+  local had_any, any = before.any, any_mapped(remap)
+  if remap.backend == "reprog" then
+    for cid in pairs(before.cids) do
+      local now = suppressed(remap, cid)
+      if now ~= before.suppressed[cid] then write_divert(dev, cid, now) end
+    end
+  elseif remap.backend == "gkey" then
+    if had_any ~= any then feature(dev, GKEY, 0x20, bytes(any and 1 or 0)) end
+  elseif remap.backend == "spy" then
+    if any and not had_any then feature(dev, MOUSE_BUTTON_SPY, 0x10) end
+    local changed = had_any ~= any
+    for cid in pairs(before.cids) do
+      if suppressed(remap, cid) ~= before.suppressed[cid] then changed = true end
+    end
+    if changed then write_spy_table(dev) end
+    if had_any and not any then feature(dev, MOUSE_BUTTON_SPY, 0x20) end
   end
 end
 
+local function snapshot(remap, cids)
+  local out = { any = any_mapped(remap), cids = cids, suppressed = {} }
+  for cid in pairs(cids) do out.suppressed[cid] = suppressed(remap, cid) end
+  return out
+end
+
+local function restore(remap, saved)
+  remap.base, remap.shifted, remap.layer = saved.base, saved.shifted, saved.layer
+end
+
+local function copy(t) local out = {}; for k, v in pairs(t) do out[k] = v end; return out end
+
+local function set_mapping(dev, cid, base, shifted)
+  local remap = assert(dev.remap, "remap unavailable")
+  if (remap.base[cid] or false) == base and (remap.shifted[cid] or false) == shifted then return end
+  local saved = { base = copy(remap.base), shifted = copy(remap.shifted), layer = remap.layer }
+  local before = snapshot(remap, { [cid] = true })
+  remap.base[cid], remap.shifted[cid] = base or nil, shifted or nil
+  local ok, err = pcall(sync, dev, before)
+  if not ok then restore(remap, saved); error(err) end
+end
+
+local function set_layer(dev, active)
+  local remap = dev.remap
+  if not remap or remap.layer == active then return end
+  local before = snapshot(remap, copy(remap.shifted))
+  remap.layer = active
+  sync(dev, before)
+end
+
 local function rearm(dev)
-  local state = dev.remap
-  if not state then return end
-  local active = state.active
-  state.active, state.previous = {}, {}
-  for cid in pairs(active) do
-    local ok, err = pcall(set_remap_active, dev, cid, true)
-    if not ok then
-      state.active = active
-      error(err)
-    end
-  end
+  local remap = dev.remap
+  if not remap then return end
+  remap.previous = {}
+  if not any_mapped(remap) then return end
+  local cids = copy(remap.base)
+  for cid in pairs(remap.shifted) do cids[cid] = true end
+  local before = { any = false, cids = cids, suppressed = {} }
+  sync(dev, before)
 end
 
 local function button_events(dev, packet_in)
@@ -123,8 +193,10 @@ end
 
 return {
   mapping_is_native = mapping_is_native,
+  action_is_native = action_is_native,
   buttons = remap_buttons,
-  set_active = set_remap_active,
+  set_mapping = set_mapping,
+  set_layer = set_layer,
   rearm = rearm,
   events = button_events,
 }

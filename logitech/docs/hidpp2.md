@@ -105,6 +105,9 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 
 `voltage_to_percent` maps mV → 0–100% by piecewise-linear interpolation over a discharge curve. A `0` mV reading means the headset is **asleep** (dongle on, earcups off); the same condition makes SIDETONE/EQUALIZER reads return `logitech_internal` (`0x05`); all are treated as "not yet available" and the 30 s battery poll retries. The two voltage features share this exact reply layout.
 
+
+**Auto power-off timer** (LIGHTSPEED headsets, ADC_MEASUREMENT): function `0x10` returns the timer in minutes in byte 0 (PRO X Wireless: 30), and `0x20 [minutes]` sets it. Exposed as the `power_off_timer` range control, 1–60 min.
+
 ---
 
 ## 4. Settings - `v2/settings/`
@@ -159,16 +162,40 @@ LIGHTSPEED headsets report a **cell voltage**, not a percentage (the PRO X `0x0A
 
 **Sector read/write** (`Hidpp20::read_profile_sector` / `write_profile_sector`). A read loops memoryRead at 16-byte offsets with a final tail read clamped to the sector size. A write must target a **writable RAM sector** (`0x000N`), never a read-only `0x01xx` ROM address: erase (0x60) → write 16-byte chunks (0x70) → commit (0x80). The sector's trailing 2 bytes must be a valid CRC16 (see [protocol.md](protocol.md)) or the device silently discards the write.
 
-**Profile-sector layout** (typically 255 bytes on the G502 X Plus):
+**Profile-sector layout** (255 bytes on the G502 X Plus):
 
 | Byte(s) | Field | Meaning |
 |---------|-------|---------|
-| 0 | sector id | low byte = RAM slot index |
+| 0 | report rate | ms (`01` = 1 ms) |
 | 1 | resolution default index | active DPI step; clamped to `step_count − 1` on write |
 | 2 | resolution shift index | DPI-shift step; reset to 0 when out of range |
 | 3..13 | DPI steps | 5 × u16 **little-endian** (`0x0000`/`0xFFFF` = unused) |
-| 13..(size−2) | button / G-button bindings | preserved verbatim on a DPI patch |
-| (size−2)..size | CRC16 | big-endian, over `bytes[0 .. size−2]` |
+| 13..28 | DPI colours | 5 × RGB |
+| 28..30 / 30..32 | power-save / power-off timeout | u16 LE seconds (`60` / `300`) |
+| 32..96 | button bindings | 16 × 4 bytes, physical button order (see below) |
+| 96..160 | shifted bindings | same format, G-shift layer |
+| 160..208 | name | UTF-16; `FF` = unnamed |
+| 208..252 | LED effects | 4 × 11 bytes `[effect id, p0..p9]` (active zone 0/1, inactive zone 0/1); ids/params as RGB_EFFECTS |
+| (size−2)..size | CRC16 | big-endian, over `bytes[0 .. size−2]`; matches getCRC (`0xA0`) |
+
+Everything outside the DPI bytes is preserved verbatim on a DPI patch.
+
+**Button binding** (4 bytes):
+
+| Bytes | Meaning |
+|-------|---------|
+| `80 01 hi lo` | HID mouse button bitmask (`00 01` left … `00 10` button 5) |
+| `80 02 mod key` | HID keyboard key |
+| `80 03 hi lo` | HID consumer usage |
+| `90 nn 00 00` | special: `01` wheel left, `02` wheel right, `03` DPI up, `04` DPI down, `07` DPI shift, `0A` profile cycle (G502 X Plus defaults) |
+| `00 page 00 offset` | onboard macro at sector page / offset |
+| `FF FF FF FF` | disabled / unbound |
+
+G502 X Plus defaults in physical order: left, right, middle, back, DPI shift (thumb), forward, wheel left, wheel right, G9 profile cycle, G8 DPI up, G7 DPI down.
+
+**Codec** (`lib/hidpp2/profile.lua`): `parse` decodes every field above into a table (keeping the source bytes, so anything unknown survives) and `serialize` writes them back with a fresh CRC. DPI edits go through it; sectors shorter than the full layout fall back to patching only the DPI header.
+
+**Signature effect.** LED records 1–2 (active) and 3–4 (power saving) of the G502 X Plus profile hold the firmware's own signature animation, `0x0F`/`0x10` (other pairs: `0x18`/`0x19`, `0x1A`/`0x1B`). It is not in the RGB_EFFECTS table, so it is advertised from the profile as the native effect `signature` (named "Pulsar Point" on the G502 X Plus). Applying it writes all four records (active id in 1–2, inactive id in 3–4, brightness in p7) to the active writable profile when they differ, then releases LED software control (`setSWControl [01 00 00]`) so the firmware plays the profile lighting. Any later host effect reclaims control.
 
 ### HIRES_WHEEL (`0x2121`) - `v2/mod.rs`
 
@@ -185,17 +212,12 @@ Feature presence over-declares: a keyboard may advertise `0x2121` with no physic
 
 ### K375S_FN_INVERSION (`0x40A3`) - `v2/mod.rs`
 
-F-row inversion (media keys vs F1–F12) on MX Keys / Craft-class keyboards. `parse_fn_inversion` decodes the low bit of bytes 0 (current) and 1 (default) of the getState reply.
+F-row inversion (media keys vs F1–F12). Both functions carry a host index; host `0` addresses the current host on single-host keyboards.
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
-| getState (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 bit `0x01` = inverted, byte 1 bit `0x01` = default-inverted |
-| setState (`0x10`) | `11 dd fi 11 <0/1> ··` | `[0/1]` | `0x01` = F-keys send media by default |
-| stateChanged notif | `10 dd fi <data>` | - | `handle_fn_inversion_notif` reads **data byte 1** low bit |
-
-Version gate (`fn_inversion_version`, via FEATURE_SET getFeatureId byte 3): version ≥ 2 supports setState; version 1 is read-only, so the reported bit is echoed back into state on notification without a write.
-
-> Solaar's `K375sFnSwap` additionally sends a current-host prefix byte (from HOSTS_INFO) as a workaround for an MX Keys S firmware bug that reports the wrong host's state. HaloDaemon sends no prefix (reply byte 0 is the state directly), which is correct for tested devices; MX Keys S multi-host may need the prefix.
+| getGlobalFnInversion (`0x00`) | `11 dd fi 01 <host> ··` | `[host]` | reply `[host, inverted, default, caps]`; byte 1 ≠ 0 = inverted |
+| setGlobalFnInversion (`0x10`) | `11 dd fi 11 <host> <0/1> ··` | `[host, state]` | |
 
 ### BRIGHTNESS_CONTROL (`0x8040`) - `v2/mod.rs`
 
@@ -213,27 +235,47 @@ Keyboard backlight level + optional on/off. `parse_brightness_info` decodes getI
 
 ## 5. RGB - `v2/rgb/`
 
-### RGB_EFFECTS (`0x8071`) - `rgb/effects.rs`
+### Long-only devices
+
+LIGHTSPEED headsets and the G560 speaker expose a vendor collection (usage page `0xFF43`) with no short report. Every request there, ROOT included, is sent as a long report. Known PIDs go long from the start. Any other device is switched to long reports the first time a short write is refused, and the request is resent.
+
+### BASS_TONE (`0x8305`)
+
+`0x00` getBassToneLevel returns `[level]` (0–100), and `0x10 [level]` sets it. Exposed as a range control, named per device: "Subwoofer Volume" (`subwoofer_volume`) on the G560, "Bass" (`bass_tone`) otherwise.
+
+### G560 speaker
+
+Feature table: `0x0003`, `0x0005`, `0x8070` (4 zones), `0x8010` (G1), `0x8310` (10 bands, −20…+6 dB), `0x8320`, `0x8040` (brightness 0–100), `0x8305`. Each zone reports `00` Off, `01` Static, `03` Color Cycle, `07` (unidentified), `0A` Breathing. Native effects use COLOR_LED_EFFECTS `setZoneEffect` (`0x30`) with the same parameter layouts as RGB_EFFECTS. Zone names (Left/Right Secondary, Left/Right Primary) and EQ presets (Flat, FPS, MOBA, Bass Boost, Cinematic, Communications) come from the device profile. The jack detection feature (`0x8320`) isn't used.
+
+### RGB_EFFECTS (`0x8071`)
 
 | Function | Bytes sent | Params | Notes |
 |----------|-----------|--------|-------|
 | getInfo / global (`0x00`) | `11 dd fi 01 FF FF 00 ··` | `[0xFF,0xFF,0x00]` | reply byte 2 = zone count |
 | getInfo / zone (`0x00`) | `11 dd fi 01 <z> FF 00 ··` | `[zone,0xFF,0x00]` | reply byte 4 = effect count |
-| getInfo / effect (`0x00`) | `11 dd fi 01 <z> <slot> 00 ··` | `[zone,slot,0x00]` | reply bytes 2..4 = effect_id (BE); slot with `0x0001` = static |
-| setEffect (`0x10`) | `11 dd fi 11 <15-byte block> ··` | 15-byte block | static via `encode_set_effect_static`; native via `NATIVE_EFFECTS` |
+| getInfo / effect (`0x00`) | `11 dd fi 01 <z> <slot> 00 ··` | `[zone,slot,0x00]` | reply bytes 2..4 = firmware effect id (BE) |
+| setEffect (`0x10`) | `11 dd fi 11 <zone> <slot> <p0..p9> <persist> 00 00` | 15-byte block | persist `0x01` = apply only, `0x02` = also store |
+| setSWControl (`0x50`) | `11 dd fi 51 01 01 ··` | | claim host LED control |
 
-Zone discovery (`rgb_build_zones`) reads the global zone count, then per zone the effect count, then scans each slot's effect_id to find the **static** slot (effect_id `0x0001`).
+`rgb_static_slots` scans every zone's slots and records the static slot plus a `firmware id → slot` map (`dev.lighting.effect_slots`). A slot is a position in that zone's table, so the same effect sits at different slots on different devices; effects are always addressed by firmware id, never by a fixed slot.
 
-**setEffect 15-byte block**, for a static colour (`encode_set_effect_static`):
+**Static** writes `<zone> <static slot> R G B 64 0B B8 64 00 00 00 01 00 00`.
 
-```
-byte 0   zone index   (0xFF = all zones)
-byte 1   effect slot  (the slot whose effect_id is 0x0001)
-byte 2-4 R G B
-byte 5-14  0x64 0x0B 0xB8 0x64 0x00 0x00 0x00 0x01 0x00 0x00   (static preset, from G HUB)
-```
+**Native effects** are derived from the firmware table, not from a per-device list. `resolve_native_effects` picks, per zone, the first variant the zone reports, and advertises an effect when any zone has one. Applying writes every such zone with persist `0x01`.
 
-For a **native firmware effect** the block is the effect's 15-byte `base` (byte 0 = zone, byte 1 = slot) with params overlaid (`NATIVE_EFFECTS`): *Color Wave* (fixed preset, no params); *Ripple* (`background` colour bytes 2–4 default `5E 5E 5E`; `rate` ms byte 9, range 2–200; `saturation` byte 5, UI 0–100 scaled ×2.55). Out-of-range values clamp before encoding.
+| Effect | Firmware ids (preferred first) | p0..p9 |
+|--------|-------------------------------|--------|
+| Off | `0x00` | zeros |
+| Breathing | `0x0A` | `R G B per_hi per_lo 00 bright 00 00 00` |
+| Color Cycle | `0x15` | `00 sat 00 00 00 00 per_hi per_lo bright 00` |
+| | `0x03` | `00 00 00 00 00 per_hi per_lo bright 00 00` |
+| Color Wave | `0x16` | `00 sat 00 00 00 00 per_hi per_lo bright dir` |
+| | `0x04` | `00 00 00 00 00 00 per_lo dir bright per_hi` |
+| Ripple | `0x17` | `R G B sat 00 00 per_hi per_lo 00 00` |
+| | `0x0B` | `R G B 00 per_hi per_lo 00 00 00 00` |
+| Decomposition | `0x0E` | `00 00 00 00 00 00 per_lo per_hi bright 00` |
+
+`per` is milliseconds (1000–20000; Ripple 2–200), `bright` 1–100 (never 0), `sat` is the 0–100 UI value ×2.55, and `dir` is 1–8 (horizontal, vertical, center-out, inward, outward, reverse horizontal, reverse vertical, center-in). Effect tables: G502 X Plus `00 01 0A 03`; PRO X TKL `00 01 0A 15 16 17`.
 
 ### PER_KEY_LIGHTING_V2 (`0x8081`) - `rgb/per_key.rs`
 
@@ -245,7 +287,7 @@ For a **native firmware effect** the block is the effect's 15-byte `base` (byte 
 | setRange (`0x50`) | `11 dd fi 51 00 FF r g b ··` | `[0x00,0xFF,r,g,b]` | paints whole key range |
 | frameEnd / commit (`0x70`) | `11 dd fi 71 00 ··` | `[0x00]` | applies queued changes |
 
-**Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. (Delta-compressed funcs 0x30/0x40 are gated off; the wire layout is unverified against hardware.)
+**Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. Delta-compressed funcs 0x30/0x40 are not used.
 
 The G502 mouse strip uses diffed `setIndividual` batches instead. Its eight LEDs
 fit in two reports, and explicit IDs avoid a firmware quirk where optimized
@@ -294,9 +336,15 @@ The **older** LED effect-type system, used by devices that predate `0x8071` RGB_
 |----------|-----------|--------|-------|
 | GKEY getCount (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 = G-key count (only first 16 addressable) |
 | GKEY enableSoftwareControl (`0x20`) | `11 dd fi 21 <enabled> ··` | `[0/1]` | **global** toggle, enabled when any mapping exists |
-| SPY setSpyState (`0x10`) | `11 dd fi 11 <enabled> ··` | `[0/1]` | **global** host-side press reporting |
+| SPY getNbButtons (`0x00`) | `11 dd fi 01 ··` | none | reply byte 0 = physical button count (G502 X Plus: 11) |
+| SPY startSpy (`0x10`) | `11 dd fi 11 ··` | none | sent when the first button is mapped |
+| SPY stopSpy (`0x20`) | `11 dd fi 21 ··` | none | sent when the last mapping is cleared |
+| SPY getRemapping (`0x30`) | `11 dd fi 31 ··` | none | 16-byte remap table, read at discovery |
+| SPY setRemapping (`0x40`) | `11 dd fi 41 <16 bytes>` | remap table | |
 
-Both GKEY and MOUSE_BUTTON_SPY use a single **global** software-control toggle (no per-control divert, unlike REPROG_CONTROLS_V4). The MOUSE_BUTTON_SPY per-button divert (func 0x40) is intentionally **not** sent; its button-id byte is not the bitmap bit index (G HUB addresses right-click, CID 10, as id 5), so addressing by bit index diverted the wrong buttons; until the id encoding is reverse-engineered, a remapped button also fires its native action.
+GKEY uses a single **global** software-control toggle. MOUSE_BUTTON_SPY reports every button through the spy event once started, and its **remap table** decides what each physical button still sends natively: entry *n−1* is the HID button that physical button *n* reports, `0` reports nothing. A G502 X Plus defaults to `01 02 03 04 00 05 00 00 00 00 00` (left, right, middle, back, -, forward). A button's entry is set to `0` while its action on the current layer is non-native: base mappings always, shifted mappings only while the daemon reports the global layer shift as held (`key_remap_layer`). A button mapped only on the shift layer therefore keeps its native click on the normal layer. Clearing a mapping restores the default entry. REPROG_CONTROLS_V4 applies the same rule to its per-control divert.
+
+Physical button *n* is bit *n−1* of the spy event's **big-endian** u16. The plugin's cids number the same bits little-endian (`cid = bit + 1`), so physical button *n* is cid `((n − 1) XOR 8) + 1`: left click = cid 9, G9 = cid 1.
 
 ### Button-event notifications
 
@@ -345,4 +393,3 @@ A graphic equalizer of **N signed-dB bands** read from the device; no named pres
 
 Profile enabling changes only the directory flag and preserves customized profile data.
 DPI writes reject ROM/out-of-range sectors and skip unchanged profile bodies.
-See [implementation review](review.md) for findings and remaining gaps.

@@ -61,9 +61,11 @@ return function(h)
   dev:clear()
   dev:set_range("mic_volume", 7)
   dev:set_range("mic_led_brightness", 0)
+  dev:set_range("oled_brightness", 50)
   w = dev:writes()
   h:assert(contains(w, { 0x06, 0x37, 7 }), "microphone volume uses its dedicated command")
   h:assert(contains(w, { 0x06, 0xBF, 0 }), "microphone LED supports fully off")
+  h:assert(contains(w, { 0x06, 0x85, 5 }), "OLED brightness uses its dedicated command")
 
   dev:set_choice("sonar_eq", 1)
   dev:set_choice("wireless_mode", 1)
@@ -83,11 +85,13 @@ return function(h)
   dev:queue_read({ 0x07, 0xC3, 0 })       -- maximum speed
   dev:queue_read({ 0x07, 0xC1, 6 })       -- 60 minutes
   dev:queue_read({ 0x07, 0x89, 0 })       -- detailed screen
+  dev:queue_read({ 0x07, 0x85, 8 })       -- OLED brightness = 80%
   dev:queue_read({ 0x07, 0x25, 0x38 })    -- station volume floor (56 steps down)
   dev:queue_read({ 0x07, 0x45, 25, 100 }) -- ChatMix favors chat
   dev:poll_sensors()
   h:assert_eq(control_value(dev, "range", "mic_volume", "value"), 4, "mic dial updates GUI cache")
   h:assert_eq(control_value(dev, "range", "mic_led_brightness", "value"), 30, "LED dial updates GUI cache")
+  h:assert_eq(control_value(dev, "range", "oled_brightness", "value"), 80, "OLED brightness notification updates GUI cache")
   h:assert_eq(control_value(dev, "choice", "sonar_eq", "selected"), 0, "Sonar EQ notification updates GUI cache")
   h:assert_eq(control_value(dev, "choice", "wireless_mode", "selected"), 0, "wireless notification updates GUI cache")
   h:assert_eq(control_value(dev, "choice", "auto_off", "selected"), 6, "timeout notification updates GUI cache")
@@ -102,4 +106,13 @@ return function(h)
   dev:queue_read({ 0x07, 0x25, 0x1C })
   dev:poll_sensors()
   h:assert_eq(control_value(dev, "range", "volume", "value"), 50, "half the dial range reads as 50%")
+
+  -- Read-only stream submix is parsed from the 0x06 0x20 settings reply tail.
+  local stream_reply = packet({ [1] = 0x06, [2] = 0x20, [0x15 + 1] = 80, [0x16 + 1] = 90, [0x17 + 1] = 5 })
+  dev:queue_read(stream_reply)
+  dev:poll_sensors()
+  h:assert_eq(control_value(dev, "range", "stream_main", "value"), 80, "stream main submix parsed from poll")
+  h:assert_eq(control_value(dev, "range", "stream_aux", "value"), 90, "stream aux submix parsed from poll")
+  h:assert_eq(control_value(dev, "range", "stream_mic", "value"), 5, "stream mic submix parsed from poll")
+  h:assert_eq(control_value(dev, "range", "stream_main", "read_only"), true, "stream submix is read-only")
 end

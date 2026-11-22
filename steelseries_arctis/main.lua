@@ -31,6 +31,7 @@ local MSG_MIC_VOLUME = 0x37
 local MSG_SIDETONE = 0x39
 local MSG_CHATMIX = 0x45
 local MSG_CHATMIX_DISPLAY = 0x49
+local MSG_OLED_BRIGHTNESS = 0x85
 local MSG_SCREEN_MODE = 0x89
 local MSG_SONAR_EQ = 0x8d
 local MSG_STATUS = 0xb0
@@ -137,7 +138,11 @@ local state = {
   screen_mode = 0,
   sonar_eq = 0,
   mic_led_brightness = 100,
+  oled_brightness = 100,
   mic_volume = 10,
+  stream_main = 100,
+  stream_aux = 100,
+  stream_mic = 0,
   volume = 100,
   chatmix = 0,
   eq_preset = 0,
@@ -175,6 +180,11 @@ local function apply_settings(s)
   for i = 0, 9 do
     state.eq_bands[i + 1] = eq_raw_to_db(s:byte(0x07 + i + 1) or EQ_BASELINE)
   end
+  -- Read-only stream submix (protocol §4). mic_volume (0x11) is host-cached
+  -- and not polled.
+  state.stream_main = clamp(s:byte(0x15 + 1) or state.stream_main, 0, 100)
+  state.stream_aux = clamp(s:byte(0x16 + 1) or state.stream_aux, 0, 100)
+  state.stream_mic = clamp(s:byte(0x17 + 1) or state.stream_mic, 0, 100)
   return true
 end
 
@@ -198,6 +208,7 @@ local function apply_control_packet(s)
   elseif msg == MSG_NC_MODE then state.nc_mode = clamp(value, 0, 2)
   elseif msg == MSG_NC_LEVEL then state.nc_level = clamp(value, 1, 10)
   elseif msg == MSG_MIC_LED then state.mic_led_brightness = clamp(value, 0, 10) * 10
+  elseif msg == MSG_OLED_BRIGHTNESS then state.oled_brightness = clamp(value, 0, 10) * 10
   elseif msg == MSG_AUTO_OFF then state.auto_off = clamp(value, 0, 6)
   elseif msg == MSG_WIRELESS_MODE then state.wireless_mode = clamp(value, 0, 1)
   elseif msg == MSG_SCREEN_MODE then state.screen_mode = clamp(value, 0, 1)
@@ -303,8 +314,14 @@ local controls = {
     -- host→device volume opcode, and ChatMix is mixed in software (see close).
     { key="volume", label="Volume", category="Audio", min=0, max=100, step=1, default=100, read_only=true },
     { key="chatmix", label="ChatMix", category="Audio", min=-100, max=100, step=1, default=0, read_only=true },
+    -- Stream-output submix (base-station only): read from the 0x20 poll, no
+    -- host→device write opcode.
+    { key="stream_main", label="Stream Main", category="Stream Mix", min=0, max=100, step=1, default=100, read_only=true },
+    { key="stream_aux", label="Stream Aux", category="Stream Mix", min=0, max=100, step=1, default=100, read_only=true },
+    { key="stream_mic", label="Stream Mic", category="Stream Mix", min=0, max=100, step=1, default=0, read_only=true },
     { key="mic_volume", label="Microphone Volume", category="Microphone", min=1, max=10, step=1, default=10 },
     { key="mic_led_brightness", label="LED Brightness", category="Microphone", min=0, max=100, step=10, default=100 },
+    { key="oled_brightness", label="OLED Brightness", category="Base Station", min=0, max=100, step=10, default=100 },
     { key="nc_level", label="Transparency Level", category="Noise Cancelling", min=1, max=10, step=1, default=1,
       visible_when={ key="nc_mode", equals={1} } },
   },
@@ -377,7 +394,8 @@ return {
       ranges = {
         volume = state.volume, chatmix = state.chatmix,
         mic_volume = state.mic_volume, mic_led_brightness = state.mic_led_brightness,
-        nc_level = state.nc_level,
+        oled_brightness = state.oled_brightness, nc_level = state.nc_level,
+        stream_main = state.stream_main, stream_aux = state.stream_aux, stream_mic = state.stream_mic,
       },
       controls = controls,
     }
@@ -394,7 +412,8 @@ return {
       ranges = {
         volume = state.volume, chatmix = state.chatmix,
         mic_volume = state.mic_volume, mic_led_brightness = state.mic_led_brightness,
-        nc_level = state.nc_level,
+        oled_brightness = state.oled_brightness, nc_level = state.nc_level,
+        stream_main = state.stream_main, stream_aux = state.stream_aux, stream_mic = state.stream_mic,
       },
     }
   end,
@@ -454,6 +473,10 @@ return {
       local v = clamp(value, 0, 100)
       dev.transport:write(string.char(REPORT_CMD, MSG_MIC_LED, math.min(v // 10, 10)))
       state.mic_led_brightness = v
+    elseif key == "oled_brightness" then
+      local v = clamp(value, 0, 100)
+      dev.transport:write(string.char(REPORT_CMD, MSG_OLED_BRIGHTNESS, math.min(v // 10, 10)))
+      state.oled_brightness = v
     elseif key == "nc_level" then
       local v = clamp(value, 1, 10)
       dev.transport:write(string.char(REPORT_CMD, MSG_NC_LEVEL, v))

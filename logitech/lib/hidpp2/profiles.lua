@@ -19,14 +19,14 @@ local function device_profile(dev)
   if pid == 0xc095 or wpid == 0x4099 then
     return { name = "Logitech G502 X Plus", device_type = "mouse", wireless = true,
       zone_name = "Lighting", topology = "linear",
-      led_order = G502X_LED_ORDER, buttons = G502X_BUTTONS, native_effects = { "color_wave" },
+      led_order = G502X_LED_ORDER, buttons = G502X_BUTTONS, signature_name = "Pulsar Point",
       defaults = {
         { cid = 2, base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } },
         { cid = 3, base = { type = "dpi_cycle", direction = "down" }, shifted = { type = "native" } },
         { cid = 13, base = { type = "momentary_dpi", dpi = 400 }, shifted = { type = "native" } },
       } }
   elseif pid == 0xc08b then
-    return { name = "Logitech G502 Hero", device_type = "mouse", buttons = G502_HERO_BUTTONS, native_effects = {},
+    return { name = "Logitech G502 Hero", device_type = "mouse", buttons = G502_HERO_BUTTONS,
       defaults = {
         { cid = 16, base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } },
         { cid = 15, base = { type = "dpi_cycle", direction = "down" }, shifted = { type = "native" } },
@@ -34,10 +34,22 @@ local function device_profile(dev)
       } }
   elseif pid == 0xc352 or wpid == 0x40b0 then
     return { name = "Logitech G PRO X TKL", device_type = "keyboard", wireless = true,
-      zone_name = "Keys", topology = "keyboard",
-      native_effects = { "ripple" }, button_prefix = "G" }
+      zone_name = "Keys", topology = "keyboard", button_prefix = "G" }
+  elseif pid == 0x0a78 then
+    return { name = "Logitech G560", device_type = "speaker",
+      zone_names = { [0] = "Left Secondary", [1] = "Right Secondary", [2] = "Left Primary", [3] = "Right Primary" },
+      bass_key = "subwoofer_volume", bass_label = "Subwoofer Volume",
+      brightness_levels = { 0, 25, 50, 100 },
+      eq_presets = {
+        { id = "flat", label = "Flat", bands = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } },
+        { id = "fps", label = "FPS", bands = { 0, 0, -6, -5, -3, -2, -3, -3, -5, -6 } },
+        { id = "moba", label = "MOBA", bands = { 0, -10, -11, 0, -2, -5, -3, -17, -3, 0 } },
+        { id = "bass_boost", label = "Bass Boost", bands = { 0, 0, 0, 0, 0, -3, -4, -5, -6, -6 } },
+        { id = "cinematic", label = "Cinematic", bands = { -3, -4, -5, -6, -6, -5, -6, 0, 0, 0 } },
+        { id = "communications", label = "Communications", bands = { 0, -1, -1, 2, 4, 4, 4, 4, 2, 1 } },
+      } }
   end
-  return { name = product_name(pid, wpid), device_type = "other", native_effects = {} }
+  return { name = product_name(pid, wpid), device_type = "other" }
 end
 
 -- G PRO X TKL firmware LED id -> standard host key. Geometry for standard

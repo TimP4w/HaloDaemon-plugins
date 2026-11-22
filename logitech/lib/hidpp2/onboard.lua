@@ -7,6 +7,7 @@ return function(api)
 local bytes, feature = api.bytes, api.feature
 local ONBOARD_PROFILES = api.feature_id
 local restore_rgb_control = api.restore_rgb_control
+local PROFILE = halod.require("lib.hidpp2.profile")
 
 -- Served from the same cache as `status` below: re-reading the mode per call
 -- put a HID++ exchange on the DPI-button path and two more on every serialized
@@ -111,9 +112,14 @@ local function parse_directory(data)
   return out
 end
 
-local function sector_dpi_steps(data)
+local function parse_profile(data)
+  local ok, parsed = pcall(PROFILE.parse, data)
+  return ok and parsed or nil
+end
+
+-- Sectors shorter than the full layout only carry the DPI header.
+local function raw_dpi_steps(data)
   local out = {}
-  if #data < 13 then return out end
   for i = 0, 4 do
     local offset = 4 + i * 2
     local value = (data:byte(offset) or 0) | ((data:byte(offset + 1) or 0) << 8)
@@ -124,7 +130,14 @@ end
 
 local function patch_sector_dpi(data, size, steps)
   if #steps == 0 then error("DPI steps list cannot be empty") end
-  if #steps > 5 then error("onboard profiles support at most five DPI steps") end
+  if #steps > PROFILE.DPI_STEPS then error("onboard profiles support at most five DPI steps") end
+  local p = parse_profile(data:sub(1, size))
+  if p then
+    for i = 1, PROFILE.DPI_STEPS do p.dpi[i] = steps[i] end
+    if p.dpi_default >= #steps then p.dpi_default = #steps - 1 end
+    if p.dpi_shift >= #steps then p.dpi_shift = 0 end
+    return PROFILE.serialize(p, crc16)
+  end
   local values = { data:byte(1, size) }
   for i = 0, 4 do
     local value = steps[i + 1] or 0
@@ -161,7 +174,13 @@ local function refresh_onboard(dev)
     directory = directory, directory_data = directory_data, active_sector = active }
   if active ~= 0 then
     dev.onboard.profile_data = read_sector(dev, active, size)
-    dev.onboard.profile_steps = sector_dpi_steps(dev.onboard.profile_data)
+    local parsed = parse_profile(dev.onboard.profile_data)
+    dev.onboard.profile = parsed
+    dev.onboard.profile_steps = parsed and PROFILE.dpi_steps(parsed) or raw_dpi_steps(dev.onboard.profile_data)
+    local active_sig, inactive_sig
+    if parsed then active_sig, inactive_sig = PROFILE.signature(parsed) end
+    dev.onboard.signature_active = active_sig or (previous and previous.signature_active)
+    dev.onboard.signature_inactive = inactive_sig or (previous and previous.signature_inactive)
     dev.onboard.current_index = dev.onboard.profile_data:byte(2) or 0
     if previous and previous.active_sector==active and dev.onboard.profile_steps[(previous.current_index or 0)+1] then
       dev.onboard.current_index=previous.current_index or 0
@@ -201,8 +220,27 @@ local function restore_profile(dev, slot)
   write_sector(dev, slot, data)
 end
 
+-- Points every LED record of the active profile at the signature effect the
+-- firmware ships (active records 1-2, power-saving records 3-4).
+local function set_signature(dev, brightness)
+  local state = refresh_onboard(dev)
+  local sector = state.active_sector
+  if sector == 0 or sector >= 0x0100 then error("active onboard profile is not writable") end
+  local p = state.profile or error("onboard profile could not be decoded")
+  local active, inactive = state.signature_active, state.signature_inactive
+  if not active then error("onboard profile has no signature effect") end
+  for i, led in ipairs(p.leds) do
+    led.id = i <= 2 and active or inactive
+    led.params[8] = math.floor(math.max(1, math.min(100, brightness)) + 0.5)
+  end
+  local data = PROFILE.serialize(p, crc16)
+  if data ~= state.profile_data then write_sector(dev, sector, data) end
+  refresh_onboard(dev)
+end
+
 return {
   mode = onboard_mode,
+  set_signature = set_signature,
   set_mode = set_onboard_mode,
   with_sector_crc = with_sector_crc,
   read_sector = read_sector,

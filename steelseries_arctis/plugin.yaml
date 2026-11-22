@@ -3,7 +3,7 @@
 id: steelseries_arctis
 name: SteelSeries Arctis Nova Pro Wireless
 author: HaloDaemon
-version: 1.0.2
+version: 1.0.4
 api: "1.0"
 poll_interval_ms: 250
 license: GPL-3.0-or-later
@@ -25,6 +25,7 @@ devices:
       - { category: Noise Cancelling, order: 1, column: 1 }
       - { category: Audio, order: 2, column: 0 }
       - { category: Base Station, order: 3, column: 1 }
+      - { category: Stream Mix, order: 4, column: 0 }
   - vendor: SteelSeries
     model: Arctis Nova Pro Wireless X
     name: Arctis Nova Pro Wireless X
@@ -36,6 +37,7 @@ devices:
       - { category: Noise Cancelling, order: 1, column: 1 }
       - { category: Audio, order: 2, column: 0 }
       - { category: Base Station, order: 3, column: 1 }
+      - { category: Stream Mix, order: 4, column: 0 }
 transports:
   hid: { report_size: 64, timeout_ms: 1000, feature_report: false }
   audio_routing: {}

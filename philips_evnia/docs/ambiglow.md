@@ -1,155 +1,160 @@
 # Philips Ambiglow protocol
 
-ENE-over-USB-control register protocol for the ENE Technology RGB controller
-(ENE KB7730) that drives the Philips Evnia 49 monitor's Ambiglow rear LEDs.
+The rear Ambiglow LEDs of the Philips Evnia 49 (49M2C8900) have two control paths:
 
-**Credits:** transport reverse-engineered by TimP4w/HaloDaemon from a firmware
-capture; the **44-LED full-frame control path** (capture-block enable, `0xE100`
-frame buffer, baseline-region restore) is corroborated by and adapted from
-[`tomasf/evnia`](https://github.com/tomasf/evnia), an independent macOS
-reverse-engineering of the same `0x0CF2:0xB201` controller (MIT).
+- **Host path:** the ENE Technology RGB controller (ENE KB7730, USB `0x0CF2:0xB201`), driven by
+  USB vendor control transfers. The host streams per-LED frames.
+- **Controller effects:** the ENE controller animates its effect colours (static, colour shift,
+  colour wave, breathing, starry night) on its own.
+- **Scaler path:** the monitor scaler's own Ambiglow (off, follow video, follow audio), selected
+  over DDC/CI (vendor VCP `E2 A0 19`, see [ddc-ci.md](ddc-ci.md#ambiglow-scaler-effects)). The
+  scaler drives the same ENE controller internally. Its palette colour has no visible effect on
+  this model.
+
+A one-byte **host-link register** on the ENE controller decides which path owns the LEDs.
+
+**Credits:** the **44-LED full-frame path** (capture block, `0xE100` frame buffer, baseline region)
+is adapted from [`tomasf/evnia`](https://github.com/tomasf/evnia) (MIT).
 
 ---
 
 ## Overview
 
-The Ambiglow LEDs are a separate USB device from the DDC/CI interface (see
-[ddc-ci.md](ddc-ci.md)) and present as an ENE Technology RGB controller accessed
-via USB vendor control transfers. The model is a flat **register write space**:
-every operation is a single USB vendor control-OUT carrying the register address
-in `wIndex` and the value(s) in the data stage. There is no response and no
-checksum.
-
-Control-transfer parameters:
+Every operation is a single USB vendor control-OUT with the register address in `wIndex` and the
+value bytes in the data stage. There is no response and no checksum. The controller
+auto-increments `wIndex` across a multi-byte write.
 
 | Field | Value |
 |-------|-------|
 | `bmRequestType` | `0x40` (vendor / host-to-device / device recipient) |
 | `bRequest` | `0x80` |
 | `wValue` | `0` |
-| `wIndex` | Target register address (16-bit) |
-| `data` | Payload: register-dependent length |
-| Timeout | 1000 ms (the companion transport's declared control-transfer limit) |
+| `wIndex` | Register address (16-bit) |
+| `data` | Register-dependent length |
+| Timeout | 1000 ms |
 
 ---
 
-## 1. Control model
+## 1. Register map
 
-The controller drives **44 addressable RGB LEDs**. Driving them is three
-register regions:
+| Address | Size | Meaning |
+|---------|------|---------|
+| `0x0023` | 1 | Host link: `0x04` = the host owns the LEDs, `0x00` = the scaler owns them |
+| `0xE020` | 16 | Zone block 0 |
+| `0xE030` | 16 | Zone block 1 |
+| `0xE040` | 16 | Zone block 2 |
+| `0xE050` | 16 | Zone block 3 |
+| `0xE100` | 3 × LEDs | Frame buffer, `[R, G, B]` per LED, LED 0 first |
+| `0xE980`, `0xE983`, `0xE986`, `0xE989` | 3 each | Effect colour `[R, G, B]`, one slot per zone block; the frame buffer is not used by controller effects |
+| `0xE960–0xE962`, `0xE970–0xE972` | 1 each | Further parameter banks; not used by the plugin |
 
-| Region | `wIndex` | Payload | Purpose |
-|--------|----------|---------|---------|
-| Control blocks | `0xE020`, `0xE030` | 16-byte *capture* block | Hand direct frame control to the host |
-| Frame buffer | `0xE100` | `44 × 3 = 132` RGB bytes | The full LED frame, one LED per triple |
-| Baseline region | `0xE020` | 64-byte baseline block | Return control to the monitor firmware |
+### Zone block layout
 
-### Capture block (16 bytes → both `0xE020` and `0xE030`)
+| Offset | Field |
+|--------|-------|
+| `+0x0` | Source: `0x01` = host frame buffer, `0x00` = controller effect |
+| `+0x1` | Effect mode (see below) |
+| `+0x2` | Speed |
+| `+0x3` | Direction |
+| `+0x9` | Brightness: `0x00` brightest, `0x02` brighter, `0x04` bright |
+| `+0xF` | Commit: `0x01` applies the block |
+
+Speed: `0x02` low, `0x00` normal, `0xFE` high.
+
+The remaining bytes are fixed: `+0x5 = 0x05`, `+0xA = 0xFF`.
+
+Controller effect modes: `0` off, `1` static, `2` static rainbow, `3` colour shift,
+`4` colour shift rainbow, `5` colour wave, `6` colour wave rainbow, `7` colour breathing,
+`8` colour breathing rainbow, `9` follow audio, `10` follow audio rainbow, `11` follow video,
+`12` starry night, `13` starry night rainbow, `14` user defined.
+
+### Capture block (16 bytes, written to `0xE020` and `0xE030`)
 
 ```
 01 00 02 04 00 05 00 00 00 02 FF 00 00 00 00 01
 ```
 
-Written to **each** control block to arm host control. HaloDaemon sends it once
-(lazily, on the first frame after connect) and tracks the armed state so
-high-frequency canvas writes don't re-arm every frame.
+Source = host frame buffer, speed 2, direction 4, brightness 2, commit.
 
-### Frame buffer (132 bytes → `0xE100`)
-
-The whole strip is one contiguous write: 44 RGB triples, **`[R, G, B]`** byte
-order (capture `FF 00 00` = red), 8 bits each, LED 0 first. A short colour list
-leaves the tail black; extra colours are dropped.
-
-### Baseline region (64 bytes → `0xE020`)
+### Baseline region (64 bytes, written to `0xE020`)
 
 ```
 00 01 02 00 00 05 00 00 00 02 FF 00 00 00 00 00
 00 00 02 00 00 05 00 00 00 02 FF 00 00 00 00 00
-00 00 00 00 00 00 00 00 00 00 FF 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 FF 00 00 00
 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
 ```
 
-Written on `close()`, and on demand when the user selects the **"Monitor
-(firmware control)"** mode in the GUI (exposed as a parameter-less native
-effect whose apply triggers the same baseline restore) — to hand the LEDs back
-to the monitor's own Ambiglow firmware. The 64-byte block spans the four 16-byte
-control sub-blocks at
-`0xE020`/`0xE030`/`0xE040`/`0xE050` (the controller auto-increments `wIndex`).
-
-The release waits out a **10 ms frame-settle window** since the last `0xE100`
-write before restoring the baseline; restoring while a frame is still settling
-makes the controller mis-apply the release.
+Spans all four zone blocks. Block 0 selects the controller's **static** effect (source `0x00`,
+mode `1`) without committing. On its own this is not a hand-back: the controller keeps showing
+whatever the frame buffer last held. The host link must also be switched off (§2).
 
 ---
 
 ## 2. Functions
 
-| Function | Transfer(s) | Notes |
-|----------|-------------|-------|
-| Arm capture | `wIndex=0xE020 data=<16-byte block>`, then `wIndex=0xE030 data=<16-byte block>` | Idempotent; sent once per session |
-| Write frame | `wIndex=0xE100 data=<132 RGB bytes>` | The full 44-LED frame |
-| Release | `wIndex=0xE020 data=<64-byte baseline>` | Return control to firmware |
+| Function | Transfers | Notes |
+|----------|-----------|-------|
+| Take host link | `0x0023 ← 04` | Only when the host does not already own the LEDs |
+| Take control | Take host link, then the capture block to `0xE020` and `0xE030` | Sent once, before the first frame |
+| Write frame | `0xE100 ← 132 RGB bytes` | One write for all 44 LEDs |
+| Controller effect | Take host link, zone block (commit `0`) to `0xE020`/`0xE030`, RGB to the four effect colour slots, then `0xE02F`/`0xE03F ← 01` | Effect and colour switch in one step |
+| Release | wait 10 ms after the last frame, `0xE020 ← baseline`, `0x0023 ← 00` | Only when the host owns the LEDs; the scaler resumes its DDC-selected effect |
+| Scaler effect | Release, then DDC `E2 A0 19 ← mode` | See [ddc-ci.md](ddc-ci.md#ambiglow-scaler-effects) |
 
-State mapping (`colors_from_state`): `Static` fills every LED with one colour;
-`PerLed` reads the `ambiglow` zone's `index → colour` map (`0..44`); `Engine`
-drives no frame here (the canvas engine streams frames via `write_frame`). The
-sole `NativeEffect` is the `monitor` release — applying it restores the baseline
-instead of writing a frame; any other effect id is ignored. The canvas/per-LED
-fast path is a single `0xE100` write after the one-time capture arm.
+Writing the baseline while a frame is still settling makes the controller mis-apply the release.
+Rewriting the host link, or changing colour before the new zone block is in place, makes the
+LEDs flash; effect changes therefore touch only what changes.
+
+### HaloDaemon mapping
+
+| Lighting state | Behaviour |
+|----------------|-----------|
+| `static`, `per_led`, canvas frames | Take control (once), write frame |
+| Native effect `monitor` | Release, then the scaler mode read at initialize |
+| Native effect `off`, `follow_video`, `follow_audio` | Scaler effect (DDC mode `0`, `1`, `2`) |
+| Native effect `static`, `color_shift`, `color_wave`, `breathing`, `starry_night` | Controller effect mode `1`, `3`, `5`, `7`, `12`; the Rainbow option selects the next mode; colour, brightness and speed as above |
+| `close()` while the host owns the LEDs | Release, then the scaler mode read at initialize |
+
+The host-link state is unknown after the plugin starts; the first release is always sent.
 
 ---
 
 ## 3. Parameters
 
-### Zones & LEDs
+### Zone and LEDs
 
-One zone (`ambiglow`) of **44 LEDs**, exposed only because all 44 are actually
-driven via the `0xE100` frame buffer. LED order follows the wire order (LED 0 =
-first triple). The zone is `Grid` topology with per-LED `(x, y)` positions
-(`ambiglow_positions`) approximating the physical layout documented by
-`tomasf/evnia` (front view, `x` left→right, `y` top→bottom), so canvas spatial
-effects map to the real geometry rather than to wire order:
+One zone (`ambiglow`) of **44 LEDs**, grid topology, in wire order. The per-model counts are
+right 3, top-right 9, top-left 9, left 3, centre 20, bottom 0:
 
 | LEDs | Location |
 |------|----------|
-| `0..3` | Right vertical edge (0 bottom → 3 top-right corner) |
-| `4..11` | Top row, right of the center break (corner → center) |
-| `12..19` | Top row, left of the center break (center → left corner) |
-| `20..23` | Left vertical edge (top-left corner → bottom) |
-| `24..34` | Upper center column (above the stand mount) |
-| `35..43` | Lower center column (below the mount) |
+| `0..2` | Right edge, bottom → top |
+| `3..11` | Top row, right of the centre break (corner → centre) |
+| `12..20` | Top row, left of the centre break (centre → corner) |
+| `21..23` | Left edge, top → bottom |
+| `24..34` | Upper centre column |
+| `35..43` | Lower centre column |
 
-### RGB byte order
-
-Colour triples are **`[R, G, B]`** — red first. No checksum, no padding.
+The split of the 20 centre LEDs into upper/lower runs follows `tomasf/evnia`.
 
 ---
 
 ## 4. Responses
 
-OUT-only — there is no readback of LED or register state, and no checksum on any
-transfer. The current `tomasf/evnia` reference likewise writes a *hardcoded*
-baseline rather than reading one back, so the controller is driven write-only in
-both implementations. Success means the USB stack accepted the transfer, not that
-the controller applied it; errors are surfaced with the register address and byte
-count.
+OUT-only. Success means the USB stack accepted the transfer. The current firmware effect can be
+read back over DDC (`E2 A0 19..1D`), not from the ENE controller.
 
 ---
 
 ## 5. Polling & notifications
 
-None — the protocol is write-only. The host pushes state on apply or per-frame
-canvas update; the controller emits nothing and is never polled.
+None. The controller never sends data.
 
 ---
 
 ## Notes
 
-- Reverse-engineered from a firmware capture (bcdDevice `0x0101`) and
-  cross-checked against `tomasf/evnia`; other revisions of the same SKU may
-  differ — match VID/PID only.
-- The capture/baseline block contents are taken verbatim from captures; their
-  individual byte meanings (the `0xFF` bytes are likely per-block brightness/max)
-  are not fully decoded.
-- Capture must be armed before frames land; HaloDaemon arms lazily on the first
-  frame and releases the baseline on disconnect.
+- Controller firmware `03 32 07 10 01` (bcdDevice `0x0101`).
+- When the controller disappears from USB (for example a KVM switch to another upstream port),
+  set DDC `E2 A0 19` explicitly. The scaler otherwise keeps the last state.

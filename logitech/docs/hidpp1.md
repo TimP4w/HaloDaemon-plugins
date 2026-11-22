@@ -1,6 +1,6 @@
 # HID++ 1.0 - register protocol
 
-The older, **register-based** half of [HID++](protocol.md). A flat address space of 9-bit *registers* read/written with sub-IDs `0x80`–`0x83`. Used by every Unifying/Lightspeed receiver for pairing, device lists, and connection notifications. The separately packaged [G560 plugin](../../logitech_g560/docs/protocol.md) uses a related fixed vendor-report format. Modern feature-based devices use [HID++ 2.0](hidpp2.md) instead.
+The older, **register-based** half of [HID++](protocol.md). A flat address space of 9-bit *registers* read/written with sub-IDs `0x80`–`0x83`. Used by every Unifying/Lightspeed receiver for pairing, device lists, and connection notifications. Modern feature-based devices use [HID++ 2.0](hidpp2.md) instead.
 
 Code: [`main.lua`](../main.lua) contains the messenger, receiver operations, and register constants. See [protocol.md](protocol.md) for the shared frame format. Historical Rust symbol names are retained below for continuity with the original notes.
 
@@ -39,9 +39,11 @@ Registers (`v1/mod.rs`):
 
 | Register | Const | Use |
 |----------|-------|-----|
+| `0x0000` | notification flags | 3-byte bitfield; read-modify-write at receiver init to add wireless `0x000100` and software-present `0x000800` |
 | `0x0002` | `REG_DEVICE_COUNT` | write `[0x02]` → receiver re-broadcasts connect status; read → paired count in reply **byte 1** |
 | `0x02B5` | `REG_RECEIVER_INFO` | pairing records; sub-param `INFO_PAIRING 0x20` / `INFO_EXTENDED_PAIRING 0x30` / `INFO_DEVICE_NAME 0x40`, each `+ devnum − 1` |
 | `0x00B2` | `REG_RECEIVER_PAIRING` | open/close the pairing lock and unpair a slot (Unifying-style); see §2 |
+| `0x00F1` | firmware info | param `0x01`/`0x02` = firmware major.minor / build, `0x03` = bootloader (not used) |
 
 ---
 
@@ -83,7 +85,7 @@ The receiver emits unsolicited HID++ 1.0 notifications on the broadcast channel,
 
 Sent for **both** connect and disconnect; the link state is in the payload. `decode_link_established(data)`: bit `0x40` of `data[0]` is "link **not** established": set on power-off, clear on power-on, so `link_established = !(data[0] & 0x40)`. An empty payload reads as disconnected.
 
-Live captures (trailing bytes vary per device, irrelevant):
+Examples (trailing bytes vary per device):
 
 | Payload | Meaning |
 |---------|---------|

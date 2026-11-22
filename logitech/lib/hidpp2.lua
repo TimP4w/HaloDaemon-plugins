@@ -34,6 +34,7 @@ local GKEY = 0x8010
 local MOUSE_BUTTON_SPY = 0x8110
 local SIDETONE = 0x8300
 local EQUALIZER = 0x8310
+local BASS_TONE = 0x8305
 local HIRES_WHEEL = 0x2121
 local K375S_FN_INVERSION = 0x40a3
 local BRIGHTNESS_CONTROL = 0x8040
@@ -41,9 +42,14 @@ local BRIGHTNESS_CONTROL = 0x8040
 local function bytes(...) return string.char(...) end
 
 local function is_long_only(pid)
-  -- Composite LIGHTSPEED headset interfaces expose no short HID++ report.
+  -- Composite LIGHTSPEED headset and speaker interfaces expose no short HID++
+  -- report. Other devices are detected when a short write is refused.
   return pid == 0x0aba or pid == 0x0af7 or pid == 0x0ab5 or pid == 0x0afe
-      or pid == 0x0ac4 or pid == 0x0a87 or pid == 0x0a66
+      or pid == 0x0ac4 or pid == 0x0a87 or pid == 0x0a66 or pid == 0x0a78
+end
+
+local function long_only(dev)
+  return dev.long_only or is_long_only(dev.match.pid)
 end
 
 local function packet(devnum, sub_id, address, payload, long)
@@ -129,9 +135,14 @@ end
 
 local function request(dev, devnum, feature_index, func, args)
   args = args or ""
-  local long = is_long_only(dev.match.pid) or feature_index ~= 0 or #args > 3
+  local long = long_only(dev) or feature_index ~= 0 or #args > 3
   local address = func | SW_ID
-  send(dev, packet(devnum, feature_index, address, args, long))
+  if long then
+    send(dev, packet(devnum, feature_index, address, args, true))
+  elseif not pcall(send, dev, packet(devnum, feature_index, address, args, false)) then
+    dev.long_only = true
+    send(dev, packet(devnum, feature_index, address, args, true))
+  end
   return dispatch(dev, devnum, feature_index, address)
 end
 
@@ -287,6 +298,7 @@ product_name = function(pid, wpid)
     [0x0ab5] = "Logitech G733 LIGHTSPEED", [0x0afe] = "Logitech G733 LIGHTSPEED",
     [0x0ac4] = "Logitech G535 LIGHTSPEED", [0x0a87] = "Logitech G935",
     [0x0a66] = "Logitech G533",
+    [0x0a78] = "Logitech G560 Gaming Speaker",
   }
   local wireless = { [0x4099] = "Logitech G502 X Plus", [0x40b0] = "Logitech G PRO X TKL" }
   return names[pid] or (RECEIVERS[pid] and RECEIVERS[pid].name)
@@ -404,7 +416,7 @@ local lighting = halod.require("lib.hidpp2.lighting")({
   rgb_effects = RGB_EFFECTS, color_led_effects = COLOR_LED_EFFECTS,
   per_key_lighting_v2 = PER_KEY_LIGHTING_V2,
 })
-local select_native_effects = lighting.select_native_effects
+local resolve_native_effects = lighting.resolve_native_effects
 local apply_native_effect = lighting.apply_native_effect
 local discover_per_key_ids = lighting.discover_per_key_ids
 local rgb_static_slots = lighting.rgb_static_slots
@@ -475,8 +487,17 @@ local function equalizer_read(dev)
     else label = "Band " .. i end
     bands[#bands + 1] = { index = i - 1, label = label, min = min, max = max, step = 1, value = value }
   end
-  local result = { presets = {{ id = "custom", label = "Custom", is_custom = true, is_firmware = false }},
-    selected_preset = 0, bands = bands, editable = true }
+  local presets, selected = {{ id = "custom", label = "Custom", is_custom = true, is_firmware = false }}, 0
+  for _, preset in ipairs((device_profile(dev).eq_presets) or {}) do
+    if #preset.bands == count then
+      presets[#presets + 1] = { id = preset.id, label = preset.label, is_custom = false,
+        is_firmware = false, bands = preset.bands }
+      local same = true
+      for i = 1, count do if preset.bands[i] ~= bands[i].value then same = false; break end end
+      if same and selected == 0 then selected = #presets - 1 end
+    end
+  end
+  local result = { presets = presets, selected_preset = selected, bands = bands, editable = true }
   dev.equalizer = { min = min, max = max, count = count, result = result }
   return result
 end
@@ -494,6 +515,7 @@ local patch_sector_dpi = onboard.patch_sector_dpi
 local refresh_onboard = onboard.refresh
 local onboard_status = onboard.status
 local restore_profile = onboard.restore_profile
+local set_signature = onboard.set_signature
 local remap = halod.require("lib.hidpp2.remap")({
   bytes = bytes, request = request, feature = feature, direct = DIRECT,
   device_profile = device_profile,
@@ -502,7 +524,8 @@ local remap = halod.require("lib.hidpp2.remap")({
 })
 local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
-local set_remap_active = remap.set_active
+local set_remap_mapping = remap.set_mapping
+local action_is_native = remap.action_is_native
 local button_events = remap.events
 local function set_sensor_dpi(dev, dpi)
   local index = dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]
@@ -516,6 +539,21 @@ local function set_sensor_dpi(dev, dpi)
   end
   error(last_error)
 end
+local function write_eq_bands(dev, values)
+  local eq = dev.equalizer or equalizer_read(dev)
+  if not eq then error("EQUALIZER unavailable") end
+  if #values ~= eq.count then error("expected " .. eq.count .. " EQ band values") end
+  local out = { 0x02 }
+  local applied = {}
+  for i = 1, eq.count do
+    local v = math.max(eq.min, math.min(eq.max, math.floor(values[i] + 0.5)))
+    out[#out + 1] = v & 0xff
+    applied[i] = v
+  end
+  feature(dev, EQUALIZER, 0x30, bytes(table.unpack(out)))
+  for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
+end
+
 local callbacks = {
   event_source = function(event)
     local report = event.report
@@ -580,7 +618,12 @@ local callbacks = {
     -- actual devices. Direct devices retain 0xff.
     dev.receiver = not dev.match.key and RECEIVERS[dev.match.pid] or nil
     if dev.receiver then
-      v1_write(dev, DIRECT, 0x0000, bytes(0, 9, 0), true)
+      -- Set wireless (0x000100) and software-present (0x000800) notification
+      -- flags without clearing bits other software enabled.
+      local ok, flags = pcall(v1_read, dev, DIRECT, 0x0000)
+      local f0, f1, f2 = 0, 0, 0
+      if ok then f0, f1, f2 = flags:byte(1) or 0, flags:byte(2) or 0, flags:byte(3) or 0 end
+      v1_write(dev, DIRECT, 0x0000, bytes(f0, f1 | 0x09, f2), true)
       return { ok = true, model = product_name(dev.match.pid), capabilities = { "pairing" } }
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
@@ -657,11 +700,13 @@ local callbacks = {
     if has(features, RGB_EFFECTS) then
       local count = request(dev, devnum, features[RGB_EFFECTS], 0x00, bytes(0xff, 0xff, 0)):byte(3) or 0
       if count > 0 then
-        local static_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
+        local static_slots, effect_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
         local led_ids = has(features, PER_KEY_LIGHTING_V2)
           and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
         local wire = #led_ids > 0 and count == 1 and "per_key" or "rgb_effects"
-        dev.lighting = { wire = wire, channels = count, static_slots = static_slots, led_ids = led_ids }
+        local native, native_descriptors = resolve_native_effects(effect_slots)
+        dev.lighting = { wire = wire, channels = count, static_slots = static_slots,
+          effect_slots = effect_slots, native = native, led_ids = led_ids }
         result.channels = {}
         if #led_ids > 0 and count == 1 then
           result.channels[1] = { id = "zone_0", name = profile.zone_name or "Lighting",
@@ -672,16 +717,29 @@ local callbacks = {
           for zone = 0, count - 1 do result.channels[#result.channels + 1] = {
             id = "zone_" .. zone, name = "Zone " .. (zone + 1), topology = "linear", led_count = 1 } end
         end
-        result.native_effects = select_native_effects(profile)
+        -- The firmware's own signature animation lives in the onboard profile's
+        -- LED records, not in the RGB_EFFECTS table.
+        if dev.onboard and dev.onboard.signature_active then
+          native_descriptors[#native_descriptors + 1] = {
+            id = "signature", name = profile.signature_name or "Signature",
+            params = {{ id = "brightness", label = "Brightness",
+              kind = { kind = "range", min = 1, max = 100, step = 1 }, default = 100 }},
+          }
+        end
+        result.native_effects = native_descriptors
         feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
         capability("lighting")
       end
     elseif has(features, COLOR_LED_EFFECTS) then
       local count = request(dev, devnum, features[COLOR_LED_EFFECTS], 0x00):byte(1) or 0
       if count > 0 then
-        local channels, static_slots = color_led_zones(dev, features[COLOR_LED_EFFECTS], count)
-        dev.lighting = { wire = "color_led", channels = count, static_slots = static_slots, led_ids = {} }
+        local channels, static_slots, effect_slots =
+          color_led_zones(dev, features[COLOR_LED_EFFECTS], count, profile.zone_names)
+        local native, native_descriptors = resolve_native_effects(effect_slots)
+        dev.lighting = { wire = "color_led", channels = count, static_slots = static_slots,
+          effect_slots = effect_slots, native = native, led_ids = {} }
         result.channels = channels
+        result.native_effects = native_descriptors
         feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
         capability("lighting")
       end
@@ -693,7 +751,6 @@ local callbacks = {
           topology = profile.topology or "linear", led_count = #led_ids, led_ids = led_ids,
           keyboard_form_factor = profile.topology == "keyboard" and "t_k_l" or nil,
           keyboard_layout = layout }}
-        result.native_effects = select_native_effects(profile)
         capability("lighting")
       end
     end
@@ -705,6 +762,29 @@ local callbacks = {
       result.ranges = result.ranges or {}; result.ranges.sidetone = level
     end
     if has(features, EQUALIZER) then equalizer_read(dev); capability("equalizer") end
+    if has(features, BASS_TONE) then
+      local level = feature(dev, BASS_TONE, 0x00):byte(1) or 0
+      local key = profile.bass_key or "bass_tone"
+      dev.bass_key = key
+      result.controls.ranges[#result.controls.ranges + 1] = {
+        key = key, label = profile.bass_label or "Bass", min = 0, max = 100, step = 1,
+        default = level, category = "Audio"
+      }
+      result.ranges = result.ranges or {}; result.ranges[key] = level
+    end
+    if has(features, ADC_MEASUREMENT) and long_only(dev) then
+      -- LIGHTSPEED headsets: auto power-off timer in minutes (0x10 get / 0x20 set).
+      local ok, reply = pcall(feature, dev, ADC_MEASUREMENT, 0x10)
+      local minutes = ok and reply:byte(1) or nil
+      if minutes and minutes > 0 then
+        dev.power_off_timer = true
+        result.controls.ranges[#result.controls.ranges + 1] = {
+          key = "power_off_timer", label = "Auto Power Off (min)", min = 1, max = 60, step = 1,
+          default = minutes, category = "Power"
+        }
+        result.ranges = result.ranges or {}; result.ranges.power_off_timer = minutes
+      end
+    end
     if has(features, HIRES_WHEEL) then
       local caps = feature(dev, HIRES_WHEEL, 0x00)
       local mode = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
@@ -719,11 +799,9 @@ local callbacks = {
       dev.hires.mode = mode
     end
     if has(features, K375S_FN_INVERSION) then
-      local current = feature(dev, K375S_FN_INVERSION, 0x00)
-      local fs_version = request(dev, devnum, features[FEATURE_SET], 0x10,
-        bytes(features[K375S_FN_INVERSION])):byte(4) or 1
-      dev.fn_inversion = { value = ((current:byte(1) or 0) & 1) ~= 0,
-        writeable = fs_version >= 2 }
+      -- Reply is [host, inverted, default, caps]; host 0 addresses the current host.
+      local current = feature(dev, K375S_FN_INVERSION, 0x00, bytes(0))
+      dev.fn_inversion = { value = (current:byte(2) or 0) ~= 0, writeable = true }
       result.controls.booleans[#result.controls.booleans + 1] = {
         key = "fn_inversion", label = "Swap Fx Function", category = "Keyboard",
         read_only = not dev.fn_inversion.writeable
@@ -908,22 +986,42 @@ local callbacks = {
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_button_mapping = function(dev, mapping)
-    set_remap_active(dev, mapping.cid, not mapping_is_native(mapping))
+    set_remap_mapping(dev, mapping.cid, not action_is_native(mapping.base),
+      not action_is_native(mapping.shifted))
   end,
   reset_button_mapping = function(dev, cid)
-    set_remap_active(dev, cid, false)
+    set_remap_mapping(dev, cid, false, false)
   end,
   reset_all_button_mappings = function(dev)
     local remap = dev.remap
     if not remap then return end
-    local active = {}; for cid in pairs(remap.active) do active[#active + 1] = cid end
-    for _, cid in ipairs(active) do set_remap_active(dev, cid, false) end
+    local cids = {}
+    for cid in pairs(remap.base) do cids[cid] = true end
+    for cid in pairs(remap.shifted) do cids[cid] = true end
+    for cid in pairs(cids) do set_remap_mapping(dev, cid, false, false) end
+  end,
+  key_remap_layer = function(dev, active)
+    remap.set_layer(dev, active)
   end,
   set_range = function(dev, key, value)
-    if key == "sidetone" then
+    if key == "power_off_timer" then
+      if not dev.power_off_timer then error("power-off timer unavailable") end
+      feature(dev, ADC_MEASUREMENT, 0x20, bytes(math.max(1, math.min(60, math.floor(value)))))
+    elseif dev.bass_key and key == dev.bass_key then
+      feature(dev, BASS_TONE, 0x10, bytes(math.max(0, math.min(100, math.floor(value + 0.5)))))
+    elseif key == "sidetone" then
       feature(dev, SIDETONE, 0x10, bytes(math.max(0, math.min(100, value))))
     elseif key == "brightness" then
       local level = math.max(0, math.min(0xffff, value))
+      -- Some firmware accepts only discrete levels (G560: 0/25/50/100).
+      local levels = dev.profile and dev.profile.brightness_levels
+      if levels then
+        local best = levels[1]
+        for _, candidate in ipairs(levels) do
+          if math.abs(candidate - level) < math.abs(best - level) then best = candidate end
+        end
+        level = best
+      end
       feature(dev, BRIGHTNESS_CONTROL, 0x20, bytes((level >> 8) & 0xff, level & 0xff))
     else
       error("unknown range control: " .. key)
@@ -943,7 +1041,7 @@ local callbacks = {
       dev.hires.mode = mode
     elseif key == "fn_inversion" then
       if not dev.fn_inversion or not dev.fn_inversion.writeable then error("Fn inversion is read-only") end
-      feature(dev, K375S_FN_INVERSION, 0x10, bytes(value and 1 or 0))
+      feature(dev, K375S_FN_INVERSION, 0x10, bytes(0, value and 1 or 0))
       dev.fn_inversion.value = value
     elseif key == "brightness_on" then
       if not dev.brightness or not dev.brightness.has_on_off then error("brightness on/off unavailable") end
@@ -965,8 +1063,7 @@ local callbacks = {
       out[#out + 1] = { key = "hires_diversion", value = (current & 0x01) ~= 0 }
     end
     if dev.fn_inversion then
-      local current = feature(dev, K375S_FN_INVERSION, 0x00):byte(1) or 0
-      dev.fn_inversion.value = (current & 1) ~= 0
+      dev.fn_inversion.value = (feature(dev, K375S_FN_INVERSION, 0x00, bytes(0)):byte(2) or 0) ~= 0
       out[#out + 1] = { key = "fn_inversion", value = dev.fn_inversion.value }
     end
     if dev.brightness and dev.brightness.has_on_off then
@@ -991,36 +1088,31 @@ local callbacks = {
     return (dev.equalizer and dev.equalizer.result) or equalizer_read(dev) or error("EQUALIZER unavailable")
   end,
   set_eq_preset = function(dev, preset)
-    if preset ~= 0 then error("Logitech EQUALIZER has only the custom preset") end
-  end,
-  set_eq_bands = function(dev, values)
     local eq = dev.equalizer or equalizer_read(dev)
     if not eq then error("EQUALIZER unavailable") end
-    if #values ~= eq.count then error("expected " .. eq.count .. " EQ band values") end
-    local out = { 0x02 }
-    local applied = {}
-    for i = 1, eq.count do
-      local v = math.max(eq.min, math.min(eq.max, math.floor(values[i] + 0.5)))
-      out[#out + 1] = v & 0xff
-      applied[i] = v
-    end
-    feature(dev, EQUALIZER, 0x30, bytes(table.unpack(out)))
-    for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
+    local entry = eq.result.presets[preset + 1] or error("unknown EQ preset " .. tostring(preset))
+    if entry.bands then write_eq_bands(dev, entry.bands) end
+    eq.result.selected_preset = preset
+  end,
+  set_eq_bands = function(dev, values)
+    write_eq_bands(dev, values)
+    dev.equalizer.result.selected_preset = 0
   end,
   apply = function(dev, state)
     if state.mode == "native_effect" then
-      if dev.lighting and dev.hidpp.features[RGB_EFFECTS] then
+      if dev.lighting and dev.lighting.native then
         -- Match the native driver: every explicit state apply reclaims LED
         -- control. Onboard mode, reconnects, and prior effects can make the
         -- firmware silently ignore otherwise-valid per-key packets. It is also
         -- the only acknowledged call here, so its failure must not be swallowed.
         restore_rgb_control(dev)
-        local allowed = false
-        for _, id in ipairs((dev.profile and dev.profile.native_effects) or {}) do
-          if id == state.id then allowed = true; break end
+        if state.id == "signature" then
+          set_signature(dev, (state.params or {}).brightness or 100)
+          -- Hand the LEDs back so the firmware plays the profile lighting.
+          feature(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
+        else
+          apply_native_effect(dev, state.id, state.params or {})
         end
-        if not allowed then error("native effect is not supported by this device") end
-        apply_native_effect(dev, state.id, state.params or {})
       end
       return
     end
@@ -1067,8 +1159,8 @@ callbacks.initialize = function(dev)
         and (text:find("HID++ error 0x04", 1, true)
           or text:find("HID++ error 0x08", 1, true)
           or text:find("HID++ error 0x09", 1, true)))
-      or (is_long_only(dev.match.pid) and text:find("HID++ error 0x05", 1, true))
-      or (is_long_only(dev.match.pid)
+      or (long_only(dev) and text:find("HID++ error 0x05", 1, true))
+      or (long_only(dev)
         and text:find("HID write error", 1, true))
   if not unavailable then
     error(result)

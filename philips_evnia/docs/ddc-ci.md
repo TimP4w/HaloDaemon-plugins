@@ -2,7 +2,7 @@
 
 DDC/CI (Display Data Channel Command Interface) MCCS control tunnelled over USB vendor control transfers, the complete control surface HaloDaemon uses to drive the Philips Evnia 49 monitor (brightness, picture, audio, OSD, system, gaming, and device-info reads).
 
-**Credits:** VESA DDC/CI and MCCS standards; no reverse engineering required.
+**Credits:** VESA DDC/CI and MCCS standards.
 
 ---
 
@@ -34,7 +34,7 @@ Offset  Value   Meaning
   2     0x84    0x80 | length (4)
   3     0x03    Set VCP Feature opcode
   4     vcp     VCP code (single byte)
-  5     0x00    value high byte
+  5     hi      value high byte (non-zero only for Input Source, see §3)
   6     value   value low byte
   7     xor     XOR of bytes 0..6
 ```
@@ -140,7 +140,7 @@ Frame column shows exact bytes with `<param>` placeholders. **STD** = 8-byte `bu
 
 | Function | Frame / transfer | Params | Notes |
 |----------|------------------|--------|-------|
-| Input Source | `6e 51 84 03 60 00 <code> <xor>` | enum (§3) | STD |
+| Input Source | `6e 51 84 03 60 <secondary> <code> <xor>` | enum (§3) | STD; high byte keeps the PIP/PBP secondary input |
 | Power Mode | `6e 51 84 03 d6 00 <code> <xor>` | `0x01` On / `0x04` Standby | STD MCCS Power Mode |
 | Power LED Brightness | `6e 51 84 03 f2 00 <val> <xor>` | 0–4 (0=Off … 4=Max) | STD |
 | USB-C Setting | `6e 51 86 03 e2 a0 12 00 <val> <xor>` | 0=Hi-Res USB2.0, 1=Hi-Speed USB3.2 | EXT |
@@ -157,8 +157,8 @@ Frame column shows exact bytes with `<param>` placeholders. **STD** = 8-byte `bu
 
 | Function | Request frame | Reply / notes |
 |----------|---------------|---------------|
-| `get_standard(vcp)` | `6e 51 82 01 <vcp> <xor>` | Reply via [Get-VCP flow](#get-vcp-read-flow); reads brightness `0x10`, contrast `0x12`, volume `0x62`, power-LED `0xF2`, audio-mute `0x8D`, resolution-notice `0xE9`, smart-response `0xEB`, input `0x60`, OSD-language `0xCC`, SmartImage `0xDC`, sharpness `0x87`, gamma `0x72`, color-temp `0x14`, RGB gain `0x16`/`0x18`/`0x1A`, power-mode `0xD6` |
-| `get_extended(sub)` | `6e 51 84 01 e2 a0 <sub> <xor>` | Reads crosshair `0x04`, low-input-lag `0x07`, OSD-H `0x0E`, OSD-V `0x0F`, transparency `0x10`, timeout `0x11`, USB-C `0x12`, USB-standby `0x13`, KVM `0x15`, smart-power `0x16`, CEC `0x17`, sRGB `0x20`, pixel-orbiting `0x34`, screen-saver `0x35`, light-enh `0x3D`, color-enh `0x3E`, adaptive-sync `0x40`, auto-warning `0x43` |
+| `get_standard(vcp)` | `6e 51 82 01 <vcp> <xor>` | Reply via [Get-VCP flow](#get-vcp-read-flow); which VCPs are read and when is in [§6](#6-startup-read-set) |
+| `get_extended(sub)` | `6e 51 84 01 e2 a0 <sub> <xor>` | Same reply layout; see [§6](#6-startup-read-set) |
 | `get_info(addr)` | `6e 51 86 01 fe <a0> <a1> <a2> <a3> <xor>` | See [Device-info string read flow](#device-info-string-read-flow) |
 
 ---
@@ -269,6 +269,8 @@ Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-bright
 | `0x0A` | 11500K |
 | `0x0D` | Preset |
 
+`0x0D` is the user-RGB preset: Red/Green/Blue gain (`0x16`/`0x18`/`0x1A`) only take effect there. While sRGB, LowBlue or EasyRead is active the monitor reports `0x0B`, which is not selectable; the plugin then leaves the host's cached selection untouched.
+
 ### Select Gamma - VCP `0x72`
 
 | Code | Label |
@@ -281,14 +283,16 @@ Index **0–4**: `0` = Off, `4` = Max (intermediate steps 1–3 dimmer-to-bright
 
 ### Input Source - VCP `0x60`
 
-| Code | Id | Label |
-|------|----|-------|
-| `0x0F` | dp1 | DisplayPort 1 |
-| `0x10` | dp2 | DisplayPort 2 |
-| `0x11` | hdmi1 | HDMI 1 |
-| `0x12` | hdmi2 | HDMI 2 |
+| Code | Label |
+|------|-------|
+| `0x0F` | DisplayPort 1 |
+| `0x15` | USB-C |
+| `0x11` | HDMI 1 |
+| `0x12` | HDMI 2 |
 
-The write sends just the port code in the value byte. On **read**, VCP `0x60` returns the port code in the low byte and `0x35` in the high byte; the driver masks with `& 0xFF` to recover the port.
+VCP `0x60` is 16-bit. The low byte is the main input. The high byte is the PIP/PBP secondary input: `0x21` HDMI 1, `0x22` HDMI 2, `0x2F` DisplayPort 1, `0x35` USB-C. A read returns e.g. `0x350F`. A write must keep the secondary byte that was read, so the plugin writes `(secondary << 8) | code`. The capabilities string lists `60(11 12 0F 15 21 22 2F 35)`; there is no second DisplayPort. Option index 1 (formerly a non-existent "DisplayPort 2") is USB-C, so saved HDMI selections keep their index.
+
+`0xA5` (PIP/PBP window select) is read at initialize: `0` = single input, `> 0` = PIP/PBP active.
 
 ### SmartImage - VCP `0xDC`
 
@@ -309,14 +313,16 @@ SDR and HDR presets share this single VCP. Codes `0x21`–`0x24` and `0x30` are 
 | `0x11` | Console Mode |
 | `0x21` | HDR Game |
 | `0x22` | HDR Movie |
-| `0x23` | HDR Vivid |
+| `0x23` | HDR Photo |
 | `0x30` | HDR True Black |
 | `0x24` | HDR Personal |
 | `0x20` | HDR Off |
 
-The OSD only shows the subset valid for the current input mode, so this exposed list is a superset of what any single mode displays. A separate cap-string entry `0xE2` is omitted (unknown OSD label).
+SDR presets (`0x00`–`0x11`) and HDR presets (`0x20`–`0x24`, `0x30`) form two families. The monitor reports a preset from the family matching the incoming signal, and only that family is selectable. The plugin exposes them as two choices, `smart_image` (SDR) and `smart_image_hdr` (HDR: Game, Movie, Photo, True Black, Personal, Off). Each is shown only while the read-only `hdr_active` boolean (current preset is an HDR preset) matches, and the plugin skips a write that crosses families. The capabilities string also lists `0xE2`; its OSD label is unknown and it is not exposed.
 
 ### OSD Language - VCP `0xCC` (21 entries)
+
+Standard MCCS language codes; the capabilities string lists exactly these.
 
 | Code | Label |
 |------|-------|
@@ -330,17 +336,17 @@ The OSD only shows the subset valid for the current input mode, so this exposed 
 | `0x08` | Portuguese |
 | `0x09` | Russian |
 | `0x0A` | Spanish |
-| `0x0B` | Chinese (Simplified) |
-| `0x0C` | Dutch |
-| `0x0D` | Czech |
-| `0x0E` | Polish |
-| `0x12` | Hungarian |
-| `0x14` | Turkish |
-| `0x16` | Brazilian Portuguese |
-| `0x17` | Finnish |
-| `0x1A` | Greek |
-| `0x1E` | Ukrainian |
-| `0x24` | Swedish |
+| `0x0B` | Swedish |
+| `0x0C` | Turkish |
+| `0x0D` | Chinese (Simplified) |
+| `0x0E` | Brazilian Portuguese |
+| `0x12` | Czech |
+| `0x14` | Dutch |
+| `0x16` | Finnish |
+| `0x17` | Greek |
+| `0x1A` | Hungarian |
+| `0x1E` | Polish |
+| `0x24` | Ukrainian |
 
 ### Pixel Orbiting - EXT `0x34`
 
@@ -402,13 +408,94 @@ Writes have no acknowledgement frame; they are fire-and-forget control-OUTs.
 
 ## 5. Polling & notifications
 
-None; the protocol is host-initiated. The monitor never pushes state; every value is obtained with an explicit Get request (see [§2 Reads](#reads-get-requests) / [§4](#4-responses)). At `initialize()` the driver reads all device-info strings once, then `refresh_from_monitor()` re-reads every VCP on its own cadence; individual read failures are logged and skipped so one mode-gated VCP doesn't block connection.
+The monitor never pushes state. The plugin's `read_status` returns refreshed `ranges`/`choices` to the host:
+
+- once, 2 s after the last write that changes the picture mode (SmartImage, Color Temperature, Input Source, sRGB), so a burst of writes costs one pass;
+- otherwise every 30 s it reads SmartImage (`0xDC`) only, and re-reads the mode-scoped values when the preset changed outside HaloDaemon (OSD, HDR signal toggled).
+
+The USB bridge times out when it is driven too hard or while the monitor wakes. Transfers use a 250 ms timeout. After a transport error the plugin pauses 500 ms, abandons the rest of a polling pass and stops polling for 60 s. At startup, three consecutive errors skip the remaining reads.
+
+---
+
+## 6. Startup read set
+
+Initialize reads SmartImage first, then only the values valid for that preset family:
+
+| Family | VCPs read |
+|--------|-----------|
+| SDR | `0x10` brightness, `0x12` contrast, `0x72` gamma, `0x87` sharpness, `E2A0 20` sRGB, `0x14` color temperature; `0x16`/`0x18`/`0x1A` gains only when `0x14 = 0x0D` |
+| HDR | `0x10` brightness, `0x12` contrast, `E2A0 3D` Light Enhancement, `E2A0 3E` Color Enhancement |
+
+Then the mode-independent settings, the constraint inputs (`0xA5` PIP/PBP window, `E2A0 06` SharpShooter, `E2A0 40` Adaptive Sync) and the firmware Ambiglow mode `E2A0 19`. Each read takes about 200 ms (50 ms write gap + 150 ms reply delay).
+
+The values reported by `initialize` seed the host's control caches, and the host then replays saved values. The monitor stores picture values per SmartImage preset, so a replayed value lands in whichever preset is active at that time.
+
+---
+
+## 7. Control dependencies
+
+The monitor rejects or ignores writes to controls that are unavailable in its current state. The plugin enforces these rules: an unavailable write is logged and skipped (it does not trigger re-reads). The UI hides the SDR controls (SmartImage, Color Temperature, Gamma, Sharpness) while an HDR preset is active, the HDR controls (SmartImage HDR, Light/Color Enhancement) otherwise, and the RGB gains unless Color Temperature is `0x0D`.
+
+| Control | Available when |
+|---------|----------------|
+| Brightness `0x10` | not HDR Off / HDR True Black |
+| Contrast `0x12` | not HDR Off / HDR True Black / EasyRead |
+| Sharpness `0x87`, Gamma `0x72` | SDR preset |
+| Color Temperature `0x14`, sRGB `E2A0 20` | SDR preset, not LowBlue / EasyRead |
+| R/G/B gain `0x16`/`0x18`/`0x1A` | SDR preset and Color Temperature `0x0D` |
+| Light / Color Enhancement `E2A0 3D`/`3E` | HDR preset other than HDR Off / HDR True Black |
+| Adaptive Sync `E2A0 40`, Crosshair `E2A0 04`, SmartResponse `0xEB` | PIP/PBP off |
+| Low Input Lag `E2A0 07` | PIP/PBP off and SharpShooter off |
+| SmartImage `0xDC` | target preset in the current SDR/HDR family |
+
+Monitor rules for VCPs the plugin does not expose:
+
+| Control | Disabled when |
+|---------|---------------|
+| SmartContrast `0xF0` | PIP/PBP, Screen Saver, SharpShooter, MBR or MBR Sync on |
+| SharpShooter `E2A0 06`, ShadowBoost `E2A0 44`/`45` | PIP/PBP or HDR |
+| SmartFrame `E2A0 08` | PIP/PBP, HDR, SharpShooter, or SmartImage `0x00` / `0x0E` |
+| DLBL `E2A0 24` | SmartImage other than LowBlue |
+| MBR `E2A0 02` | PIP/PBP, refresh rate < 75 Hz, or Adaptive Sync on |
+| MBR Sync `E2A0 03` | PIP/PBP or Adaptive Sync off |
+| Overclock `E2A0 4C`, Performance Preservation `0x54` | PIP/PBP |
+| Audio Source `0xE0` | PIP/PBP off |
+| Scan Mode `0xDA` | Display Scaling `0x86 = 1` |
+
+Not supported on the 49M2C8900 (Get returns an error): Dark Enhancement `E2A0 3F`, MBR `E2A0 02`/`03`, ShadowBoost `E2A0 45`, Overclock `E2A0 4C`, Local Dimming `E2A0 18`, Ambiglow direction `E2A0 1E`.
+
+---
+
+## Ambiglow scaler effects
+
+The scaler's own Ambiglow effects. See [ambiglow.md](ambiglow.md) for the host path, the hand-back
+that lets these run, and the controller effects the plugin uses for colour effects.
+
+| Sub | Setting | Values |
+|-----|---------|--------|
+| `0x19` | Mode | `0` Off, `1` Follow Video, `2` Follow Audio, `3` Color Shift, `4` Color Wave, `5` Breathing, `6` Starry Night, `7` Static |
+| `0x1A` | Palette colour | `0x00`–`0x0D` |
+| `0x1B` | Position | `0x00` all, `0x02` edges, `0x04` centre |
+| `0x1C` | Brightness | `0`–`2` |
+| `0x1D` | Speed | `0`–`2` |
+
+Parameters each mode uses (the monitor ignores the rest):
+
+| Mode | Colour | Position | Brightness | Speed |
+|------|:-:|:-:|:-:|:-:|
+| Follow Video | | | ✓ | |
+| Follow Audio | ✓ | ✓ | | |
+| Color Shift, Color Wave, Breathing | ✓ | ✓ | ✓ | ✓ |
+| Starry Night | ✓ | | ✓ | ✓ |
+| Static | ✓ | ✓ | ✓ | |
+
+On the 49M2C8900 the palette colour (`0x1A`) has no visible effect; the colour modes are driven by the ENE controller instead. The plugin uses the scaler only for Off, Follow Video (with brightness) and Follow Audio.
 
 ---
 
 ## Notes
 
 - No apply/commit step: each Set takes effect individually; the only ordering constraint is the 50 ms minimum gap between writes, without which the firmware drops or mis-applies commands.
-- Many VCPs are mode-gated by the firmware (e.g. brightness is locked unless SmartImage is "Personal"); a Get on a gated VCP returns an error and is skipped.
+- Many VCPs are mode-gated by the firmware ([§7](#7-control-dependencies)); a Get on a gated VCP returns an error and is skipped.
 - The outbound checksum seed is `0x00`; reply checksums use seed `0x50`. The `0x50` seed never appears in outbound frames.
-- SmartImage and HDR presets share one VCP, so the exposed preset list is a superset of what any single input mode shows in the OSD.
+- SmartImage and HDR presets share one VCP; only the family matching the signal is selectable.
