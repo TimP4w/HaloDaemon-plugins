@@ -23,7 +23,6 @@ catalog.
 | [`halo_lcd`](halo_lcd/) | Stock LCD widgets and presets | LCD widget API | [Rendering contract](halo_lcd/docs/protocol.md), [Lua API](docs/lua-api.md#lcd-widget-api) |
 | [`hwmon`](hwmon/) | Linux temperature sensors and motherboard fan headers | hwmon | [Integration behavior](hwmon/docs/protocol.md) |
 | [`logitech`](logitech/) | Declared Logitech HID++ devices and receivers | HID | [Overview](logitech/docs/protocol.md), [HID++ 1.0](logitech/docs/hidpp1.md), [HID++ 2.0](logitech/docs/hidpp2.md) |
-| [`logitech_g560`](logitech_g560/) | Logitech G560 speakers | HID | [Protocol](logitech_g560/docs/protocol.md) |
 | [`nanoleaf`](nanoleaf/) | Nanoleaf light-panel controllers | HTTP + UDP | [Protocol](nanoleaf/docs/protocol.md) |
 | [`nvidia`](nvidia/) | GPUs reported by `nvidia-smi` | Command | [Protocol](nvidia/docs/protocol.md) |
 | [`nuvoton_lpcio`](nuvoton_lpcio/) | Nuvoton NCT67xx Super I/O on Windows | LPCIO | [Protocol](nuvoton_lpcio/docs/protocol.md) |
@@ -117,10 +116,25 @@ test. Protocol changes should add or update byte-level assertions in the owning
 package; physical smoke tests remain necessary for hardware timing, interface
 claims, and firmware-specific behavior.
 
+For those smoke tests, run the daemon against this working tree instead of the
+published catalog:
+
+```powershell
+halod --dev-plugins .
+# or, so a daemon launched by the GUI picks it up:
+$env:HALOD_DEV_PLUGINS = (Resolve-Path .); halod-gui
+```
+
+Only packages in that folder load: the official and any other repository are
+neither loaded nor fetched for the session, and the saved repository list is
+left untouched. Enabled plugins and their settings are shared with the normal
+setup, so a local package with an already-enabled id starts right away. Stop
+any running daemon first; only one instance can own the devices.
+
 ## Licensing
 
-Package files carry SPDX headers. Several protocols build on GPL-licensed
-reverse-engineering work, including
+Package files carry SPDX headers. Several protocols build on open-source
+projects, including
 
 | Project | License | Used for |
 |---------|---------|----------|
@@ -130,7 +144,7 @@ reverse-engineering work, including
 | [OpenRazer](https://github.com/openrazer/openrazer) | GPL-2.0-or-later | Razer protocol |
 | [linux-arctis-manager](https://github.com/elegos/Linux-Arctis-Manager) | GPL-3.0 | SteelSeries Arctis protocol |
 | [evnia](https://github.com/tomasf/evnia) | MIT | Philips Evnia Ambiglow protocol |
-| [g560-led](https://github.com/mijoe/g560-led) | MIT | Logitech G560 protocol |
+| [g560-led](https://github.com/mijoe/g560-led) | MIT | Logitech G560 zone layout |
 | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) | MPL-2.0 | NCT677x SuperIO register map, AMD Ryzen (Zen) SMN thermal decode |
 | [OpenRGB](https://gitlab.com/CalcProgrammer1/OpenRGB) | GPL-2.0-or-later | ENE SMBus, ASUS Aura USB, Corsair DRAM |
 

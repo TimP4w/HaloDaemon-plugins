@@ -221,7 +221,7 @@ host values and are commonly zero-based.
 | Equalizer | `get_equalizer(dev) -> equalizer`; `set_eq_preset(dev, preset)`; `set_eq_bands(dev, values)` |
 | Pairing | `start_pairing(dev, timeout_secs)`; `stop_pairing(dev)`; `unpair(dev, slot)`; `pairing_status(dev) -> status` |
 | Onboard profiles | `switch_profile(dev, slot)`; `restore_profile(dev, slot)`; `set_profile_enabled(dev, slot, enabled)`; `onboard_profiles_status(dev) -> status` |
-| Key remap | `set_button_mapping(dev, mapping)`; `reset_button_mapping(dev, cid)`; `reset_all_button_mappings(dev)`; optional `key_remap_host_mode(dev) -> bool` |
+| Key remap | `set_button_mapping(dev, mapping)`; `reset_button_mapping(dev, cid)`; `reset_all_button_mappings(dev)`; optional `key_remap_host_mode(dev) -> bool`; optional `key_remap_layer(dev, active)` (the global layer shift engaged or released; suppress native output for shifted mappings only while `active`) |
 
 `state` passed to `apply` is tagged by `state.mode` (`static`, `per_led`, or
 `native_effect`): `static` carries a single `state.color`, and `per_led` carries

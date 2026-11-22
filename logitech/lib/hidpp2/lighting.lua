@@ -10,40 +10,132 @@ local RGB_EFFECTS = api.rgb_effects
 local COLOR_LED_EFFECTS = api.color_led_effects
 local PER_KEY_LIGHTING_V2 = api.per_key_lighting_v2
 
-local NATIVE_EFFECTS
-local function select_native_effects(profile)
-  local out = {}
-  for _, id in ipairs(profile.native_effects or {}) do
-    for _, effect in ipairs(NATIVE_EFFECTS or {}) do
-      if effect.id == id then out[#out + 1] = effect end
-    end
-  end
-  return out
+local function clamp(value, min, max)
+  return math.floor(math.max(min, math.min(max, value)) + 0.5)
 end
 
-NATIVE_EFFECTS = {
-  { id = "color_wave", name = "Color Wave", params = {},
-    block = { 0xff, 0x00, 0, 0, 0, 0, 0, 0, 0x88, 0x01, 0x64, 0x13, 0x01, 0, 0 } },
-  { id = "ripple", name = "Ripple", params = {
-      { id = "background", label = "Background Color", kind = { kind = "color" }, default = { r = 0x5e, g = 0x5e, b = 0x5e } },
-      { id = "rate", label = "Effect Rate (ms)", kind = { kind = "range", min = 2, max = 200, step = 1 }, default = 20 },
-      { id = "saturation", label = "Saturation", kind = { kind = "range", min = 0, max = 100, step = 1 }, default = 100 },
-    }, block = { 0xff, 0x03, 0x5e, 0x5e, 0x5e, 0xff, 0, 0, 0, 0x14, 0, 0, 0x01, 0, 0 } },
+local function range(id, label, min, max, step, default)
+  return { id = id, label = label, kind = { kind = "range", min = min, max = max, step = step }, default = default }
+end
+
+local RATE = range("rate", "Effect Rate (ms)", 1000, 20000, 100, 10000)
+local RIPPLE_RATE = range("rate", "Effect Rate (ms)", 2, 200, 1, 20)
+local BRIGHTNESS = range("brightness", "Brightness", 1, 100, 1, 100)
+local SATURATION = range("saturation", "Saturation", 0, 100, 1, 100)
+local COLOR = { id = "color", label = "Color", kind = { kind = "color" }, default = { r = 0xff, g = 0xff, b = 0xff } }
+local BACKGROUND = { id = "background", label = "Background Color", kind = { kind = "color" },
+  default = { r = 0x5e, g = 0x5e, b = 0x5e } }
+local DIRECTIONS = { "horizontal", "vertical", "center_out", "inward", "outward",
+  "reverse_horizontal", "reverse_vertical", "center_in" }
+local DIRECTION = { id = "direction", label = "Direction", kind = { kind = "enum", options = DIRECTIONS },
+  default = "horizontal" }
+
+local function value(params, param)
+  local v = params[param.id]
+  if v == nil then v = param.default end
+  if param.kind.kind == "range" then return clamp(v, param.kind.min, param.kind.max) end
+  return v
+end
+
+local function rgb(c) return c.r or 0, c.g or 0, c.b or 0 end
+
+local function sat_byte(params) return clamp(value(params, SATURATION) * 2.55, 0, 255) end
+
+local function direction_byte(params)
+  local wanted = value(params, DIRECTION)
+  for i, name in ipairs(DIRECTIONS) do if name == wanted then return i end end
+  return 1
+end
+
+-- Wire variants per effect, preferred first; layouts in docs/hidpp2.md.
+local NATIVE_EFFECTS = {
+  { id = "off", name = "Off", variants = {
+      { wire = 0x00, params = {}, encode = function() return { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } end },
+    } },
+  { id = "breathing", name = "Breathing", variants = {
+      { wire = 0x0a, params = { COLOR, RATE, BRIGHTNESS }, encode = function(p)
+          local r, g, b = rgb(value(p, COLOR)); local rate = value(p, RATE)
+          return { r, g, b, rate >> 8, rate & 0xff, 0, value(p, BRIGHTNESS), 0, 0, 0 }
+        end },
+    } },
+  { id = "color_cycle", name = "Color Cycle", variants = {
+      { wire = 0x15, params = { RATE, BRIGHTNESS, SATURATION }, encode = function(p)
+          local rate = value(p, RATE)
+          return { 0, sat_byte(p), 0, 0, 0, 0, rate >> 8, rate & 0xff, value(p, BRIGHTNESS), 0 }
+        end },
+      { wire = 0x03, params = { RATE, BRIGHTNESS }, encode = function(p)
+          local rate = value(p, RATE)
+          return { 0, 0, 0, 0, 0, rate >> 8, rate & 0xff, value(p, BRIGHTNESS), 0, 0 }
+        end },
+    } },
+  { id = "color_wave", name = "Color Wave", variants = {
+      { wire = 0x16, params = { RATE, DIRECTION, BRIGHTNESS, SATURATION }, encode = function(p)
+          local rate = value(p, RATE)
+          return { 0, sat_byte(p), 0, 0, 0, 0, rate >> 8, rate & 0xff, value(p, BRIGHTNESS), direction_byte(p) }
+        end },
+      { wire = 0x04, params = { RATE, DIRECTION, BRIGHTNESS }, encode = function(p)
+          local rate = value(p, RATE)
+          return { 0, 0, 0, 0, 0, 0, rate & 0xff, direction_byte(p), value(p, BRIGHTNESS), rate >> 8 }
+        end },
+    } },
+  { id = "ripple", name = "Ripple", variants = {
+      { wire = 0x17, params = { BACKGROUND, RIPPLE_RATE, SATURATION }, encode = function(p)
+          local r, g, b = rgb(value(p, BACKGROUND)); local rate = value(p, RIPPLE_RATE)
+          return { r, g, b, sat_byte(p), 0, 0, rate >> 8, rate & 0xff, 0, 0 }
+        end },
+      { wire = 0x0b, params = { BACKGROUND, RIPPLE_RATE }, encode = function(p)
+          local r, g, b = rgb(value(p, BACKGROUND)); local rate = value(p, RIPPLE_RATE)
+          return { r, g, b, 0, rate >> 8, rate & 0xff, 0, 0, 0, 0 }
+        end },
+    } },
+  { id = "decomposition", name = "Decomposition", variants = {
+      { wire = 0x0e, params = { RATE, BRIGHTNESS }, encode = function(p)
+          local rate = value(p, RATE)
+          return { 0, 0, 0, 0, 0, 0, rate & 0xff, rate >> 8, value(p, BRIGHTNESS), 0 }
+        end },
+    } },
 }
 
-local function apply_native_effect(dev, id, params)
-  local effect
-  for _, candidate in ipairs(NATIVE_EFFECTS) do if candidate.id == id then effect = candidate; break end end
-  if not effect then error("unknown Logitech native effect: " .. tostring(id)) end
-  local block = {}
-  for i, value in ipairs(effect.block) do block[i] = value end
-  if id == "ripple" then
-    local background = params.background
-    if background then block[3], block[4], block[5] = background.r or 0, background.g or 0, background.b or 0 end
-    if params.rate ~= nil then block[10] = math.floor(math.max(2, math.min(200, params.rate)) + 0.5) end
-    if params.saturation ~= nil then block[6] = math.floor(math.max(0, math.min(100, params.saturation)) * 2.55 + 0.5) end
+-- zone -> chosen variant for every effect some zone's firmware table reports.
+local function resolve_native_effects(effect_slots)
+  local resolved, descriptors = {}, {}
+  for _, effect in ipairs(NATIVE_EFFECTS) do
+    local zones, first = {}, nil
+    for zone, slots in pairs(effect_slots or {}) do
+      for _, variant in ipairs(effect.variants) do
+        if slots[variant.wire] then
+          zones[zone] = { variant = variant, slot = slots[variant.wire] }
+          first = first or variant
+          break
+        end
+      end
+    end
+    if first then
+      resolved[effect.id] = zones
+      descriptors[#descriptors + 1] = { id = effect.id, name = effect.name, params = first.params }
+    end
   end
-  feature(dev, RGB_EFFECTS, 0x10, bytes(table.unpack(block)))
+  return resolved, descriptors
+end
+
+local function apply_native_effect(dev, id, params)
+  local zones = dev.lighting and dev.lighting.native and dev.lighting.native[id]
+  if not zones then error("native effect is not supported by this device") end
+  local order = {}
+  for zone in pairs(zones) do order[#order + 1] = zone end
+  table.sort(order)
+  for _, zone in ipairs(order) do
+    local entry = zones[zone]
+    local block = { zone, entry.slot }
+    for _, byte in ipairs(entry.variant.encode(params or {})) do block[#block + 1] = byte end
+    if dev.lighting.wire == "color_led" then
+      block[#block + 1] = 0x00
+      feature(dev, COLOR_LED_EFFECTS, 0x30, bytes(table.unpack(block)))
+    else
+      block[#block + 1] = 0x01 -- apply without storing to NV (0x02 = persistent)
+      feature(dev, RGB_EFFECTS, 0x10, bytes(table.unpack(block)))
+    end
+  end
 end
 
 local function ordered_led_ids(ids, preferred)
@@ -68,19 +160,23 @@ local function discover_per_key_ids(dev, index, preferred)
   return ordered_led_ids(ids, preferred)
 end
 
+-- Returns the static slot per zone (1-based) and, per zone id, a map of
+-- firmware effect id -> slot.
 local function rgb_static_slots(dev, index, count)
-  local slots = {}
+  local slots, effect_slots = {}, {}
   for zone = 0, count - 1 do
     local info = request(dev, dev.hidpp.devnum, index, 0x00, bytes(zone, 0xff, 0))
     local effect_count, static = info:byte(5) or 0, 0
+    effect_slots[zone] = {}
     for slot = 0, effect_count - 1 do
       local effect = request(dev, dev.hidpp.devnum, index, 0x00, bytes(zone, slot, 0))
       local id = ((effect:byte(3) or 0) << 8) | (effect:byte(4) or 0)
       if id == 0x0001 then static = slot end
+      if effect_slots[zone][id] == nil then effect_slots[zone][id] = slot end
     end
     slots[zone + 1] = static
   end
-  return slots
+  return slots, effect_slots
 end
 
 local COLOR_ZONE_NAMES = {
@@ -89,23 +185,28 @@ local COLOR_ZONE_NAMES = {
   [9] = "Primary 4", [10] = "Primary 5", [11] = "Primary 6",
 }
 
-local function color_led_zones(dev, index, count)
-  local channels, slots = {}, {}
+-- Returns channels, the static slot per zone (1-based) and, per zone id, a
+-- map of firmware effect id -> slot.
+local function color_led_zones(dev, index, count, zone_names)
+  local channels, slots, effect_slots = {}, {}, {}
   for zone = 0, count - 1 do
     local info = request(dev, dev.hidpp.devnum, index, 0x10, bytes(zone, 0xff, 0))
     local actual = info:byte(1) or zone
     local location = ((info:byte(2) or 0) << 8) | (info:byte(3) or 0)
     local effect_count, static = info:byte(4) or 0, 0
+    effect_slots[actual] = {}
     for slot = 0, effect_count - 1 do
       local effect = request(dev, dev.hidpp.devnum, index, 0x20, bytes(actual, slot, 0))
       local id = ((effect:byte(3) or 0) << 8) | (effect:byte(4) or 0)
       if id == 0x0001 then static = slot end
+      if effect_slots[actual][id] == nil then effect_slots[actual][id] = slot end
     end
     channels[#channels + 1] = { id = "zone_" .. actual,
-      name = COLOR_ZONE_NAMES[location] or "Unknown", topology = "linear", led_count = 1 }
+      name = (zone_names and zone_names[actual]) or COLOR_ZONE_NAMES[location] or "Unknown",
+      topology = "linear", led_count = 1 }
     slots[#slots + 1] = static
   end
-  return channels, slots
+  return channels, slots, effect_slots
 end
 
 local function write_per_key_frame(dev, colors)
@@ -125,8 +226,8 @@ local function write_per_key_frame(dev, colors)
 
   -- The G502's short mouse strip is most reliable with explicit LED writes.
   -- Eight LEDs still fit in two reports, so SET_CONSECUTIVE saves nothing over
-  -- two SET_INDIVIDUAL packets and has been observed leaving one strip LED at
-  -- its previous colour during pixmap streaming.
+  -- two SET_INDIVIDUAL packets and can leave one strip LED at its previous
+  -- colour during pixmap streaming.
   if dev.profile and dev.profile.device_type == "mouse" then
     local dirty, packets = {}, {}
     for _, state in ipairs(states) do if state.dirty then dirty[#dirty + 1] = state end end
@@ -269,7 +370,7 @@ local function write_rgb_zone(dev, zone_id, colors)
   local slot = dev.lighting.static_slots[zone + 1] or 0
   if dev.lighting.wire == "color_led" then
     feature(dev, COLOR_LED_EFFECTS, 0x30,
-      bytes(zone, slot, color.r or 0, color.g or 0, color.b or 0, 0, 0, 0, 0, 0, 0, 0))
+      bytes(zone, slot, color.r or 0, color.g or 0, color.b or 0, 0x02, 0, 0, 0, 0, 0, 0, 0))
   else
     feature(dev, RGB_EFFECTS, 0x10,
       bytes(zone, slot, color.r or 0, color.g or 0, color.b or 0,
@@ -290,7 +391,7 @@ local function restore_rgb_control(dev)
 end
 
 return {
-  select_native_effects = select_native_effects,
+  resolve_native_effects = resolve_native_effects,
   apply_native_effect = apply_native_effect,
   discover_per_key_ids = discover_per_key_ids,
   rgb_static_slots = rgb_static_slots,

@@ -2,7 +2,7 @@
 
 Logitech's proprietary protocol layered on USB HID: this page documents the shared wire substrate (frame format, transport routing, request/response multiplexing, sector CRC) that both protocol generations ride on.
 
-**Credits:** reverse-engineered with reference to the [Solaar](https://github.com/pwr-Solaar/Solaar) project (GPL-2.0-or-later), files `base.py`, `hidpp10.py`, `hidpp20.py` by Daniel Pavel and contributors.
+**Credits:** based on the [Solaar](https://github.com/pwr-Solaar/Solaar) project (GPL-2.0-or-later), files `base.py`, `hidpp10.py`, `hidpp20.py` by Daniel Pavel and contributors.
 
 ---
 
