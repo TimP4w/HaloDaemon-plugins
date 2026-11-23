@@ -133,15 +133,40 @@ end
 -- per RGB frame). Bounded by time, not by report count, so a lighting frame
 -- landing between two LCD frames cannot exhaust the budget. Not consuming the
 -- ACK desyncs the firmware.
+-- Newest 0x75 sample. Every read goes through `observe`, because the LCD and
+-- lighting handshakes consume reports the status poll would otherwise see.
+local telemetry, telemetry_ms = nil, 0
+
+local function observe(s)
+  local r = halod.buffer(s)
+  if #r >= 26 and r:get_u8(0) == 0x75
+      and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
+    telemetry = {
+      liquid_temp = r:get_u8(15) + math.min(r:get_u8(16), 9) / 10.0,
+      pump_rpm = r:get_u16_le(17),
+      pump_duty = r:get_u8(19),
+      fan_rpm = r:get_u16_le(23),
+      fan_duty = r:get_u8(25),
+    }
+    telemetry_ms = halod.monotonic_ms()
+  end
+  return r
+end
+
+local function read_report(dev)
+  local ok, s = pcall(function() return dev.transport:read(REPORT) end)
+  if not ok then return nil end
+  return observe(s)
+end
+
 local ACK_TIMEOUT_MS = 1000
 local function await_xfer_ack(dev, sub)
   local deadline = halod.monotonic_ms() + ACK_TIMEOUT_MS
   repeat
-    local ok, s = pcall(function() return dev.transport:read(REPORT) end)
-    if not ok then return false end
-    local r = halod.buffer(s)
+    local r = read_report(dev)
+    if not r then return false end
     if #r >= 2 and r:get_u8(0) == 0x37 and r:get_u8(1) == sub then return true end
-  until #s == 0 or halod.monotonic_ms() >= deadline
+  until #r == 0 or halod.monotonic_ms() >= deadline
   return false
 end
 
@@ -155,14 +180,16 @@ end
 
 local function drain_hid(dev)
   for _ = 1, 64 do
-    if #dev.transport:read_nonblocking(REPORT) == 0 then break end
+    local s = dev.transport:read_nonblocking(REPORT)
+    if #s == 0 then break end
+    observe(s)
   end
 end
 
 -- Write a command and read one reply (any prefix), tolerating no reply.
 local function write_then_read(dev, pkt)
   dev.transport:write(pkt)
-  pcall(function() dev.transport:read(REPORT) end)
+  read_report(dev)
 end
 
 local function write_screen_config(dev, brightness, degrees)
@@ -175,9 +202,8 @@ end
 local function read_lcd_state(dev)
   dev.transport:write(string.char(0x30, 0x01))
   for _ = 1, 8 do
-    local ok, s = pcall(function() return dev.transport:read(REPORT) end)
-    if not ok then break end
-    local r = halod.buffer(s)
+    local r = read_report(dev)
+    if not r then break end
     if #r >= 27 and r:get_u8(0) == 0x31 and r:get_u8(1) == 0x01 then
       return {
         buckets = r:get_u8(0x13),
@@ -251,9 +277,8 @@ local function lcd_command(dev, pkt)
   local want0 = (pkt:byte(1) + 1) % 256
   local want1 = pkt:byte(2)
   for _ = 1, 24 do
-    local ok, s = pcall(function() return dev.transport:read(REPORT) end)
-    if not ok then return nil end
-    local r = halod.buffer(s)
+    local r = read_report(dev)
+    if not r then return nil end
     if #r >= 2 and r:get_u8(0) == want0 and r:get_u8(1) == want1 then return r end
   end
   return nil
@@ -437,7 +462,7 @@ return {
     raw_stream_entered = false
     drain_hid(dev)
     dev.transport:write(string.char(0x38, 0x01, 0x02, 0x00))
-    pcall(function() dev.transport:read(REPORT) end)
+    read_report(dev)
   end,
 
   apply = function(dev, state)
@@ -495,31 +520,21 @@ return {
   end,
   -- Status stream (0x75): liquid temp, pump + fan rpm/duty.
   read_status = function(dev)
-    local status = dev.status
     for _ = 1, 64 do
-      local ok, bytes = pcall(function() return dev.transport:read_nonblocking(REPORT) end)
-      if not ok or #bytes == 0 then break end
-      local r = halod.buffer(bytes)
-      if #r >= 26 and r:get_u8(0) == 0x75
-          and not (r:get_u8(15) == 0xFF and r:get_u8(16) == 0xFF) then
-        local frac = r:get_u8(16)
-        if frac > 9 then frac = 9 end
-        dev.last_status_ms = halod.monotonic_ms()
-        status = {
-          liquid_temp = r:get_u8(15) + frac / 10.0,
-          pump_rpm = r:get_u16_le(17),
-          pump_duty = r:get_u8(19),
-          fan_rpm = r:get_u16_le(23),
-          fan_duty = r:get_u8(25),
-        }
-        status.cooling = {
-          { id="pump", name="Pump", kind="pump", controllable=true,
-            duty=status.pump_duty, rpm=status.pump_rpm },
-          { id="fan1", name="Radiator fan", kind="fan", controllable=true,
-            duty=status.fan_duty, rpm=status.fan_rpm },
-        }
-      end
+      local ok, s = pcall(function() return dev.transport:read_nonblocking(REPORT) end)
+      if not ok or #s == 0 then break end
+      observe(s)
     end
+    if not telemetry then return dev.status end
+    dev.last_status_ms = telemetry_ms
+    local status = {}
+    for k, v in pairs(telemetry) do status[k] = v end
+    status.cooling = {
+      { id="pump", name="Pump", kind="pump", controllable=true,
+        duty=status.pump_duty, rpm=status.pump_rpm },
+      { id="fan1", name="Radiator fan", kind="fan", controllable=true,
+        duty=status.fan_duty, rpm=status.fan_rpm },
+    }
     return status
   end,
 
@@ -580,6 +595,6 @@ return {
   lcd_reset = function(dev)
     raw_stream_entered = false
     dev.transport:write(string.char(0x38, 0x01, 0x02, 0x00)) -- back to built-in display
-    pcall(function() dev.transport:read(REPORT) end)
+    read_report(dev)
   end,
 }

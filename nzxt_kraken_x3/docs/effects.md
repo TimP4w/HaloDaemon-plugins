@@ -2,7 +2,7 @@
 
 # NZXT Kraken firmware effects (`2A 04`)
 
-One 64-byte report per channel starts an effect that the firmware runs on its own. Shared by `nzxt_kraken` and `nzxt_kraken_x3` (`lib/effects.lua`). Channel bytes: Kraken Z/Elite ring `0x01`, chain `0x02`; Kraken X3 external `0x01`, ring `0x02`, logo `0x04`.
+One 64-byte report per channel starts an effect that the firmware runs on its own. Shared by `nzxt_kraken`, `nzxt_kraken_x3` and `nzxt_control_hub` (`lib/effects.lua`). Channel bytes: Kraken Z/Elite ring `0x01`, chain `0x02`; Kraken X3 external `0x01`, ring `0x02`, logo `0x04`; Control Hub `1 << channel`. Confirmed on a Kraken Elite V2 and a Control Hub; an unknown `2A xx` is answered with `FF 02` instead of `FF 01`.
 
 | Offset | Meaning |
 | --- | --- |
