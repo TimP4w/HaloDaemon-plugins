@@ -179,3 +179,5 @@ report 0x75 contains little-endian pump RPM at offsets 17–18 and duty at 19.
 This package exposes pump cooling separately from the lighting-only accessory
 header. Temperature data is unavailable until a valid report arrives and expires
 after five seconds without valid status. Protocol family: kraken3 X series.
+
+Firmware lighting effects: see [effects.md](effects.md).

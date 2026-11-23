@@ -56,4 +56,12 @@ return function(h)
   h:assert_eq(#found, 1, "the pump ring is not a chained accessory")
   h:assert_eq(found[1].name, "F140 RGB", "chained fan is found on any channel")
   h:assert(not found[1].has_cooling, "the X3 accessory header carries lighting only")
+
+  dev:clear()
+  dev:apply({ mode = "native_effect", id = "candle", params = { color = { r = 9, g = 8, b = 7 } } })
+  w = dev:writes()
+  h:assert_eq(#w, 3, "ring, logo and chain each get the effect")
+  h:assert_eq({ w[1].data[3], w[1].data[5], w[1].data[6], w[1].data[59] }, { 0x02, 0x08, 50, 8 }, "candle on the 8-LED ring at fixed speed")
+  h:assert_eq({ w[2].data[3], w[2].data[59] }, { 0x04, 1 }, "logo is a single LED")
+  h:assert_eq({ w[3].data[3], w[3].data[59] }, { 0x01, 18 }, "chain uses the F140 RGB LED count")
 end

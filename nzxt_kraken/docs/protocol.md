@@ -267,3 +267,5 @@ After `10 01` the device pushes `0x75` status reports continuously; the host dra
 - HaloDaemon loops on short bulk writes until the complete header or payload has been transferred.
 - When both lighting channels are active, the last state of the other channel is re-sent with every update so updating one does not blank the other.
 - Closing the device restores the built-in liquid display (`38 01 02 00`) so the firmware is in a clean state for the next open.
+
+Firmware lighting effects: see [effects.md](effects.md).

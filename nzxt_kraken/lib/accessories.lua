@@ -74,9 +74,14 @@ local SLOTS_PER_CHANNEL = 6
 
 local M = {}
 
-local builtin = {}
+local builtin, leds = {}, {}
 for _, row in ipairs(ROWS) do
   if row[6] then builtin[row[1]] = true end
+  leds[row[1]] = row[3]
+end
+
+function M.leds(id)
+  return leds[id] or 0
 end
 
 -- Accessory descriptors for the host. `fans = false` for headers that carry
