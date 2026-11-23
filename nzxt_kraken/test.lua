@@ -104,6 +104,21 @@ return function(h)
   dev:queue_read({ 0x37, 0x02 })
   dev:lcd_stream_frame({ 1, 2, 3, 255 }, 1, 1, 0, false, 80)
   h:assert_eq(#dev:usb_writes(), 2, "ACK wait skips queued lighting replies")
+  dev:clear()
+
+  -- Telemetry read by the LCD handshake must still reach the sensors.
+  local mid = {}
+  for i = 1, 64 do mid[i] = 0 end
+  mid[1], mid[16], mid[17], mid[20], mid[26] = 0x75, 33, 2, 61, 47
+  dev:queue_read({})
+  dev:queue_read(mid)
+  dev:queue_read({ 0x37, 0x01 })
+  dev:queue_read({ 0x37, 0x02 })
+  dev:lcd_stream_frame({ 1, 2, 3, 255 }, 1, 1, 0, false, 80)
+  h:assert_eq(dev:poll_sensors()[1].value, 33.2, "status seen during an LCD transfer is kept")
+  local pump
+  for _, c in ipairs(dev:cached_cooling()) do if c.id == "pump" then pump = c end end
+  h:assert_eq(pump.duty, 61, "pump duty from that status is current")
 
  do
  local dev = h:open({ reads = { {} } })
