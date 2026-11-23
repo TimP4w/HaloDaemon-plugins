@@ -128,6 +128,26 @@ return function(h)
  h:assert(controllable == true, "a stopped fan must remain controllable")
 
  end
+  do
+    -- Captured from a Kraken Elite V2: 640x640 panel, 16 buckets; the pump
+    -- ring (30) sits on channel 0 and the radiator chain on channel 1.
+    local panel = {}
+    for i = 1, 64 do panel[i] = 0 end
+    panel[1], panel[2], panel[20] = 0x31, 0x01, 0x10
+    panel[21], panel[22], panel[23], panel[24] = 0x80, 0x02, 0x80, 0x02
+    panel[25], panel[27] = 0x50, 0x01
+    local elite = h:open({ pid = 0x3012, reads = { {}, panel } })
+    h:assert(elite:initialize(), "Elite V2 initializes from its panel report")
+    elite:clear()
+    local reply = {}
+    for i = 1, 64 do reply[i] = 0 end
+    reply[1], reply[2], reply[15], reply[16], reply[22] = 0x21, 0x03, 2, 30, 28
+    elite:queue_read(reply)
+    local found = elite:enumerate_controllers()
+    h:assert_eq(#found, 1, "the pump's own ring is not a chained accessory")
+    h:assert_eq(found[1].name, "F280 RGB Core", "radiator chain is read from channel 1")
+  end
+
   for _, case in ipairs({{0x3008,{0x72,1,0,0}},{0x300e,{0x72,1,1,0}}}) do
     local cooler=h:open({pid=case[1],reads={{}}})
     h:assert(cooler:initialize(),"cooler model initializes")

@@ -1,9 +1,9 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 -- SPDX-FileCopyrightText: Aleksandr Mezin <mezin.alexander@gmail.com>
 --
--- NZXT RGB & Fan Controller ("Control Hub") plugin for HaloDaemon — a
--- 5-channel RGB + fan hub with no LEDs or sensors of its own; every zone and
--- fan lives on a chained accessory (F-fan).
+-- NZXT RGB & fan controllers for HaloDaemon: Control Hub, RGB & Fan
+-- Controller and Smart Device V2. No LEDs or sensors of their own; every zone
+-- lives on a chained accessory.
 --
 -- Protocol reference: the Linux kernel `nzxt-smart2` hwmon driver by
 -- Aleksandr Mezin (GPL-2.0-or-later). Verified offsets: firmware/accessory
@@ -11,9 +11,27 @@
 -- 0x06 (commit); fan status push 0x67 0x02 (rpm/duty), fan config push 0x61
 -- 0x03 (fan type); set fan duty 0x62 0x01.
 
+local catalogue = halod.require("lib.accessories")
+
 local REPORT = 64
-local FAN_CHANNELS = 5
-local MAX_CHAIN_LEDS = 96
+
+-- `paired`: each port carries both a fan and its RGB chain.
+local MODELS = {
+  [0x2022] = { fans = 5, rgb = 5, max_leds = 96, paired = true },
+}
+local DEFAULT_MODEL = { fans = 3, rgb = 2, max_leds = 40, paired = false }
+
+local function model(dev)
+  return MODELS[dev.match.pid] or DEFAULT_MODEL
+end
+
+local function fan_count(dev)
+  return model(dev).fans
+end
+
+local function channel_name(i)
+  return "Channel " .. (i + 1)
+end
 
 -- One 0x26 0x04 GRB data packet (unpadded) plus a 64-byte 0x26 0x06 commit,
 -- for the given channel's bitmask.
@@ -42,33 +60,41 @@ local function write_channel(dev, channel, colors)
   dev.transport:write(commit)
 end
 
--- Each physical output is one channel: a chain of RGB accessories plus the fan
--- header they sit on. `cooling_channel` hands that fan to whichever accessory
--- is detected there, so it is never controllable from both places at once.
-local channels, cooling_channels = {}, {}
-for i = 0, FAN_CHANNELS - 1 do
-  local name = "Channel " .. (i + 1)
-  channels[#channels + 1] = {
-    id = tostring(i), name = name,
-    chainable = true, max_leds = MAX_CHAIN_LEDS, color_order = "rgb",
-    cooling_channel = tostring(i),
-  }
-  cooling_channels[#cooling_channels + 1] = {
-    id = tostring(i), name = name, kind = "fan", controllable = true,
+-- On paired models `cooling_channel` hands a port's fan to whichever
+-- accessory is detected there, so it is never controllable from both places.
+local function describe(dev, rgb_count)
+  local m = model(dev)
+  local channels, cooling = {}, {}
+  for i = 0, rgb_count - 1 do
+    channels[#channels + 1] = {
+      id = tostring(i), name = channel_name(i),
+      chainable = true, max_leds = m.max_leds, color_order = "rgb",
+      cooling_channel = (m.paired and i < m.fans) and tostring(i) or nil,
+    }
+  end
+  for i = 0, m.fans - 1 do
+    cooling[#cooling + 1] = { id = tostring(i), name = channel_name(i), kind = "fan", controllable = true }
+  end
+  return channels, cooling
+end
+
+local function cooling_entry(status, i)
+  local t = status.fan_type and status.fan_type[i]
+  return {
+    id = tostring(i), name = channel_name(i), kind = "fan",
+    controllable = t ~= nil and t ~= 0,
+    rpm = (status.rpm and status.rpm[i]) or 0,
+    duty = (status.duty and status.duty[i]) or 0,
   }
 end
 
-local accessories = {
-  { id=19, name="F120 RGB", led_count=8, topology="ring", fan=true },
-  { id=20, name="F140 RGB", led_count=8, topology="ring", fan=true },
-  { id=23, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
-  { id=24, name="F140 RGB Core", led_count=8, topology="ring", fan=true },
-  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
-  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2, fan=true },
-  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3, fan=true },
-}
+local function fan_index(dev, channel_id)
+  local ch = assert(tonumber(channel_id), "invalid cooling channel")
+  if ch < 0 or ch >= fan_count(dev) then
+    error(string.format("fan channel %s out of range (max %d)", tostring(channel_id), fan_count(dev) - 1))
+  end
+  return ch
+end
 
 return {
   initialize = function(dev)
@@ -76,28 +102,36 @@ return {
     -- byte 3: 488 + (3-1)*256), matching the `poll` cadence above.
     dev.transport:write(string.char(0x60, 0x02, 0x01, 0xE8, 0x03, 0x01, 0xE8, 0x03))
     dev.transport:write(string.char(0x60, 0x03)) -- detect_fans: triggers a fan-config push
-    log("NZXT Control Hub initialized")
+    local reported = catalogue.query(dev, REPORT)
+    local rgb_count = model(dev).rgb
+    if reported then
+      rgb_count = 0
+      for ch in pairs(reported) do rgb_count = math.max(rgb_count, ch + 1) end
+    end
+    local channels, cooling = describe(dev, rgb_count)
+    log(string.format("NZXT fan controller initialized: %d RGB, %d fan channels", rgb_count, fan_count(dev)))
     return {
       ok = true,
       channels = channels,
-      cooling = { channels = cooling_channels },
-      accessories = accessories,
+      cooling = { channels = cooling },
+      accessories = catalogue.list(model(dev).paired),
     }
   end,
 
   -- RGB, routed by the host through whichever channel a chained accessory occupies.
   write_frame = function(dev, channel, bytes)
-  local colors = {}
-  for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    local colors = {}
+    for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     write_channel(dev, tonumber(channel), colors)
   end,
 
-  -- Status pushes: 0x67 0x02 (rpm+duty+fan_type for all 5 channels) or 0x61
+  -- Status pushes: 0x67 0x02 (rpm+duty+fan_type for every channel) or 0x61
   -- 0x03 (fan_type only, e.g. right after detect_fans). A 0x61 push updates
   -- only fan_type, keeping the last known rpm/duty. Drain every report that is
   -- already queued: these are unsolicited hardware pushes, so consuming only
   -- one per host poll can make tach data trail reality by minutes.
   read_status = function(dev)
+    local fans = fan_count(dev)
     local status = dev.status or { rpm = {}, duty = {}, fan_type = {} }
     -- Bound the drain so a broken/noisy device cannot monopolize the plugin
     -- worker. The normal queue contains only a handful of 64-byte reports.
@@ -107,51 +141,33 @@ return {
       end)
       if not ok or #bytes == 0 then break end
       local r = halod.buffer(bytes)
-      if #r >= 45 and r:get_u8(0) == 0x67 and r:get_u8(1) == 0x02 then
+      if #r >= 40 + fans and r:get_u8(0) == 0x67 and r:get_u8(1) == 0x02 then
         local rpm, duty, fan_type = {}, {}, {}
-        for i = 0, FAN_CHANNELS - 1 do
+        for i = 0, fans - 1 do
           rpm[i] = r:get_u16_le(24 + i * 2)
           duty[i] = r:get_u8(40 + i)
           fan_type[i] = r:get_u8(16 + i)
         end
         status = { rpm = rpm, duty = duty, fan_type = fan_type }
-      elseif #r >= 21 and r:get_u8(0) == 0x61 and r:get_u8(1) == 0x03 then
+      elseif #r >= 16 + fans and r:get_u8(0) == 0x61 and r:get_u8(1) == 0x03 then
         local fan_type = {}
-        for i = 0, FAN_CHANNELS - 1 do fan_type[i] = r:get_u8(16 + i) end
+        for i = 0, fans - 1 do fan_type[i] = r:get_u8(16 + i) end
         status = { rpm = status.rpm, duty = status.duty, fan_type = fan_type }
       end
     end
     status.cooling = {}
-    for i = 0, FAN_CHANNELS - 1 do
-      local t = status.fan_type and status.fan_type[i]
-      status.cooling[#status.cooling + 1] = {
-        id = tostring(i), name = "Channel " .. (i + 1), kind = "fan",
-        controllable = t ~= nil and t ~= 0,
-        rpm = (status.rpm and status.rpm[i]) or 0,
-        duty = (status.duty and status.duty[i]) or 0,
-      }
+    for i = 0, fans - 1 do
+      status.cooling[#status.cooling + 1] = cooling_entry(status, i)
     end
     return status
   end,
 
   -- Per-channel cooling telemetry/control, routed from chained accessories.
   get_cooling_status = function(dev, channel_id)
-    local ch = assert(tonumber(channel_id), "invalid cooling channel")
-    if ch < 0 or ch >= FAN_CHANNELS then error("unknown cooling channel: " .. tostring(channel_id)) end
-    local s = dev.status or {}
-    local t = s.fan_type and s.fan_type[ch]
-    return {
-      id = tostring(ch), name = "Channel " .. (ch + 1), kind = "fan",
-      controllable = t ~= nil and t ~= 0,
-      rpm = (s.rpm and s.rpm[ch]) or 0,
-      duty = (s.duty and s.duty[ch]) or 0,
-    }
+    return cooling_entry(dev.status or {}, fan_index(dev, channel_id))
   end,
   set_cooling_duty = function(dev, channel_id, duty)
-    local ch = assert(tonumber(channel_id), "invalid cooling channel")
-    if ch < 0 or ch >= FAN_CHANNELS then
-      error(string.format("Control Hub: fan channel %d out of range (max %d)", ch, FAN_CHANNELS - 1))
-    end
+    local ch = fan_index(dev, channel_id)
     local pkt = halod.buffer(11)
     pkt:set_u8(0, 0x62)
     pkt:set_u8(1, 0x01)
@@ -160,29 +176,14 @@ return {
     dev.transport:write(pkt)
   end,
 
-  -- Accessory detection (0x20 0x03 -> 0x21 0x03): up to 8 channels, first
-  -- non-zero accessory id per channel (byte 15 + channel*6).
+  -- First accessory on each RGB channel.
   detect_accessories = function(dev)
-    dev.transport:write(string.char(0x20, 0x03))
-    for _ = 1, 16 do
-      local ok, s = pcall(function() return dev.transport:read(REPORT) end)
-      if not ok then return {} end
-      local r = halod.buffer(s)
-      if #r >= 2 and r:get_u8(0) == 0x21 and r:get_u8(1) == 0x03 then
-        local count = math.min(#r > 14 and r:get_u8(14) or 0, 8)
-        local out = {}
-        for ch = 0, count - 1 do
-          local offset = 15 + ch * 6
-          if offset < #r then
-            local acc = r:get_u8(offset)
-            if acc ~= 0 then
-              out[#out + 1] = { channel = ch, accessory = acc }
-            end
-          end
-        end
-        return out
-      end
+    local out = {}
+    local reported = catalogue.query(dev, REPORT) or {}
+    for ch = 0, 7 do
+      local ids = reported[ch]
+      if ids and ids[1] then out[#out + 1] = { channel = ch, accessory = ids[1] } end
     end
-    return {}
+    return out
   end,
 }

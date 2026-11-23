@@ -10,6 +10,8 @@
 -- per-channel data packets (60 bytes/packet, two packets for 8 LEDs) + `0x22
 -- 0xA0` commit; logo `0x2A 0x04`.
 
+local catalogue = halod.require("lib.accessories")
+
 local REPORT = 64
 
 local function grb_string(colors)
@@ -60,18 +62,6 @@ local function write_logo(dev, color)
 end
 
 local RING_LEDS = 8
-local accessories = {
-  { id=19, name="F120 RGB", led_count=8, topology="ring" },
-  { id=20, name="F140 RGB", led_count=8, topology="ring" },
-  { id=23, name="F140 RGB Core", led_count=8, topology="ring" },
-  { id=24, name="F140 RGB Core", led_count=8, topology="ring" },
-  { id=27, name="F240 RGB Core", led_count=16, topology="rings", rings=2 },
-  { id=28, name="F240 RGB Core", led_count=16, topology="rings", rings=2 },
-  { id=29, name="F360 RGB Core", led_count=24, topology="rings", rings=3 },
-  { id=30, name="F360 RGB Core", led_count=24, topology="rings", rings=3 },
-  { id=31, name="F420 RGB Core", led_count=24, topology="rings", rings=3 },
-}
-
 -- 8-LED ring starting at ~1:30 (top-right, offset by π/4 like native), plus
 -- the single logo LED at center.
 local function ring_zone()
@@ -98,7 +88,7 @@ return {
         { id="0", name="Aer/F Fan", chainable=true, max_leds=40 },
       },
       cooling = {channels={{id="pump",name="Pump",min_duty=20,max_duty=100,can_stop=false}}},
-      accessories = accessories,
+      accessories = catalogue.list(false),
     }
   end,
 
@@ -175,19 +165,9 @@ return {
     }
   end,
 
-  -- Accessory detection (0x20 0x03 -> 0x21 0x03); accessory id at byte 15.
   detect_accessories = function(dev)
-    dev.transport:write(string.char(0x20, 0x03))
-    for _ = 1, 8 do
-      local reply = halod.buffer(dev.transport:read(REPORT))
-      if #reply >= 16 and reply:get_u8(0) == 0x21 and reply:get_u8(1) == 0x03 then
-        local acc = reply:get_u8(15)
-        if acc ~= 0 then
-          return { { channel = 0, accessory = acc } }
-        end
-        return {}
-      end
-    end
+    local acc = catalogue.first_external(catalogue.query(dev, REPORT))
+    if acc then return { { channel = 0, accessory = acc } } end
     return {}
   end,
 }
