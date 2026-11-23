@@ -148,6 +148,33 @@ return function(h)
     h:assert_eq(found[1].name, "F280 RGB Core", "radiator chain is read from channel 1")
   end
 
+  do
+    local fx = h:open({ reads = { {} } })
+    h:assert(fx:initialize(), "initialize for native effects")
+    h:assert_eq(#fx:lighting_descriptor().native_effects, 14, "every firmware effect is advertised")
+    local reply = {}
+    for i = 1, 64 do reply[i] = 0 end
+    reply[1], reply[2], reply[16] = 0x21, 0x03, 29
+    fx:queue_read(reply)
+    fx:enumerate_controllers()
+    fx:clear()
+    fx:apply({ mode = "native_effect", id = "spectrum_wave", params = { speed = "fastest", direction = "backward" } })
+    local w = fx:writes()
+    h:assert_eq(#w, 2, "ring and radiator chain each get the effect")
+    local p = w[1].data
+    h:assert_eq({ p[1], p[2], p[3], p[4], p[5] }, { 0x2A, 0x04, 0x01, 0x01, 0x02 }, "spectrum wave on the ring")
+    h:assert_eq({ p[6], p[7] }, { 80, 0 }, "fastest spectrum speed")
+    h:assert_eq({ p[56], p[57], p[59], p[60] }, { 2, 0, 24, 3 }, "backward, no colours, 24 LEDs, length 3")
+    h:assert_eq({ w[2].data[3], w[2].data[59] }, { 0x02, 24 }, "chain uses its accessory LED count")
+    fx:clear()
+    fx:apply({ mode = "native_effect", id = "tai_chi", params = {
+      color1 = { r = 1, g = 2, b = 3 }, color2 = { r = 4, g = 5, b = 6 }, speed = "slowest" } })
+    p = fx:writes()[1].data
+    h:assert_eq({ p[5], p[6] }, { 0x0E, 50 }, "tai chi mode and slowest speed")
+    h:assert_eq({ p[8], p[9], p[10], p[11], p[12], p[13] }, { 2, 1, 3, 5, 4, 6 }, "two GRB colours")
+    h:assert_eq({ p[57], p[58] }, { 2, 5 }, "colour count and tai chi constant")
+  end
+
   for _, case in ipairs({{0x3008,{0x72,1,0,0}},{0x300e,{0x72,1,1,0}}}) do
     local cooler=h:open({pid=case[1],reads={{}}})
     h:assert(cooler:initialize(),"cooler model initializes")

@@ -12,6 +12,7 @@
 -- buckets, image over USB bulk.
 
 local catalogue = halod.require("lib.accessories")
+local effects = halod.require("lib.effects")
 
 local REPORT = 64
 local RING_LEDS = 24
@@ -23,6 +24,7 @@ local PROFILE_LEN = 40 -- duty curve is 40 temperature points
 -- own cache and re-send the pair.
 local ring_grb = string.rep("\0", RING_SLOTS * 3)
 local ext_grb = nil
+local chain_leds = 0
 
 local function grb_from_colors(colors, slots)
   local b = halod.buffer(slots * 3)
@@ -423,6 +425,7 @@ return {
         { id="fan1", name="Radiator fan", kind="fan", controllable=true },
       } },
       accessories = catalogue.list(true),
+      native_effects = effects.descriptors(),
     }
   end,
 
@@ -451,6 +454,11 @@ return {
       end
       ring_grb = grb_from_colors(fill, RING_SLOTS)
       send_channels(dev)
+    elseif state.mode == "native_effect" then
+      dev.transport:write(effects.packet(state.id, state.params, 0x01, RING_LEDS))
+      if chain_leds > 0 then
+        dev.transport:write(effects.packet(state.id, state.params, 0x02, chain_leds))
+      end
     end
   end,
 
@@ -528,6 +536,7 @@ return {
   -- channel 1; older coolers report only the chain.
   detect_accessories = function(dev)
     local acc = catalogue.first_external(catalogue.query(dev, REPORT))
+    chain_leds = acc and catalogue.leds(acc) or 0
     if acc then return { { channel = 0, accessory = acc } } end
     return {}
   end,

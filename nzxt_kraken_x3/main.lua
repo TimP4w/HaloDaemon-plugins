@@ -11,6 +11,9 @@
 -- 0xA0` commit; logo `0x2A 0x04`.
 
 local catalogue = halod.require("lib.accessories")
+local effects = halod.require("lib.effects")
+
+local chain_leds = 0
 
 local REPORT = 64
 
@@ -89,6 +92,7 @@ return {
       },
       cooling = {channels={{id="pump",name="Pump",min_duty=20,max_duty=100,can_stop=false}}},
       accessories = catalogue.list(false),
+      native_effects = effects.descriptors(),
     }
   end,
 
@@ -108,6 +112,12 @@ return {
       write_x3_channel(dev, 0x02, fill)
       local logo_map = channels.logo or {}
       write_logo(dev, logo_map["0"] or { r = 0, g = 0, b = 0 })
+    elseif state.mode == "native_effect" then
+      dev.transport:write(effects.packet(state.id, state.params, 0x02, RING_LEDS))
+      dev.transport:write(effects.packet(state.id, state.params, 0x04, 1))
+      if chain_leds > 0 then
+        dev.transport:write(effects.packet(state.id, state.params, 0x01, chain_leds))
+      end
     end
   end,
 
@@ -167,6 +177,7 @@ return {
 
   detect_accessories = function(dev)
     local acc = catalogue.first_external(catalogue.query(dev, REPORT))
+    chain_leds = acc and catalogue.leds(acc) or 0
     if acc then return { { channel = 0, accessory = acc } } end
     return {}
   end,
