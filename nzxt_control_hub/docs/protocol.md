@@ -174,3 +174,5 @@ The controller pushes `67 02` status reports unsolicited at the interval configu
 - The `26 04` RGB data report carries the complete chain, has no sequence field, and must not be split, even when it exceeds 64 bytes.
 - The set-duty frame has eight duty slots but only the first five map to hardware.
 - This package does not implement Kraken pump, ring, telemetry, or LCD commands.
+
+Firmware lighting effects: see [effects.md](effects.md).

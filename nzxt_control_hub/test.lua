@@ -73,6 +73,21 @@ return function(h)
   h:assert_eq(w[1].data[3], 0x08, "fan channel 3 bitmask")
   h:assert_eq(w[1].data[7], 73, "duty stored in selected channel slot")
 
+  -- Captured from a Control Hub: F360 RGB Core on channel 0, F420 on 1, F140 on 4.
+  local hub_info = {}
+  for i = 1, 64 do hub_info[i] = 0 end
+  hub_info[1], hub_info[2], hub_info[15] = 0x21, 0x03, 5
+  hub_info[16], hub_info[22], hub_info[40] = 0x1D, 0x1F, 0x18
+  dev:queue_read(hub_info)
+  dev:enumerate_controllers()
+  dev:clear()
+  dev:apply({ mode = "native_effect", id = "spectrum_wave", params = { speed = "normal" } })
+  w = dev:writes()
+  h:assert_eq(#w, 3, "one firmware effect per populated channel")
+  h:assert_eq({ w[1].data[1], w[1].data[2], w[1].data[3], w[1].data[5], w[1].data[59] },
+    { 0x2A, 0x04, 0x01, 0x02, 24 }, "channel 0 runs spectrum wave over its 24 LEDs")
+  h:assert_eq({ w[3].data[3], w[3].data[59] }, { 0x10, 8 }, "channel 4 uses its own LED count")
+
   -- Smart Device V2: three fans and RGB ports that are not tied to them.
   local info = {}
   for i = 1, 64 do info[i] = 0 end

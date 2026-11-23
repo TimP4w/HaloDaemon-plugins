@@ -12,6 +12,10 @@
 -- 0x03 (fan type); set fan duty 0x62 0x01.
 
 local catalogue = halod.require("lib.accessories")
+local effects = halod.require("lib.effects")
+
+-- channel → LED count of everything chained on it, from the last detection.
+local channel_leds = {}
 
 local REPORT = 64
 
@@ -115,7 +119,18 @@ return {
       channels = channels,
       cooling = { channels = cooling },
       accessories = catalogue.list(model(dev).paired),
+      native_effects = effects.descriptors(),
     }
+  end,
+
+  apply = function(dev, state)
+    if state.mode ~= "native_effect" then return end
+    for ch = 0, 7 do
+      local leds = channel_leds[ch]
+      if leds and leds > 0 then
+        dev.transport:write(effects.packet(state.id, state.params, 1 << ch, leds))
+      end
+    end
   end,
 
   -- RGB, routed by the host through whichever channel a chained accessory occupies.
@@ -182,6 +197,9 @@ return {
     local reported = catalogue.query(dev, REPORT) or {}
     for ch = 0, 7 do
       local ids = reported[ch]
+      local leds = 0
+      for _, id in ipairs(ids or {}) do leds = leds + catalogue.leds(id) end
+      channel_leds[ch] = leds
       if ids and ids[1] then out[#out + 1] = { channel = ch, accessory = ids[1] } end
     end
     return out
