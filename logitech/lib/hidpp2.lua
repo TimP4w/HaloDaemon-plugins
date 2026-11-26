@@ -74,6 +74,10 @@ end
 -- report count while a waking device outlasts a short run of empty windows.
 local DISPATCH_BUDGET_MS = 1000
 local MAX_EMPTY_WINDOWS = 4
+-- Flash writes and profile reloads keep a keyboard silent for well over the
+-- normal empty-window allowance; profile-management calls wait these out.
+local PATIENT_BUDGET_MS = 4000
+local PATIENT_EMPTY_WINDOWS = 100
 
 -- The two error classes share one code space with different meanings: a 0x8f
 -- reply is the receiver's own HID++ 1.0 verdict on the relayed request (the
@@ -102,14 +106,15 @@ local function error_response(reply)
     reply:byte(4) or 0, reply:byte(5) or 0))
 end
 
-local function dispatch(dev, devnum, sub, address, selector)
-  local deadline = halod.monotonic_ms() + DISPATCH_BUDGET_MS
+local function dispatch(dev, devnum, sub, address, selector, patient)
+  local deadline = halod.monotonic_ms() + (patient and PATIENT_BUDGET_MS or DISPATCH_BUDGET_MS)
+  local max_empty = patient and PATIENT_EMPTY_WINDOWS or MAX_EMPTY_WINDOWS
   local empties = 0
   while halod.monotonic_ms() < deadline do
     local reply = dev.transport:read_any(20)
     if #reply < 4 then
       empties = empties + 1
-      if empties >= MAX_EMPTY_WINDOWS then break end
+      if empties >= max_empty then break end
     else
       empties = 0
       local rsub = reply:byte(3)
@@ -129,7 +134,7 @@ local function dispatch(dev, devnum, sub, address, selector)
   error("HID++ response did not arrive")
 end
 
-local function request(dev, devnum, feature_index, func, args)
+local function request(dev, devnum, feature_index, func, args, patient)
   args = args or ""
   local long = long_only(dev) or feature_index ~= 0 or #args > 3
   local address = func | SW_ID
@@ -139,7 +144,7 @@ local function request(dev, devnum, feature_index, func, args)
     dev.long_only = true
     send(dev, packet(devnum, feature_index, address, args, true))
   end
-  return dispatch(dev, devnum, feature_index, address)
+  return dispatch(dev, devnum, feature_index, address, nil, patient)
 end
 
 -- HID++ 1.0 receiver register read.  Register 0x2B5 is selected with sub-id
@@ -374,10 +379,14 @@ local function dpi_list(dev, index)
   return out
 end
 
-local function feature(dev, code, func, args)
+local function feature(dev, code, func, args, patient)
   local state = assert(dev.hidpp, "HID++ not initialized")
   local index = assert(state.features[code], "HID++ feature unavailable")
-  return request(dev, state.devnum, index, func, args)
+  return request(dev, state.devnum, index, func, args, patient)
+end
+
+local function patient_feature(dev, code, func, args)
+  return feature(dev, code, func, args, true)
 end
 
 local function send_feature_packets(dev, packets)
@@ -488,7 +497,7 @@ local onboard = halod.require("lib.hidpp2.onboard")({
   restore_rgb_control = restore_rgb_control,
 })
 local pm = halod.require("lib.hidpp2.profile_mgmt")({
-  bytes = bytes, feature = feature, feature_id = PROFILE_MANAGEMENT,
+  bytes = bytes, feature = patient_feature, feature_id = PROFILE_MANAGEMENT,
 })
 local fkc = halod.require("lib.hidpp2.fkc")({
   bytes = bytes, feature = feature, request = request,

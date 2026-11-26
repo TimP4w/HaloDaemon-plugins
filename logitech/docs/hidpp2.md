@@ -343,7 +343,7 @@ LED records use the RGB_EFFECTS parameter layouts; records 0/1 run while active,
 - *Signature*: when record 0 holds a signature pair (`18`/`19`, `1a`/`1b`, `0f`/`10`) the plugin offers it as the native effect `signature` with its two colours and brightness read from the record. Applying it writes records 0 and 2, sets flags `03` and hands the LEDs back (the effect is not in the RGB_EFFECTS table, only the firmware plays it).
 - *Restore to default*: copies the factory file of the same id over the user file, updates the directory entry's length and checksum, and re-activates the profile when it is the active one.
 
-Every write fills the buffer, reads it back, commits, then reads the flash copy back; a mismatch aborts before the directory is touched. Verified on a G915 X: file and directory saves, adding a `0x1b05` entry, re-configuring a changed profile, and restoring the original bytes.
+Every write fills the buffer, reads it back, commits, then reads the flash copy back; a mismatch aborts before the directory is touched. A save or configure keeps the keyboard silent for longer than the usual reply window, so every `0x8101` request waits up to four seconds instead of giving up after a few empty reads. Verified on a G915 X: file and directory saves, adding a `0x1b05` entry, re-configuring a changed profile, and restoring the original bytes.
 
 ### COLOR_LED_EFFECTS (`0x8070`) - `rgb/color_led.rs`
 
