@@ -121,6 +121,7 @@ local function profile_management_tests(h, report)
     report(0x11, 0x01, 0x01, 0x01, { 0, 1, 0, 0x15 }),
     report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }),
     report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }),
+    report(0x11, 0x01, 0x01, 0x81, {}),
     report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }),
     report(0x11, 0x01, 0x01, 0x71, { 1 }),
   }) do managed_reads[#managed_reads + 1] = r end
@@ -129,13 +130,15 @@ local function profile_management_tests(h, report)
   local managed_init = managed:writes()
   local claim_mode, claim_at = find_write(managed_init, 0x02, 0x61, 0x05)
   local claim_control = managed_init[claim_at + 1]
-  local timers = managed_init[claim_at + 3]
+  local timers = managed_init[claim_at + 4]
   h:assert_eq(claim_mode.data[3], 0x02, "claim addresses PROFILE_MANAGEMENT first")
   h:assert_eq(claim_mode.data[4], 0x61, "claim uses the mode function")
   h:assert_eq(claim_mode.data[5], 0x05, "claim selects host mode")
   h:assert_eq(claim_control.data[4], 0x51, "claim then takes RGB software control")
   h:assert_eq(claim_control.data[6], 0x03, "claim owns clusters and power modes")
   h:assert_eq(claim_control.data[7], 0x04, "claim subscribes to the idle timeout")
+  h:assert_eq({ managed_init[claim_at + 2].data[4], managed_init[claim_at + 2].data[6] }, { 0x81, 0x01 },
+    "claim restores full RGB power")
   h:assert_eq(timers.data[8], 0x01, "idle timeout is moved to the firmware's sleep timeout")
   h:assert_eq(timers.data[9], 0x2c, "idle timeout keeps the sleep timeout's low byte")
   local managed_onboard
@@ -202,6 +205,7 @@ local function profile_management_tests(h, report)
   managed:clear()
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
   managed:set_boolean("host_mode", true)
   local back_to_host = managed:writes()
@@ -225,17 +229,19 @@ local function profile_management_tests(h, report)
   managed:clear()
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
   managed:set_boolean("host_mode", true)
-  h:assert_eq(#managed:writes(), 2, "host mode after the signature only claims the LEDs")
+  h:assert_eq(#managed:writes(), 3, "host mode after the signature only claims the LEDs")
   managed:clear()
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
   managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
   managed_effect = managed:writes()
   h:assert_eq(managed_effect[1].data[5], 0x05, "a live effect in host mode renews the claim")
-  h:assert_eq(managed_effect[3].data[4], 0x11, "the effect follows the claim")
-  h:assert_eq(managed_effect[3].data[6], 1, "the effect uses the slot the firmware reports")
+  h:assert_eq(managed_effect[4].data[4], 0x11, "the effect follows the claim")
+  h:assert_eq(managed_effect[4].data[6], 1, "the effect uses the slot the firmware reports")
   managed:clear()
   managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 0 }))
   managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 1 }))

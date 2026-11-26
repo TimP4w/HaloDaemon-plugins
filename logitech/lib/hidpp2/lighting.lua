@@ -432,10 +432,9 @@ local function restore_rgb_control(dev)
     retried(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
     dev.lighting.claimed_at = halod.monotonic_ms()
     dev.lighting.host = true
-    if dev.lighting.sleeping then
-      dev.lighting.sleeping = false
-      retried(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
-    end
+    -- The firmware may have parked the LEDs in power save before the claim.
+    dev.lighting.sleeping = false
+    retried(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
     if not dev.lighting.power_configured then
       dev.lighting.power_configured = true
       idle_off_after_sleep_timeout(dev)
