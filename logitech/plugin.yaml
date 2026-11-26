@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: logitech
 name: Logitech HID++
-version: 1.1.0
+version: 1.1.1
 api: "1.0"
 license: GPL-3.0-or-later
 description: Logitech HID++ mice, keyboards, headsets, speakers and receivers.
@@ -25,6 +25,10 @@ devices:
     model: G PRO X TKL
     type: keyboard
     match: { hid: { vid: 0x046d, pid: 0xc352, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
+  - vendor: Logitech
+    model: G915 X LIGHTSPEED
+    type: keyboard
+    match: { hid: { vid: 0x046d, pid: 0xc356, interface: 2, usage_page: 0xff00, usage: 1, max_bytes_per_sec: 2000 } }
   - vendor: Logitech
     model: Unifying Receiver
     type: dongle

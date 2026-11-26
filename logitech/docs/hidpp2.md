@@ -59,7 +59,7 @@ A receiver answers for a sleeping slot with a zeroed record rather than an error
 
 ### Feature codes (`v2/mod.rs`)
 
-ROOT `0x0000`, FEATURE_SET `0x0001`, FIRMWARE_VERSION `0x0003`, DEVICE_NAME `0x0005`, DEVICE_FRIENDLY_NAME `0x0007`, BATTERY_VOLTAGE `0x1001`, UNIFIED_BATTERY `0x1004`, WIRELESS_DEVICE_STATUS `0x1D4B`, ADC_MEASUREMENT `0x1F20`, HIRES_WHEEL `0x2121`, ADJUSTABLE_DPI `0x2201`, K375S_FN_INVERSION `0x40A3`, KEYBOARD_LAYOUT_2 `0x4540`, REPROG_CONTROLS_V4 `0x1b04`, BRIGHTNESS_CONTROL `0x8040`, REPORT_RATE `0x8060`, EXT_REPORT_RATE `0x8061`, RGB_EFFECTS `0x8071`, PER_KEY_LIGHTING_V2 `0x8081`, GKEY `0x8010`, ONBOARD_PROFILES `0x8100`, MOUSE_BUTTON_SPY `0x8110`, SIDETONE `0x8300`, EQUALIZER `0x8310`. Declared but unused: `0x2202`, `0x1b10`, `0x1bc0`, `0x1b05`.
+ROOT `0x0000`, FEATURE_SET `0x0001`, FIRMWARE_VERSION `0x0003`, DEVICE_NAME `0x0005`, DEVICE_FRIENDLY_NAME `0x0007`, BATTERY_VOLTAGE `0x1001`, UNIFIED_BATTERY `0x1004`, WIRELESS_DEVICE_STATUS `0x1D4B`, ADC_MEASUREMENT `0x1F20`, HIRES_WHEEL `0x2121`, ADJUSTABLE_DPI `0x2201`, K375S_FN_INVERSION `0x40A3`, KEYBOARD_LAYOUT_2 `0x4540`, REPROG_CONTROLS_V4 `0x1b04`, BRIGHTNESS_CONTROL `0x8040`, REPORT_RATE `0x8060`, EXT_REPORT_RATE `0x8061`, RGB_EFFECTS `0x8071`, PER_KEY_LIGHTING_V2 `0x8081`, GKEY `0x8010`, ONBOARD_PROFILES `0x8100`, MOUSE_BUTTON_SPY `0x8110`, SIDETONE `0x8300`, EQUALIZER `0x8310`. PROFILE_MANAGEMENT `0x8101` (mode switch only). Declared but unused: `0x2202`, `0x1b10`, `0x1bc0`, `0x1b05`.
 
 ### FIRMWARE_VERSION (`0x0003`) - `v2/firmware.rs`
 
@@ -289,11 +289,27 @@ Feature table: `0x0003`, `0x0005`, `0x8070` (4 zones), `0x8010` (G1), `0x8310` (
 
 **Streaming frames** (`encode_frame`). A canvas frame is diffed against the last sent frame, then run-length-encoded: equal-colour spans → `setRange` (0x50), consecutive-id varying runs → `setConsecutive` (0x20), each frame ending in `frameEnd` (0x70). An unchanged frame emits no packets, so the bus write is skipped. Delta-compressed funcs 0x30/0x40 are not used.
 
-The G502 mouse strip uses diffed `setIndividual` batches instead. Its eight LEDs
+Any strip of eight LEDs or fewer (the G502 X) uses diffed `setIndividual` batches instead. Its LEDs
 fit in two reports, and explicit IDs avoid a firmware quirk where optimized
 pixmap frames can leave one strip LED at its previous colour.
 
 **Explicit per-key writes** (`encode_individual_pairs`) batch up to four `(key, r, g, b)` per `setIndividual`, padding a short final batch with its last pair (so key 0 is never zero-keyed), then `commit`.
+
+**Per-key takes precedence over zones.** A device that advertises per-key LEDs is exposed as one per-key channel however many `0x8071` zones it reports (a keyboard with a separate logo zone reports two); the zones remain the addressing unit for native effects only.
+
+**Discovered keyboards.** Every per-key keyboard gets its layout from the firmware; no model has a hand-written key table. Standard keys use LED id = HID keyboard usage − 3 (`A` = 1 … `Menu` = 98, modifiers 104–111; id 47 is the ISO hash key). A per-key device whose bitmap contains the letter keys is a keyboard: the full-size template when any numpad id (80–96) is advertised, TKL otherwise. Vendor ids above 111 (media keys, G-keys, logo) are laid out in ascending order in a row above the keys; usage-range ids with no standard key stay addressable but unplaced. A model profile may only add data the firmware cannot report: the physical cell of a vendor key (`extra_key_cells`) and `gkeys_on_function_row` where G-keys share the F-row.
+
+### PROFILE_MANAGEMENT (`0x8101`) and software control
+
+The file-based successor of ONBOARD_PROFILES on newer keyboards (G515 family, G915 X). Logitech publishes no specification; the function below follows the community notes in [logirgb's research](https://github.com/mevdschee/logirgb/blob/main/research/8101-profile-management.md) (MIT) and Solaar's claim sequence.
+
+| Function | Bytes sent | Reply | Notes |
+|----------|-----------|-------|-------|
+| getSetMode (`0x60`) | `[flags]`: `00` read, `05` host mode, `03` onboard | `[mode, active file u16]`, mode bit 0 = onboard | every written value except `05` means onboard |
+
+On such a device RGB_EFFECTS `manageSwControl` (`0x50`) with flags `1` is accepted but the onboard lighting stays visible, so the claim is `0x8101 0x60 [05]` then `0x8071 0x50 [01 03 04]` (own clusters and power modes, report the idle timeout). Devices without `0x8101` keep `[01 01]`.
+
+Owning power modes means the firmware no longer turns the LEDs off. The claim moves the firmware's idle timeout (`0x70`, `[getOrSet, flags u16, idle u16, sleep u16]`) to its sleep timeout; on the idle event (`0x8071` event `0x10`, byte 0 = `00`) the plugin sets power mode off (`0x80 [01 03]`) and subscribes to activity (`[01 03 02]`), and on activity it re-applies the last lighting state. The idle/active pair the firmware emits right after a claim is ignored for two seconds. The "Host mode" control releases with `0x8071 0x50 [01 00 00]` then `0x8101 0x60 [03]`.
 
 ### COLOR_LED_EFFECTS (`0x8070`) - `rgb/color_led.rs`
 

@@ -500,7 +500,7 @@ return function(h)
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0, 0, 0x12, 0x34 }), -- stale bank reply
-    report(0x10, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0, 0, 0, 0x01 }),
     report(0x10, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
   } })
   h:assert(receiver:initialize(), "receiver root initializes")
@@ -511,7 +511,7 @@ return function(h)
   local children = receiver:enumerate_controllers()
   h:assert_eq(#children, 1, "receiver enumerates one paired slot")
   h:assert_eq(children[1].id, "logitech-ABCDEF12", "receiver child shares the id of the wired device")
-  h:assert_eq(children[1].device_type, "keyboard", "receiver WPID preserves keyboard type")
+  h:assert_eq(children[1].device_type, "keyboard", "pairing-record kind identifies a keyboard")
   local receiver_writes = receiver:writes()
   h:assert_eq(receiver_writes[1].data[3], 0x81, "device count uses HID++ 1.0 short read")
   h:assert_eq(receiver_writes[2].data[3], 0x83, "receiver-info uses banked HID++ 1.0 read")
@@ -581,6 +581,18 @@ return function(h)
   h:assert_eq(rgb_writes[9].data[7], 0x12, "RGB-effects red payload")
   h:assert_eq(rgb_writes[9].data[9], 0x56, "RGB-effects blue payload")
   h:assert_eq(rgb_writes[9].data[10], 0x64, "RGB-effects static timing preset")
+
+  rgb_dev:clear()
+  for _, r in ipairs({
+    {}, {}, {}, {},
+    report(0x11, 0xff, 0x01, 0x51, {}),
+    report(0x11, 0xff, 0x01, 0x11, {}),
+  }) do rgb_dev:queue_read(r) end
+  rgb_dev:apply({ mode = "static", color = { r = 1, g = 2, b = 3 } })
+  local retry_writes = rgb_dev:writes()
+  h:assert_eq(#retry_writes, 3, "an unanswered reclaim is retried before the apply")
+  h:assert_eq(retry_writes[2].data[4], 0x51, "the retry repeats the software-control request")
+  h:assert_eq(retry_writes[3].data[4], 0x11, "the apply follows the acknowledged reclaim")
 
   -- EQUALIZER reads its band count/range, frequencies and signed levels.  The
   -- writable custom curve must use function 0x30 with the mandatory 0x02
@@ -811,9 +823,10 @@ return function(h)
     report(0x11, 0xff, 0x01, 0x01, { 0, 0, 1 }),
     report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 0, 1 }),
     report(0x11, 0xff, 0x01, 0x01, { 0, 0, 0, 1 }),
-    report(0x11, 0xff, 0x03, 0x01, { 0, 0, 0xfe, 0x01 }), -- firmware LEDs 1..8
-    report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
-    report(0x11, 0xff, 0x03, 0x01, { 0, 0 }),
+    report(0x11, 0xff, 0x03, 0x01,
+      { 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xfe, 0xff }),
+    report(0x11, 0xff, 0x03, 0x01, { 0, 1, 0, 0, 0, 0, 0x40, 0x0f }), -- media LEDs 150, 152..155
+    report(0x11, 0xff, 0x03, 0x01, { 0, 2 }),
     report(0x11, 0xff, 0x01, 0x51, {}),
     report(0x11, 0xff, 0x02, 0x11, { 73, 0, 0 }),       -- initial battery cache fill
     report(0x11, 0xff, 0x01, 0x51, {}), -- reclaim before Paint apply
@@ -830,6 +843,9 @@ return function(h)
   end
   h:assert(key_a and key_a.cell.id == "a", "firmware LED 1 maps to the A key")
   h:assert(media_brightness ~= nil, "keyboard layout includes Logitech media keys")
+  h:assert_eq(media_brightness.cell.col, 5.0, "a registered extra key keeps its own cell")
+  h:assert_eq(#keyboard_dev:lighting_descriptor().channels[1].leds, 99,
+    "the layout covers exactly the LEDs the firmware advertises")
   local keyboard_lighting = keyboard_dev:lighting_descriptor()
   local led_a
   for _, led in ipairs(keyboard_lighting.channels[1].leds) do if led.id == 1 then led_a = led end end
@@ -840,7 +856,7 @@ return function(h)
     "keyboard RGB uses the native key y position")
   keyboard_dev:clear()
   local breathing = {}
-  for _ = 1, 8 do
+  for _ = 1, #keyboard_lighting.channels[1].leds do
     breathing[#breathing + 1] = 10
     breathing[#breathing + 1] = 20
     breathing[#breathing + 1] = 30
@@ -850,7 +866,7 @@ return function(h)
   h:assert_eq(#frame_writes, 2, "uniform per-key frame is one range plus commit")
   h:assert_eq(frame_writes[1].data[4], 0x51, "per-key frame uses SET_RANGE")
   h:assert_eq(frame_writes[1].data[5], 1, "per-key range starts at first firmware LED")
-  h:assert_eq(frame_writes[1].data[6], 8, "per-key range ends at last firmware LED")
+  h:assert_eq(frame_writes[1].data[6], 155, "per-key range ends at last firmware LED")
   h:assert_eq(frame_writes[2].data[4], 0x71, "per-key frame commits atomically")
   keyboard_dev:clear()
   local led_4_index
@@ -932,7 +948,7 @@ return function(h)
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x10, 0xff, 0x8f, 0x83, { 0xb5, 0x09 }),
-    report(0x11, 0xff, 0x83, 0xb5, { 0x21, 0, 0, 0x40, 0x99 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x21, 0, 0, 0x40, 0x99, 0, 0, 0x02 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x31, 0x12, 0x34, 0x56, 0x78 }),
   } })
   h:assert(sparse_rx:initialize(), "sparse receiver root initializes")
@@ -940,7 +956,7 @@ return function(h)
   local sparse_children = sparse_rx:enumerate_controllers()
   h:assert_eq(#sparse_children, 1, "empty slot does not hide a later paired mouse")
   h:assert_eq(sparse_children[1].id, "logitech-12345678", "later-slot mouse keeps its identity")
-  h:assert_eq(sparse_children[1].device_type, "mouse", "receiver WPID preserves mouse type")
+  h:assert_eq(sparse_children[1].device_type, "mouse", "pairing-record kind identifies a mouse")
   local sparse_writes = sparse_rx:writes()
   h:assert_eq(sparse_writes[2].data[5], 0x20, "sparse scan probes empty slot 1")
   h:assert_eq(sparse_writes[3].data[5], 0x21, "sparse scan continues to paired slot 2")
@@ -999,7 +1015,7 @@ return function(h)
     reads[#reads + 1] = report(0x11, 0xff, 0x09, 0x01, { 50 })
     reads[#reads + 1] = report(0x11, 0xff, 0x08, 0x01, { 0, 100, 4, 0 })
     reads[#reads + 1] = report(0x11, 0xff, 0x08, 0x11, { 0, 50 })
-    return h:open({ pid = 0x0a78, reads = reads })
+    return h:open({ pid = 0x0a78, refused_report_ids = { 0x10 }, reads = reads })
   end
   local g560 = g560_dev()
   h:assert(g560:initialize(), "G560 initializes through the standard HID++ path")
@@ -1067,7 +1083,7 @@ return function(h)
   h:assert_eq(g560_remap.buttons[1].label, "G1", "G560 G-key label")
 
   -- PRO X Wireless: ADC_MEASUREMENT 0x10 reports the auto power-off timer.
-  local prox = h:open({ pid = 0x0aba, reads = {
+  local prox = h:open({ pid = 0x0aba, refused_report_ids = { 0x10 }, reads = {
     report(0x11, 0xff, 0x00, 0x01, { 2 }),
     report(0x11, 0xff, 0x02, 0x01, { 1 }),
     report(0x11, 0xff, 0x02, 0x11, { 0x1f, 0x20 }),
@@ -1084,7 +1100,7 @@ return function(h)
   -- silently once it wakes. An off PRO X headset still enumerates through its
   -- dongle and only errors (0x05) once a read needs the headset itself; a
   -- receiver child that is off instead answers nothing at all. Neither may raise.
-  local asleep_headset = h:open({ pid = 0x0aba, reads = {
+  local asleep_headset = h:open({ pid = 0x0aba, refused_report_ids = { 0x10 }, reads = {
     report(0x11, 0xff, 0x00, 0x01, { 2 }),          -- ROOT -> FEATURE_SET index
     report(0x11, 0xff, 0x02, 0x01, { 1 }),          -- FEATURE_SET count
     report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x00 }), -- feature[1] = SIDETONE
@@ -1179,7 +1195,7 @@ return function(h)
   h:assert_eq(office_child:connection_status().connection_type, "wireless",
     "unserviced receiver child keeps its connection capability")
 
-  local windows_asleep_headset = h:open({ pid = 0x0aba,
+  local windows_asleep_headset = h:open({ pid = 0x0aba, refused_report_ids = { 0x10 },
     write_error = "HID write error: hidapi error:" })
   h:assert(not windows_asleep_headset:initialize(),
     "a Windows HID write failure rejects a powered-off headset")
@@ -1371,8 +1387,142 @@ return function(h)
   h:assert_eq(release.data[5], 1, "software control set operation")
   h:assert_eq(release.data[6], 0, "software control flags cleared")
 
-  local profiles = halod.require("lib.hidpp2.profiles")(function() return "G PRO" end)
-  local gpro = profiles.gpro_tkl_keyboard("u_s")
+  local unlisted_rx = h:open({ pid = 0xc547, reads = {
+    report(0x10, 0xff, 0x81, 0, {0,0,0}),
+    report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0x1b, 0x08, 0x40, 0xb7, 0x11, 0, 0x01 }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0x68, 0x2f, 0xd5, 0xfd }),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x40, 9, 0x47, 0x39, 0x39, 0x39, 0x20, 0x58, 0x20, 0x4c, 0x53 }),
+  } })
+  h:assert(unlisted_rx:initialize(), "receiver with an unlisted child initializes")
+  unlisted_rx:clear()
+  local unlisted_children = unlisted_rx:enumerate_controllers()
+  h:assert_eq(#unlisted_children, 1, "unlisted paired device is enumerated")
+  h:assert_eq(unlisted_children[1].name, "Logitech G999 X LS",
+    "an unlisted child is named from the receiver's pairing record")
+  h:assert_eq(unlisted_children[1].device_type, "keyboard", "unlisted child keeps its paired kind")
+  h:assert_eq(unlisted_rx:writes()[4].data[5], 0x40, "codename uses the slot's name selector")
+  h:assert_eq(children[1].name, "Logitech HID++ Device",
+    "a child whose pairing record has no name gets the generic one")
+
+  local function discovered_keyboard_dev(first_page)
+    local dev = h:open({ pid = 0xc547, key = "1", reads = {
+      report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
+      report(0x10, 0x01, 0x00, 0x01, { 2 }),
+      report(0x11, 0x01, 0x02, 0x01, { 2 }),
+      report(0x11, 0x01, 0x02, 0x11, { 0x80, 0x71 }),
+      report(0x11, 0x01, 0x02, 0x11, { 0x80, 0x81 }),
+      report(0x11, 0x01, 0x01, 0x01, { 0, 0, 2 }),
+      report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 0, 1 }),
+      report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 1 }),
+      report(0x11, 0x01, 0x01, 0x01, { 1, 0, 0, 0, 1 }),
+      report(0x11, 0x01, 0x01, 0x01, { 1, 0, 0, 1 }),
+      report(0x11, 0x01, 0x02, 0x01, first_page),
+      report(0x11, 0x01, 0x02, 0x01, { 0, 1, 0, 0, 0, 0, 0, 0x7a, 0, 0, 0xf0, 0x1f, 0, 0, 0x04, 0 }),
+      report(0x11, 0x01, 0x02, 0x01, { 0, 2 }),
+      report(0x11, 0x01, 0x01, 0x51, {}),
+    } })
+    h:assert(dev:initialize(), "unlisted multi-zone per-key keyboard initializes")
+    return dev
+  end
+  local function key_by_led(status)
+    local out = {}
+    for _, key in ipairs(status.keys) do out[key.led_id] = key end
+    return out
+  end
+
+  local full_dev = discovered_keyboard_dev(
+    { 0, 0, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff })
+  local full_channels = full_dev:lighting_descriptor().channels
+  h:assert_eq(#full_channels, 1, "per-key LEDs replace the firmware's coarse zones")
+  h:assert_eq(#full_channels[1].leds, 126, "every advertised per-key LED is addressable")
+  local full_keys = key_by_led(full_dev:keyboard_layout_status())
+  h:assert_eq(full_keys[1].cell.id, "a", "usage-ordered LED 1 is the A key")
+  h:assert_eq(full_keys[111].cell.id, "right_super", "modifier LEDs follow the usage order")
+  h:assert_eq(full_keys[95].cell.id, "num0", "numpad LEDs select the full-size template")
+  h:assert_eq(full_keys[97], nil, "the ANSI variant has no ISO extra key")
+  h:assert_eq(full_keys[99], nil, "usage-range LEDs without a standard key stay unplaced")
+  h:assert_eq(full_keys[153].cell.row, -1.5, "vendor LEDs sit in a row above the keys")
+  h:assert_eq(full_keys[153].cell.col, 0.0, "vendor LEDs start at the left edge")
+  h:assert_eq(full_keys[210].cell.col, 14.0, "vendor LEDs keep ascending LED order")
+  local widest = 0
+  for _, led in ipairs(full_channels[1].leds) do widest = math.max(widest, led.x) end
+  h:assert(widest > 0.95 and widest <= 1, "full-size keys span the zone without leaving it")
+  full_dev:clear()
+  full_dev:queue_read(report(0x11, 0x01, 0x01, 0x51, {}))
+  full_dev:apply({ mode = "static", color = { r = 9, g = 8, b = 7 } })
+  local full_static = full_dev:writes()
+  h:assert_eq(full_static[2].data[3], 0x02, "static colour is written through per-key lighting")
+  h:assert_eq(full_static[#full_static].data[4], 0x71, "static colour ends with a per-key commit")
+
+  local tkl_keys = key_by_led(discovered_keyboard_dev(
+    { 0, 0, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xfe, 0xff })
+    :keyboard_layout_status())
+  h:assert_eq(tkl_keys[79].cell.id, "up", "a keyboard without numpad LEDs uses the TKL template")
+  h:assert_eq(tkl_keys[80], nil, "absent numpad LEDs produce no keys")
+  h:assert_eq(tkl_keys[111].cell.col, 11.25, "TKL right-super keeps its bottom-row cell")
+  h:assert_eq(tkl_keys[98].cell.id, "menu", "TKL menu key is placed explicitly")
+
+  -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
+  -- with both cluster and power-mode ownership claimed.
+  local managed = h:open({ pid = 0xc547, key = "1", reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x01, { 3 }),
+    report(0x11, 0x01, 0x03, 0x01, { 2 }),
+    report(0x11, 0x01, 0x03, 0x11, { 0x80, 0x71 }),
+    report(0x11, 0x01, 0x03, 0x11, { 0x81, 0x01 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 0, 2 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 1, 0, 0x15 }),
+    report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }),
+    report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }),
+    report(0x11, 0x01, 0x01, 0x71, { 1 }),
+  } })
+  h:assert(managed:initialize(), "profile-managed keyboard initializes")
+  local managed_init = managed:writes()
+  local claim_mode = managed_init[10]
+  local claim_control = managed_init[11]
+  local timers = managed_init[13]
+  h:assert_eq(claim_mode.data[3], 0x02, "claim addresses PROFILE_MANAGEMENT first")
+  h:assert_eq(claim_mode.data[4], 0x61, "claim uses the mode function")
+  h:assert_eq(claim_mode.data[5], 0x05, "claim selects host mode")
+  h:assert_eq(claim_control.data[4], 0x51, "claim then takes RGB software control")
+  h:assert_eq(claim_control.data[6], 0x03, "claim owns clusters and power modes")
+  h:assert_eq(claim_control.data[7], 0x04, "claim subscribes to the idle timeout")
+  h:assert_eq(timers.data[8], 0x01, "idle timeout is moved to the firmware's sleep timeout")
+  h:assert_eq(timers.data[9], 0x2c, "idle timeout keeps the sleep timeout's low byte")
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:set_boolean("host_mode", false)
+  local release = managed:writes()
+  h:assert_eq(release[1].data[6], 0x00, "leaving host mode releases RGB software control")
+  h:assert_eq(release[2].data[5], 0x03, "leaving host mode returns to the onboard profile")
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
+  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
+  local managed_effect = managed:writes()
+  h:assert_eq(managed_effect[1].data[5], 0x05, "a native effect re-enters host mode")
+  h:assert_eq(managed_effect[3].data[4], 0x11, "the effect follows the claim")
+  h:assert_eq(managed_effect[3].data[6], 1, "the effect uses the slot the firmware reports")
+  managed:clear()
+  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 0 }))
+  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 1 }))
+  managed:pump_events()
+  h:assert_eq(#managed:writes(), 0, "the idle/active pair that follows a claim is ignored")
+
+  local profiles = halod.require("lib.hidpp2.profiles")()
+  local function tkl_keyboard()
+    local ids = {}
+    for id = 1, 111 do if id < 80 or id > 96 then ids[#ids + 1] = id end end
+    return (profiles.discovered_keyboard(ids))
+  end
+  local gpro = tkl_keyboard()
   profiles.bind_gkeys_to_function_row(gpro, 12)
   for _, variant in ipairs({ gpro.ansi, gpro.iso }) do
     local bound = {}
@@ -1384,7 +1534,7 @@ return function(h)
     end
     h:assert_eq(bound.escape, nil, "keys outside the function row stay unbound")
   end
-  local partial = profiles.gpro_tkl_keyboard("u_s")
+  local partial = tkl_keyboard()
   profiles.bind_gkeys_to_function_row(partial, 3)
   for _, mapping in ipairs(partial.ansi.keys) do
     if mapping.key == "f4" then h:assert_eq(mapping.remap_cid, nil, "F4 is unbound past the G-key count") end
@@ -1395,9 +1545,9 @@ return function(h)
     end
   end
   local two_buttons = { { cid = 1 }, { cid = 2 } }
-  h:assert_eq(bound_f1(profiles.keyboard_with_remap(profiles.gpro_tkl_keyboard("u_s"), "gkey", two_buttons)), 1,
+  h:assert_eq(bound_f1(profiles.keyboard_with_remap(tkl_keyboard(), "gkey", two_buttons)), 1,
     "a gkey backend binds the function row")
-  h:assert_eq(bound_f1(profiles.keyboard_with_remap(profiles.gpro_tkl_keyboard("u_s"), "reprog", two_buttons)), nil,
+  h:assert_eq(bound_f1(profiles.keyboard_with_remap(tkl_keyboard(), "reprog", two_buttons)), nil,
     "other remap backends leave the keyboard alone")
   h:assert_eq(profiles.keyboard_with_remap(nil, "gkey", two_buttons), nil, "a mouse has no keyboard to bind")
 end

@@ -9,6 +9,7 @@ local SW_ID = api.sw_id
 local RGB_EFFECTS = api.rgb_effects
 local COLOR_LED_EFFECTS = api.color_led_effects
 local PER_KEY_LIGHTING_V2 = api.per_key_lighting_v2
+local PROFILE_MANAGEMENT = api.profile_management
 
 local function clamp(value, min, max)
   return math.floor(math.max(min, math.min(max, value)) + 0.5)
@@ -209,6 +210,8 @@ local function color_led_zones(dev, index, count, zone_names)
   return channels, slots, effect_slots
 end
 
+local EXPLICIT_WRITE_MAX_LEDS = 8
+
 local function write_per_key_frame(dev, colors)
   local ids = dev.lighting.led_ids or {}
   local cache, states = dev.lighting.frame_cache or {}, {}
@@ -224,11 +227,10 @@ local function write_per_key_frame(dev, colors)
   local any = false; for _, state in ipairs(states) do if state.dirty then any = true; break end end
   if not any then return end
 
-  -- The G502's short mouse strip is most reliable with explicit LED writes.
-  -- Eight LEDs still fit in two reports, so SET_CONSECUTIVE saves nothing over
-  -- two SET_INDIVIDUAL packets and can leave one strip LED at its previous
-  -- colour during pixmap streaming.
-  if dev.profile and dev.profile.device_type == "mouse" then
+  -- A short strip is most reliable with explicit LED writes: its LEDs fit in
+  -- two SET_INDIVIDUAL packets, so SET_CONSECUTIVE saves nothing and can leave
+  -- one LED at its previous colour during pixmap streaming.
+  if #ids <= EXPLICIT_WRITE_MAX_LEDS then
     local dirty, packets = {}, {}
     for _, state in ipairs(states) do if state.dirty then dirty[#dirty + 1] = state end end
     for start = 1, #dirty, 4 do
@@ -378,16 +380,85 @@ local function write_rgb_zone(dev, zone_id, colors)
   end
 end
 
+local CLAIM_SETTLE_MS = 2000
+local HOST_MODE, ONBOARD_MODE = 0x05, 0x03
+local OWN_CLUSTERS_AND_POWER = 0x03
+local NOTIFY_IDLE, NOTIFY_ACTIVITY = 0x04, 0x02
+local POWER_FULL, POWER_OFF = 0x01, 0x03
+
+local function retried(dev, code, func, args)
+  local last_error
+  for _ = 1, 3 do
+    local ok, err = pcall(feature, dev, code, func, args)
+    if ok then return err end
+    last_error = err
+    if not tostring(err):find("HID++ response did not arrive", 1, true) then error(err) end
+  end
+  error(last_error)
+end
+
+local function profile_managed(dev)
+  return dev.hidpp.features[PROFILE_MANAGEMENT] ~= nil and dev.hidpp.features[RGB_EFFECTS] ~= nil
+end
+
+local function idle_off_after_sleep_timeout(dev)
+  local ok, timers = pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(0))
+  if not ok or #timers < 7 then return end
+  local idle_hi, idle_lo, sleep_hi, sleep_lo = timers:byte(4, 7)
+  local sleep = (sleep_hi << 8) | sleep_lo
+  if sleep == 0 or sleep == 0xffff or (idle_hi == sleep_hi and idle_lo == sleep_lo) then return end
+  pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, sleep_hi, sleep_lo, sleep_hi, sleep_lo))
+end
+
 local function restore_rgb_control(dev)
   if not dev.lighting then return end
   -- Reclaiming means the firmware owned the LEDs, so the streaming frame cache
   -- no longer describes what is lit and must not suppress the write that follows.
   dev.lighting.frame_cache = nil
-  if dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
-    feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
+  if profile_managed(dev) then
+    retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(HOST_MODE))
+    retried(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
+    dev.lighting.claimed_at = halod.monotonic_ms()
+    if dev.lighting.sleeping then
+      dev.lighting.sleeping = false
+      retried(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
+    end
+    if not dev.lighting.power_configured then
+      dev.lighting.power_configured = true
+      idle_off_after_sleep_timeout(dev)
+    end
+  elseif dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
+    retried(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
   elseif dev.lighting.wire == "color_led" then
-    feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
+    retried(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
   end
+end
+
+local function release_rgb_control(dev)
+  dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
+  retried(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
+  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE))
+end
+
+local function host_mode(dev)
+  return ((feature(dev, PROFILE_MANAGEMENT, 0x60, bytes(0)):byte(1) or 1) & 0x01) == 0
+end
+
+local function user_activity_report(dev, report)
+  if not dev.lighting or not dev.lighting.claimed_at then return nil end
+  if report:byte(2) ~= dev.hidpp.devnum or report:byte(3) ~= dev.hidpp.features[RGB_EFFECTS]
+      or report:byte(4) ~= 0x10 then
+    return nil
+  end
+  return (report:byte(5) or 0) ~= 0
+end
+
+local function sleep_lighting(dev)
+  if dev.lighting.sleeping then return end
+  if halod.monotonic_ms() - dev.lighting.claimed_at < CLAIM_SETTLE_MS then return end
+  dev.lighting.sleeping = true
+  feature(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_OFF))
+  feature(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_ACTIVITY))
 end
 
 return {
@@ -400,5 +471,10 @@ return {
   write_per_key_pairs = write_per_key_pairs,
   write_rgb_zone = write_rgb_zone,
   restore_rgb_control = restore_rgb_control,
+  release_rgb_control = release_rgb_control,
+  profile_managed = profile_managed,
+  host_mode = host_mode,
+  user_activity_report = user_activity_report,
+  sleep_lighting = sleep_lighting,
 }
 end

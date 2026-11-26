@@ -28,6 +28,7 @@ local RGB_EFFECTS = 0x8071
 local COLOR_LED_EFFECTS = 0x8070
 local PER_KEY_LIGHTING_V2 = 0x8081
 local ONBOARD_PROFILES = 0x8100
+local PROFILE_MANAGEMENT = 0x8101
 local KEYBOARD_LAYOUT_2 = 0x4540
 local REPROG_CONTROLS_V4 = 0x1b04
 local GKEY = 0x8010
@@ -41,15 +42,8 @@ local BRIGHTNESS_CONTROL = 0x8040
 
 local function bytes(...) return string.char(...) end
 
-local function is_long_only(pid)
-  -- Composite LIGHTSPEED headset and speaker interfaces expose no short HID++
-  -- report. Other devices are detected when a short write is refused.
-  return pid == 0x0aba or pid == 0x0af7 or pid == 0x0ab5 or pid == 0x0afe
-      or pid == 0x0ac4 or pid == 0x0a87 or pid == 0x0a66 or pid == 0x0a78
-end
-
 local function long_only(dev)
-  return dev.long_only or is_long_only(dev.match.pid)
+  return dev.long_only == true
 end
 
 local function packet(devnum, sub_id, address, payload, long)
@@ -156,8 +150,6 @@ local hidpp1 = hidpp1_factory({
 })
 local v1_read, v1_write = hidpp1.read, hidpp1.write
 
-local product_name
-
 -- Receiver identity is transport metadata, not a special case of one device
 -- PID. Keep the Solaar-compatible HID++ 1.x families here; Bolt and the old
 -- EX100 use protocols this plugin does not implement.
@@ -186,17 +178,10 @@ local RECEIVERS = {
   [0xc54d] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
 }
 
-local function paired_device_type(kind, wpid)
-  local kinds = {
-    [1] = "keyboard", [2] = "mouse", [3] = "keyboard", [0x0d] = "headset",
-  }
-  if kind then
-    local resolved = kinds[kind & 0x0f]
-    if resolved then return resolved end
-  end
-  if wpid == 0x4099 then return "mouse" end
-  if wpid == 0x40b0 then return "keyboard" end
-  return "other"
+local PAIRED_KINDS = { [1] = "keyboard", [2] = "mouse", [3] = "keyboard", [0x0d] = "headset" }
+
+local function paired_device_type(kind)
+  return kind and PAIRED_KINDS[kind & 0x0f] or "other"
 end
 
 local function feature_index(dev, devnum, code)
@@ -289,30 +274,21 @@ local function read_name(dev, devnum, features)
   return #name > 0 and name or nil
 end
 
-product_name = function(pid, wpid)
-  local names = {
-    [0xc095] = "Logitech G502 X Plus", [0xc08b] = "Logitech G502 Hero",
-    [0xc352] = "Logitech G PRO X TKL",
-    [0x0aba] = "Logitech PRO X Wireless Gaming Headset",
-    [0x0af7] = "Logitech PRO X 2 LIGHTSPEED",
-    [0x0ab5] = "Logitech G733 LIGHTSPEED", [0x0afe] = "Logitech G733 LIGHTSPEED",
-    [0x0ac4] = "Logitech G535 LIGHTSPEED", [0x0a87] = "Logitech G935",
-    [0x0a66] = "Logitech G533",
-    [0x0a78] = "Logitech G560 Gaming Speaker",
-  }
-  local wireless = { [0x4099] = "Logitech G502 X Plus", [0x40b0] = "Logitech G PRO X TKL" }
-  return names[pid] or (RECEIVERS[pid] and RECEIVERS[pid].name)
-    or wireless[wpid] or "Logitech HID++ Device"
+local UNNAMED_DEVICE = "Logitech HID++ Device"
+
+local function branded(reported)
+  if not reported then return UNNAMED_DEVICE end
+  return reported:find("^Logi") and reported or ("Logitech " .. reported)
 end
 
 local function receiver_children(dev)
-  return hidpp1.receiver_children(dev, product_name, paired_device_type)
+  return hidpp1.receiver_children(dev, branded, paired_device_type)
 end
 
-local profiles = halod.require("lib.hidpp2.profiles")(product_name)
+local profiles = halod.require("lib.hidpp2.profiles")()
 local device_profile = profiles.device_profile
-local gpro_tkl_keyboard = profiles.gpro_tkl_keyboard
 local keyboard_with_remap = profiles.keyboard_with_remap
+local discovered_keyboard = profiles.discovered_keyboard
 local function has(features, code) return features[code] ~= nil end
 
 local VOLTAGE_CURVE = {
@@ -415,6 +391,7 @@ local lighting = halod.require("lib.hidpp2.lighting")({
   send_feature_packets = send_feature_packets, sw_id = SW_ID,
   rgb_effects = RGB_EFFECTS, color_led_effects = COLOR_LED_EFFECTS,
   per_key_lighting_v2 = PER_KEY_LIGHTING_V2,
+  profile_management = PROFILE_MANAGEMENT,
 })
 local resolve_native_effects = lighting.resolve_native_effects
 local apply_native_effect = lighting.apply_native_effect
@@ -425,6 +402,7 @@ local write_per_key_frame = lighting.write_per_key_frame
 local write_per_key_pairs = lighting.write_per_key_pairs
 local write_rgb_zone = lighting.write_rgb_zone
 local restore_rgb_control = lighting.restore_rgb_control
+local profile_managed = lighting.profile_managed
 local function keyboard_layout(dev)
   if not dev.hidpp.features[KEYBOARD_LAYOUT_2] then return "unknown" end
   local country = feature(dev, KEYBOARD_LAYOUT_2, 0x00):byte(1)
@@ -554,7 +532,8 @@ local function write_eq_bands(dev, values)
   for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
 end
 
-local callbacks = {
+local callbacks
+callbacks = {
   event_source = function(event)
     local report = event.report
     if #report < 4 then return false end
@@ -624,22 +603,35 @@ local callbacks = {
       local f0, f1, f2 = 0, 0, 0
       if ok then f0, f1, f2 = flags:byte(1) or 0, flags:byte(2) or 0, flags:byte(3) or 0 end
       v1_write(dev, DIRECT, 0x0000, bytes(f0, f1 | 0x09, f2), true)
-      return { ok = true, model = product_name(dev.match.pid), capabilities = { "pairing" } }
+      return { ok = true, model = dev.receiver.name, capabilities = { "pairing" } }
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
     local features = enumerate_features_with_retry(dev, devnum)
     dev.hidpp = { devnum = devnum, features = features }
     local profile = device_profile(dev)
     dev.profile = profile
-    local layout = profile.topology == "keyboard" and keyboard_layout(dev) or nil
-    local name = read_name(dev, devnum, features) or profile.name
+    local layout, remap_controls = nil, {}
+    local name = read_name(dev, devnum, features) or UNNAMED_DEVICE
 
     local result = { ok = true, model = name, capabilities = {},
       controls = { ranges = {}, choices = {}, booleans = {}, actions = {} } }
     local function capability(name) result.capabilities[#result.capabilities + 1] = name end
-    if profile.device_type == "keyboard" then
-      result.keyboard = gpro_tkl_keyboard(layout)
-      capability("keyboard_layout")
+    local function per_key_channel(led_ids)
+      local keyboard, form_factor = discovered_keyboard(led_ids, profile)
+      if keyboard then
+        layout = keyboard_layout(dev)
+        keyboard.detected_language = layout
+        if profile.gkeys_on_function_row then
+          keyboard_with_remap(keyboard, dev.remap.backend, remap_controls)
+        end
+        result.keyboard = keyboard
+        capability("keyboard_layout")
+      end
+      return { id = "zone_0", name = keyboard and "Keys" or "Lighting",
+        topology = keyboard and "keyboard" or "linear",
+        led_count = #led_ids, led_ids = led_ids,
+        keyboard_form_factor = keyboard and form_factor or nil,
+        keyboard_layout = layout }
     end
     -- Declare only capabilities actually advertised by the feature table.
     -- Their packet implementations are added below as the corresponding
@@ -684,7 +676,7 @@ local callbacks = {
       -- remap only takes effect in host mode. See docs/hidpp2.md.
       result.key_remap = { buttons = buttons, requires_host_mode = dev.onboard ~= nil,
         default_mappings = defaults }
-      result.keyboard = keyboard_with_remap(result.keyboard, dev.remap.backend, buttons)
+      remap_controls = buttons
       capability("key_remap")
     end
     local rates = report_rates(dev)
@@ -703,16 +695,13 @@ local callbacks = {
         local static_slots, effect_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
         local led_ids = has(features, PER_KEY_LIGHTING_V2)
           and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
-        local wire = #led_ids > 0 and count == 1 and "per_key" or "rgb_effects"
+        local wire = #led_ids > 0 and "per_key" or "rgb_effects"
         local native, native_descriptors = resolve_native_effects(effect_slots)
         dev.lighting = { wire = wire, channels = count, static_slots = static_slots,
           effect_slots = effect_slots, native = native, led_ids = led_ids }
         result.channels = {}
-        if #led_ids > 0 and count == 1 then
-          result.channels[1] = { id = "zone_0", name = profile.zone_name or "Lighting",
-            topology = profile.topology or "linear", led_count = #led_ids, led_ids = led_ids,
-            keyboard_form_factor = profile.topology == "keyboard" and "t_k_l" or nil,
-            keyboard_layout = layout }
+        if #led_ids > 0 then
+          result.channels[1] = per_key_channel(led_ids)
         else
           for zone = 0, count - 1 do result.channels[#result.channels + 1] = {
             id = "zone_" .. zone, name = "Zone " .. (zone + 1), topology = "linear", led_count = 1 } end
@@ -727,7 +716,13 @@ local callbacks = {
           }
         end
         result.native_effects = native_descriptors
-        feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
+        restore_rgb_control(dev)
+        if profile_managed(dev) then
+          result.controls.booleans[#result.controls.booleans + 1] = {
+            key = "host_mode", label = "Host mode", category = "Onboard Memory"
+          }
+          result.booleans = result.booleans or {}; result.booleans.host_mode = true
+        end
         capability("lighting")
       end
     elseif has(features, COLOR_LED_EFFECTS) then
@@ -747,10 +742,7 @@ local callbacks = {
       local led_ids = discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order)
       if #led_ids > 0 then
         dev.lighting = { wire = "per_key", channels = 1, static_slots = { 0 }, led_ids = led_ids }
-        result.channels = {{ id = "zone_0", name = profile.zone_name or "Lighting",
-          topology = profile.topology or "linear", led_count = #led_ids, led_ids = led_ids,
-          keyboard_form_factor = profile.topology == "keyboard" and "t_k_l" or nil,
-          keyboard_layout = layout }}
+        result.channels = { per_key_channel(led_ids) }
         capability("lighting")
       end
     end
@@ -828,7 +820,7 @@ local callbacks = {
     if has(features, UNIFIED_BATTERY) or has(features, ADC_MEASUREMENT) or has(features, BATTERY_VOLTAGE) then
       capability("battery")
     end
-    if dev.match.key or profile.wireless or has(features, WIRELESS_DEVICE_STATUS) then
+    if dev.match.key or has(features, WIRELESS_DEVICE_STATUS) then
       capability("connection")
     end
     if #result.controls.ranges > 0 or #result.controls.choices > 0
@@ -850,8 +842,7 @@ local callbacks = {
     -- Direct HID++ collections are not claimed as wireless merely because a
     -- product also has a wireless SKU; that is the native transport policy.
     if dev.match.key then return { connection_type = "wireless" } end
-    if (dev.profile and dev.profile.wireless)
-        or (dev.hidpp and dev.hidpp.features[WIRELESS_DEVICE_STATUS]) then
+    if dev.hidpp and dev.hidpp.features[WIRELESS_DEVICE_STATUS] then
       return { connection_type = "wired" }
     end
     return nil
@@ -903,6 +894,15 @@ local callbacks = {
         dev.current_dpi=state.profile_steps[(state.current_index or 0)+1] or dev.current_dpi
         return { state_changed = true }
       end
+    end
+    local active = lighting.user_activity_report(dev, event.report)
+    if active == false then
+      lighting.sleep_lighting(dev)
+      return nil
+    elseif active and dev.lighting.sleeping then
+      if dev.lighting.last_state then callbacks.apply(dev, dev.lighting.last_state)
+      else restore_rgb_control(dev) end
+      return nil
     end
     local buttons = button_events(dev, event.report)
     if not buttons then return nil end
@@ -1028,7 +1028,11 @@ local callbacks = {
     end
   end,
   set_boolean = function(dev, key, value)
-    if key == "host_mode" then
+    if key == "host_mode" and dev.lighting and profile_managed(dev) then
+      if not value then lighting.release_rgb_control(dev)
+      elseif dev.lighting.last_state then callbacks.apply(dev, dev.lighting.last_state)
+      else restore_rgb_control(dev) end
+    elseif key == "host_mode" then
       if not dev.onboard then error("ONBOARD_PROFILES unavailable") end
       set_onboard_mode(dev, value)
       if value then remap.rearm(dev)
@@ -1054,6 +1058,9 @@ local callbacks = {
   get_booleans = function(dev)
     local out = {}
     if dev.onboard then out[#out + 1] = { key = "host_mode", value = onboard_mode(dev) == 2 } end
+    if dev.lighting and profile_managed(dev) then
+      out[#out + 1] = { key = "host_mode", value = lighting.host_mode(dev) }
+    end
     if dev.hires then
       local current = feature(dev, HIRES_WHEEL, 0x10):byte(1) or dev.hires.mode or 0
       dev.hires.mode = current
@@ -1099,6 +1106,7 @@ local callbacks = {
     dev.equalizer.result.selected_preset = 0
   end,
   apply = function(dev, state)
+    if dev.lighting then dev.lighting.last_state = state end
     if state.mode == "native_effect" then
       if dev.lighting and dev.lighting.native then
         -- Match the native driver: every explicit state apply reclaims LED
@@ -1141,6 +1149,7 @@ local callbacks = {
   write_frame = function(dev, zone_id, bytes)
   local colors = {}
   for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
+    if dev.lighting and dev.lighting.sleeping then return end
     write_rgb_zone(dev, zone_id, colors)
   end,
   close = function(_dev) end,

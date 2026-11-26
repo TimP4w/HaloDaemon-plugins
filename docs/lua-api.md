@@ -777,7 +777,7 @@ halod plugin-test .\openrgb
 
 | Harness API | Meaning |
 |---|---|
-| `h:open({ reads = {...}, pid = ..., companion = ..., write_error = ... })` | Open the first declared HID, USB, or TCP device with recording transports; `write_error` makes stream writes fail with that message. |
+| `h:open({ reads = {...}, pid = ..., companion = ..., write_error = ..., refused_report_ids = {...} })` | Open the first declared HID, USB, or TCP device with recording transports; `write_error` makes stream writes fail with that message, and `refused_report_ids` fails only writes whose first byte is one of those report ids, as the OS does for a report the descriptor does not declare. |
 | `h:open_integration({ reads = {...} })` | Open an integration root over mock TCP. |
 | `h:open_integration({ hwmon = {...} })` | Open an hwmon integration over fixture chips. |
 | `h:assert(condition, message)` | Record an assertion. |
@@ -796,8 +796,9 @@ halod plugin-test .\openrgb
 | `dev:set_profile_enabled(slot, enabled)` | Change an onboard profile directory entry. |
 | `dev:set_dpi(dpi)` | Exercise a direct DPI write through the host's bound validation. |
 | `dev:discover(context)` | Run the integration's `discover` hook on fixture records and return its candidates. |
+| `dev:pair(context)` | Run the integration's `pair` hook and return its `ok`, `pending`, `reason`, and `values`. |
 | `dev:enumerate_controllers()` | Return integration controller records. |
-| `dev:open_controller(index)` | Open one enumerated integration child for capability tests. |
+| `dev:open_controller(index)` | Open one enumerated integration child for capability tests. `child:close()` runs its `close_child` hook. |
 | `dev:hwmon_read(key, attribute)` | Inspect a fixture attribute after plugin writes. |
 | `dev:keyboard_layout_status()` | Return resolved runtime keyboard keys/layout. |
 | `dev:lighting_descriptor()` | Return the resolved lighting channels and LED positions. |

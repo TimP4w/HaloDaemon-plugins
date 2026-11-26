@@ -45,6 +45,8 @@ Registers (`v1/mod.rs`):
 | `0x00B2` | `REG_RECEIVER_PAIRING` | open/close the pairing lock and unpair a slot (Unifying-style); see §2 |
 | `0x00F1` | firmware info | param `0x01`/`0x02` = firmware major.minor / build, `0x03` = bootloader (not used) |
 
+`INFO_DEVICE_NAME` replies `[selector, length, name…]`. Every paired device is named `Logitech <name>` from this record, so it is identified even while asleep; the plugin keeps no name table. Its type comes from the kind nibble of the pairing record.
+
 ---
 
 ## 2. Receiver operations
