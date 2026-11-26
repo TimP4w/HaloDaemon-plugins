@@ -38,6 +38,23 @@ local function device_profile(dev)
         [152] = { col = 12.0, row = -1.5 }, [154] = { col = 13.0, row = -1.5 },
         [153] = { col = 14.0, row = -1.5 },
       } }
+  elseif pid == 0xc356 or wpid == 0x40b5 then
+    -- Vendor LEDs: logo, G6-G9 above F1-F4, brightness above F8, media keys
+    -- above the numpad, G1-G5 in a column left of the main block.
+    local cells = {
+      [210] = { col = -1.25, row = -1.5 },
+      [185] = { col = 2.0, row = -1.5 }, [186] = { col = 3.0, row = -1.5 },
+      [187] = { col = 4.0, row = -1.5 }, [188] = { col = 5.0, row = -1.5 },
+      [153] = { col = 9.5, row = -1.5 },
+      [158] = { col = 19.5, row = 0.0 }, [155] = { col = 20.5, row = 0.0 },
+      [157] = { col = 21.5, row = 0.0 }, [156] = { col = 22.5, row = 0.0 },
+    }
+    local controls = { [158] = 0x00e4, [155] = 0x00e5, [157] = 0x00e6, [156] = 0x00e7 }
+    for n = 1, 9 do
+      controls[179 + n] = 0x018e + n
+      if n <= 5 then cells[179 + n] = { col = -1.25, row = n + 0.5 } end
+    end
+    return { extra_key_cells = cells, vendor_key_controls = controls }
   elseif pid == 0x0a78 then
     return {
       zone_names = { [0] = "Left Secondary", [1] = "Right Secondary", [2] = "Left Primary", [3] = "Right Primary" },
@@ -84,7 +101,7 @@ local function usage_key(led_id)
   return USAGE_ORDER_KEYS[led_id] or MODIFIER_KEYS[led_id] or nil
 end
 
-local function discovered_variant(led_ids, iso, full_size, extra_cells)
+local function discovered_variant(led_ids, iso, full_size, extra_cells, vendor_controls)
   local keys, next_extra_col = {}, 0
   for _, id in ipairs(led_ids) do
     local key = usage_key(id)
@@ -101,7 +118,7 @@ local function discovered_variant(led_ids, iso, full_size, extra_cells)
         cell = { col = next_extra_col, row = -1.5 }
         next_extra_col = next_extra_col + 1
       end
-      keys[#keys + 1] = { led_id = id, cell = cell }
+      keys[#keys + 1] = { led_id = id, cell = cell, vendor_cid = vendor_controls[id] }
     end
   end
   local base = full_size and "full_size" or "tkl"
@@ -117,9 +134,10 @@ local function discovered_keyboard(led_ids, profile)
   end
   for id = 1, 26 do if not present[id] then return nil end end
   local extra_cells = profile.extra_key_cells or {}
+  local vendor_controls = profile.vendor_key_controls or {}
   return {
-    ansi = discovered_variant(led_ids, false, full_size, extra_cells),
-    iso = discovered_variant(led_ids, true, full_size, extra_cells),
+    ansi = discovered_variant(led_ids, false, full_size, extra_cells, vendor_controls),
+    iso = discovered_variant(led_ids, true, full_size, extra_cells, vendor_controls),
     detected_language = "unknown",
     languages = { "u_s", "c_h", "i_t", "d_e", "f_r", "u_k" },
   }, full_size and "full_size" or "t_k_l"
@@ -136,16 +154,20 @@ end
 
 local CONTROL_KEYS = halod.require("lib.hidpp2.control_keys")
 
--- Standard keys carry their own control id on FULL_KEY_CUSTOMIZATION devices.
+-- Standard keys carry their own control id on FULL_KEY_CUSTOMIZATION devices;
+-- a vendor key is bound through the control id its model profile names.
 local function bind_keys_to_controls(keyboard, buttons)
-  local cid_of_key = {}
+  local cid_of_key, present = {}, {}
   for _, button in ipairs(buttons) do
+    present[button.cid] = true
     local key = CONTROL_KEYS[button.cid]
     if key then cid_of_key[key] = button.cid end
   end
   for _, variant in pairs({ keyboard.ansi, keyboard.iso }) do
     for _, mapping in ipairs(variant.keys) do
-      if mapping.key and cid_of_key[mapping.key] then mapping.remap_cid = cid_of_key[mapping.key] end
+      if mapping.key and cid_of_key[mapping.key] then mapping.remap_cid = cid_of_key[mapping.key]
+      elseif mapping.vendor_cid and present[mapping.vendor_cid] then mapping.remap_cid = mapping.vendor_cid end
+      mapping.vendor_cid = nil
     end
   end
 end

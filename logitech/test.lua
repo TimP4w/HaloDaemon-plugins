@@ -1822,6 +1822,22 @@ return function(h)
   h:assert_eq(bound_key(fkc_bound, "escape"), 0x014c, "every documented standard key binds")
   h:assert_eq(bound_key(fkc_bound, "b"), nil, "keys without a listed control stay unbound")
   h:assert_eq(halod.require("lib.hidpp2.control_keys")[0x0177], "num7", "numpad control ids bind to numpad keys")
+  local full_ids = {}
+  for id = 1, 111 do full_ids[#full_ids + 1] = id end
+  for _, id in ipairs({ 153, 155, 156, 157, 158, 180, 181, 182, 183, 184, 185, 186, 187, 188, 210 }) do
+    full_ids[#full_ids + 1] = id
+  end
+  local g915 = profiles.discovered_keyboard(full_ids, profiles.device_profile({ match = { pid = 0xc356 } }))
+  local g915_keys = {}
+  for _, mapping in ipairs(g915.ansi.keys) do g915_keys[mapping.led_id] = mapping end
+  h:assert_eq(g915_keys[180].cell, { col = -1.25, row = 1.5 }, "G1 sits left of the number row")
+  h:assert_eq(g915_keys[188].cell, { col = 5.0, row = -1.5 }, "G9 sits above F4")
+  h:assert_eq(g915_keys[155].cell, { col = 20.5, row = 0.0 }, "play sits above the numpad")
+  profiles.keyboard_with_remap(g915, "fkc", { { cid = 0x018f }, { cid = 0x00e5 }, { cid = 0x0122 } })
+  h:assert_eq(g915_keys[180].remap_cid, 0x018f, "G1 binds to its G-key control")
+  h:assert_eq(g915_keys[155].remap_cid, 0x00e5, "play binds to its media control")
+  h:assert_eq(g915_keys[153].remap_cid, nil, "a vendor key without a listed control stays unbound")
+  h:assert_eq(g915_keys[1].remap_cid, 0x0122, "standard keys still bind by control id")
   h:assert_eq(halod.require("lib.hidpp2.controls")[0x0192], "G4", "G-key control ids are labelled")
   h:assert_eq(halod.require("lib.hidpp2.controls")[0x018c], "Left Start", "alt/start control ids are labelled")
   end

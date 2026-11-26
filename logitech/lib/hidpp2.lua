@@ -530,6 +530,7 @@ end
 -- active profile's first 0x1b05 reference names.
 local function write_fkc_preset(dev, cidxs)
   local state, id, _, p = active_profile(dev)
+  log(string.format("logitech: key preset for profile %d takes over %d key(s)", id, #cidxs), "info")
   if #state.refs == 0 then error("onboard profile cannot reference a key preset") end
   local file_id = p.refs[1] or next_file_id(state.user)
   pm.write_entry(dev, state, file_id, pm.FKC_TYPE, fkc.disable_preset(cidxs))
@@ -1119,6 +1120,8 @@ callbacks = {
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_button_mapping = function(dev, mapping)
+    log(string.format("logitech: map cid 0x%04X base=%s shifted=%s", mapping.cid,
+      mapping.base and mapping.base.type or "native", mapping.shifted and mapping.shifted.type or "native"), "info")
     set_remap_mapping(dev, mapping.cid, not action_is_native(mapping.base),
       not action_is_native(mapping.shifted))
   end,
@@ -1128,6 +1131,7 @@ callbacks = {
   reset_all_button_mappings = function(dev)
     local remap = dev.remap
     if not remap then return end
+    log("logitech: reset all key mappings", "info")
     local cids = {}
     for cid in pairs(remap.base) do cids[cid] = true end
     for cid in pairs(remap.shifted) do cids[cid] = true end
