@@ -139,6 +139,18 @@ local function apply_native_effect(dev, id, params)
   end
 end
 
+-- The onboard profile stores an effect as its wire id and parameter bytes.
+local function native_record(dev, id, params)
+  local zones = dev.lighting and dev.lighting.native and dev.lighting.native[id]
+  if not zones then error("native effect is not supported by this device") end
+  local entry = zones[0] or zones[next(zones)]
+  return entry.variant.wire, entry.variant.encode(params or {})
+end
+
+local function static_record(color)
+  return 0x01, { color.r or 0, color.g or 0, color.b or 0, 0x02, 0, 0, 0, 0, 0, 0 }
+end
+
 local function ordered_led_ids(ids, preferred)
   if not preferred then table.sort(ids); return ids end
   local present, out = {}, {}
@@ -419,6 +431,7 @@ local function restore_rgb_control(dev)
     retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(HOST_MODE))
     retried(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
     dev.lighting.claimed_at = halod.monotonic_ms()
+    dev.lighting.host = true
     if dev.lighting.sleeping then
       dev.lighting.sleeping = false
       retried(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
@@ -436,6 +449,7 @@ end
 
 local function release_rgb_control(dev)
   dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
+  dev.lighting.host = false
   retried(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
   retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE))
 end
@@ -464,6 +478,8 @@ end
 return {
   resolve_native_effects = resolve_native_effects,
   apply_native_effect = apply_native_effect,
+  native_record = native_record,
+  static_record = static_record,
   discover_per_key_ids = discover_per_key_ids,
   rgb_static_slots = rgb_static_slots,
   color_led_zones = color_led_zones,

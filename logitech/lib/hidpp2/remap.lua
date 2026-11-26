@@ -8,6 +8,8 @@ local bytes, request, feature = api.bytes, api.request, api.feature
 local DIRECT, device_profile = api.direct, api.device_profile
 local REPROG_CONTROLS_V4 = api.reprog_controls_v4
 local GKEY, MOUSE_BUTTON_SPY = api.gkey, api.mouse_button_spy
+local FKC, CONTROL_LIST = api.full_key_customization, api.control_list
+local fkc, write_fkc_preset = api.fkc, api.write_fkc_preset
 local CONTROLS = halod.require("lib.hidpp2.controls")
 
 local function action_is_native(action)
@@ -47,6 +49,18 @@ local function remap_buttons(dev)
         buttons[#buttons + 1] = { cid = i, label = labels and labels[i] or ("Button " .. i), divertable = true, group = 0 }
       end
     end
+  elseif features[FKC] and features[CONTROL_LIST] then
+    backend = "fkc"
+    local index = {}
+    for i, cid in ipairs(fkc.control_list(dev)) do
+      if cid ~= 0 and not index[cid] then
+        index[cid] = i - 1
+        buttons[#buttons + 1] = { cid = cid, label = CONTROLS[cid] or string.format("Key 0x%04X", cid),
+          divertable = true, group = 0 }
+      end
+    end
+    dev.fkc = { index = index, cids = {} }
+    for cid, cidx in pairs(index) do dev.fkc.cids[cidx] = cid end
   end
   dev.remap = { backend = backend, base = {}, shifted = {}, layer = false, previous = {} }
   if backend == "spy" then
@@ -75,6 +89,8 @@ local function any_mapped(remap)
   return next(remap.base) ~= nil or next(remap.shifted) ~= nil
 end
 
+local suppressed_cidxs
+
 -- Remap table entry n-1 is the HID button physical button n reports; 0
 -- suppresses the native report while the spy event still fires.
 local function write_spy_table(dev)
@@ -87,6 +103,19 @@ local function write_spy_table(dev)
     for cid in pairs(remap.shifted) do out[spy_button(cid)] = out[spy_button(cid)] and 0 end
   end
   feature(dev, MOUSE_BUTTON_SPY, 0x40, bytes(table.unpack(out)))
+end
+
+-- Control-list indexes of every key whose native output is suppressed.
+suppressed_cidxs = function(dev)
+  local remap, out = dev.remap, {}
+  local cids = {}
+  for cid in pairs(remap.base) do cids[cid] = true end
+  for cid in pairs(remap.shifted) do cids[cid] = true end
+  for cid in pairs(cids) do
+    local cidx = dev.fkc.index[cid]
+    if cidx and suppressed(remap, cid) then out[#out + 1] = cidx end
+  end
+  return out
 end
 
 local function write_divert(dev, cid, divert)
@@ -115,6 +144,12 @@ local function sync(dev, before)
     end
     if changed then write_spy_table(dev) end
     if had_any and not any then feature(dev, MOUSE_BUTTON_SPY, 0x20) end
+  elseif remap.backend == "fkc" then
+    local changed = had_any ~= any
+    for cid in pairs(before.cids) do
+      if suppressed(remap, cid) ~= before.suppressed[cid] then changed = true end
+    end
+    if changed then write_fkc_preset(dev, suppressed_cidxs(dev)) end
   end
 end
 
@@ -162,24 +197,33 @@ end
 local function button_events(dev, packet_in)
   local remap = dev.remap
   if not remap or not remap.backend or #packet_in < 4 then return nil end
-  local devnum = dev.match.index or DIRECT
+  local devnum = dev.hidpp and dev.hidpp.devnum or dev.match.index or DIRECT
   if packet_in:byte(2) ~= devnum then return nil end
   local sub, address = packet_in:byte(3), packet_in:byte(4)
-  if address ~= 0 then return nil end
-  local expected = remap.backend == "reprog" and dev.hidpp.features[REPROG_CONTROLS_V4]
-    or remap.backend == "gkey" and dev.hidpp.features[GKEY]
-    or dev.hidpp.features[MOUSE_BUTTON_SPY]
-  if sub ~= expected then return nil end
   local current = {}
-  if remap.backend == "reprog" then
-    for pos = 5, math.min(#packet_in - 1, 12), 2 do
-      local hi, lo = packet_in:byte(pos), packet_in:byte(pos + 1)
-      local cid = hi and lo and ((hi << 8) | lo) or 0
-      if cid ~= 0 then current[#current + 1] = cid end
+  if remap.backend == "fkc" then
+    local pressed = fkc.trigger_event(dev, packet_in)
+    if not pressed then return nil end
+    for cidx in pairs(pressed) do
+      local cid = dev.fkc.cids[cidx]
+      if cid then current[#current + 1] = cid end
     end
   else
-    local bits = (packet_in:byte(5) or 0) | ((packet_in:byte(6) or 0) << 8)
-    for bit = 0, 15 do if (bits & (1 << bit)) ~= 0 then current[#current + 1] = bit + 1 end end
+    if address ~= 0 then return nil end
+    local expected = remap.backend == "reprog" and dev.hidpp.features[REPROG_CONTROLS_V4]
+      or remap.backend == "gkey" and dev.hidpp.features[GKEY]
+      or dev.hidpp.features[MOUSE_BUTTON_SPY]
+    if sub ~= expected then return nil end
+    if remap.backend == "reprog" then
+      for pos = 5, math.min(#packet_in - 1, 12), 2 do
+        local hi, lo = packet_in:byte(pos), packet_in:byte(pos + 1)
+        local cid = hi and lo and ((hi << 8) | lo) or 0
+        if cid ~= 0 then current[#current + 1] = cid end
+      end
+    else
+      local bits = (packet_in:byte(5) or 0) | ((packet_in:byte(6) or 0) << 8)
+      for bit = 0, 15 do if (bits & (1 << bit)) ~= 0 then current[#current + 1] = bit + 1 end end
+    end
   end
   local previous, pressed, released = remap.previous, {}, {}
   for _, cid in ipairs(current) do if not previous[cid] then pressed[#pressed + 1] = cid end end

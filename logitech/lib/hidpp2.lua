@@ -31,6 +31,8 @@ local ONBOARD_PROFILES = 0x8100
 local PROFILE_MANAGEMENT = 0x8101
 local KEYBOARD_LAYOUT_2 = 0x4540
 local REPROG_CONTROLS_V4 = 0x1b04
+local FULL_KEY_CUSTOMIZATION = 0x1b05
+local CONTROL_LIST = 0x1b10
 local GKEY = 0x8010
 local MOUSE_BUTTON_SPY = 0x8110
 local SIDETONE = 0x8300
@@ -290,6 +292,7 @@ local device_profile = profiles.device_profile
 local keyboard_with_remap = profiles.keyboard_with_remap
 local discovered_keyboard = profiles.discovered_keyboard
 local function has(features, code) return features[code] ~= nil end
+local profile_signature
 
 local VOLTAGE_CURVE = {
   { 100, 4186 }, { 90, 4067 }, { 80, 3989 }, { 70, 3922 },
@@ -484,6 +487,59 @@ local onboard = halod.require("lib.hidpp2.onboard")({
   bytes = bytes, feature = feature, feature_id = ONBOARD_PROFILES,
   restore_rgb_control = restore_rgb_control,
 })
+local pm = halod.require("lib.hidpp2.profile_mgmt")({
+  bytes = bytes, feature = feature, feature_id = PROFILE_MANAGEMENT,
+})
+local fkc = halod.require("lib.hidpp2.fkc")({
+  bytes = bytes, feature = feature, request = request,
+  feature_id = FULL_KEY_CUSTOMIZATION, control_list = CONTROL_LIST,
+})
+
+local function active_profile(dev)
+  local state = dev.pm or pm.refresh(dev)
+  local id = pm.active_profile(state) or error("device has no onboard profile")
+  local profile = state.profiles[id]
+  return state, id, profile, profile.parsed or error("onboard profile could not be decoded")
+end
+
+-- Reloads the profile so the firmware picks up a changed file; the lighting
+-- claim is renewed because activation hands the LEDs back to the firmware.
+local function activate_profile(dev, state, id, reclaim)
+  pm.activate_profile(dev, state, id)
+  state.mode = pm.mode(dev)
+  if reclaim ~= false and dev.lighting and dev.lighting.host then restore_rgb_control(dev) end
+end
+
+-- Writes the LED records of the active profile and makes the firmware reload it.
+local function profile_lighting(dev, records, flags, reclaim)
+  local state, id, profile, p = active_profile(dev)
+  for index, record in pairs(records) do p.leds[index] = record end
+  p.flags = flags
+  local data = pm.serialize_profile(p)
+  if data ~= profile.data then pm.write_profile(dev, state, id, data) end
+  activate_profile(dev, state, id, reclaim)
+end
+
+local function next_file_id(dir)
+  local id = 0
+  for _, e in ipairs(dir.entries) do if e.id > id then id = e.id end end
+  return id + 1
+end
+
+-- The taken-over keys live in a FULL_KEY_CUSTOMIZATION preset file that the
+-- active profile's first 0x1b05 reference names.
+local function write_fkc_preset(dev, cidxs)
+  local state, id, _, p = active_profile(dev)
+  if #state.refs == 0 then error("onboard profile cannot reference a key preset") end
+  local file_id = p.refs[1] or next_file_id(state.user)
+  pm.write_entry(dev, state, file_id, pm.FKC_TYPE, fkc.disable_preset(cidxs))
+  if p.refs[1] ~= file_id then
+    p.refs[1] = file_id
+    pm.write_profile(dev, state, id, pm.serialize_profile(p))
+  end
+  if not fkc.enabled(dev) then fkc.set_enabled(dev, true) end
+  activate_profile(dev, state, id)
+end
 local onboard_mode = onboard.mode
 local set_onboard_mode = onboard.set_mode
 local with_sector_crc = onboard.with_sector_crc
@@ -499,12 +555,36 @@ local remap = halod.require("lib.hidpp2.remap")({
   device_profile = device_profile,
   reprog_controls_v4 = REPROG_CONTROLS_V4, gkey = GKEY,
   mouse_button_spy = MOUSE_BUTTON_SPY,
+  full_key_customization = FULL_KEY_CUSTOMIZATION, control_list = CONTROL_LIST,
+  fkc = fkc, write_fkc_preset = write_fkc_preset,
 })
 local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
 local set_remap_mapping = remap.set_mapping
 local action_is_native = remap.action_is_native
 local button_events = remap.events
+-- The firmware's signature pair in the active profile, if the profile carries one.
+profile_signature = function(dev)
+  local state = dev.pm
+  local id = state and pm.active_profile(state)
+  local p = id and state.profiles[id].parsed
+  if not p then return nil end
+  local active, inactive = pm.signature(p)
+  if not active then return nil end
+  return { active = active, inactive = inactive, params = p.leds[1].params }
+end
+
+local function signature_params(params, defaults)
+  local function rgb(c, offset)
+    if type(c) ~= "table" then return defaults[offset + 1], defaults[offset + 2], defaults[offset + 3] end
+    return c.r or 0, c.g or 0, c.b or 0
+  end
+  local r1, g1, b1 = rgb(params.color, 0)
+  local r2, g2, b2 = rgb(params.color2, 3)
+  local brightness = math.floor(math.max(1, math.min(100, params.brightness or defaults[9] or 100)) + 0.5)
+  return { r1, g1, b1, r2, g2, b2, 0, 0, brightness, 0 }
+end
+
 local function set_sensor_dpi(dev, dpi)
   local index = dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]
   if not index then error("ADJUSTABLE_DPI unavailable") end
@@ -621,7 +701,7 @@ callbacks = {
       if keyboard then
         layout = keyboard_layout(dev)
         keyboard.detected_language = layout
-        if profile.gkeys_on_function_row then
+        if profile.gkeys_on_function_row or dev.remap.backend == "fkc" then
           keyboard_with_remap(keyboard, dev.remap.backend, remap_controls)
         end
         result.keyboard = keyboard
@@ -644,6 +724,9 @@ callbacks = {
       }
       result.booleans = result.booleans or {}; result.booleans.host_mode = state.mode == 2
       if #state.directory > 0 then capability("onboard_profiles") end
+    elseif has(features, PROFILE_MANAGEMENT) then
+      local state = pm.refresh(dev)
+      if next(state.profiles) then capability("onboard_profiles") end
     end
     if has(features, ADJUSTABLE_DPI) then
       local available = dpi_list(dev, features[ADJUSTABLE_DPI])
@@ -713,6 +796,23 @@ callbacks = {
             id = "signature", name = profile.signature_name or "Signature",
             params = {{ id = "brightness", label = "Brightness",
               kind = { kind = "range", min = 1, max = 100, step = 1 }, default = 100 }},
+          }
+        end
+        -- A tag-managed profile keeps the firmware's two-colour signature in
+        -- its first LED record.
+        local signature = dev.pm and profile_signature(dev)
+        if signature then
+          local p = signature.params
+          native_descriptors[#native_descriptors + 1] = {
+            id = "signature", name = profile.signature_name or "Signature",
+            params = {
+              { id = "color", label = "Color", kind = { kind = "color" },
+                default = { r = p[1], g = p[2], b = p[3] } },
+              { id = "color2", label = "Second Color", kind = { kind = "color" },
+                default = { r = p[4], g = p[5], b = p[6] } },
+              { id = "brightness", label = "Brightness",
+                kind = { kind = "range", min = 1, max = 100, step = 1 }, default = p[9] > 0 and p[9] or 100 },
+            },
           }
         end
         result.native_effects = native_descriptors
@@ -895,6 +995,11 @@ callbacks = {
         return { state_changed = true }
       end
     end
+    if dev.pm and report_devnum == dev.hidpp.devnum
+        and sub == dev.hidpp.features[PROFILE_MANAGEMENT] and (event.report:byte(4) & 0x0f) == 0 then
+      dev.pm.mode = pm.mode(dev)
+      return { state_changed = true }
+    end
     local active = lighting.user_activity_report(dev, event.report)
     if active == false then
       lighting.sleep_lighting(dev)
@@ -942,8 +1047,29 @@ callbacks = {
   key_remap_host_mode = function(dev)
     return not dev.onboard or dev.onboard.mode == 2
   end,
-  onboard_profiles_status = onboard_status,
+  onboard_profiles_status = function(dev)
+    if not dev.pm then return onboard_status(dev) end
+    local state = dev.pm
+    local host = dev.lighting and dev.lighting.host
+    if host == nil then host = state.mode.host end
+    local active = not host and state.mode.active or 0
+    local slots = {}
+    for _, e in ipairs(state.user.entries) do
+      if e.type == pm.PROFILE_TYPE then
+        slots[#slots + 1] = { index = e.id, read_only = false, enabled = true,
+          active = active == e.id, has_rom_default = pm.entry(state.factory, e.id, pm.PROFILE_TYPE) ~= nil }
+      end
+    end
+    return { active_slot = active, slots = slots }
+  end,
   switch_profile = function(dev, slot)
+    if dev.pm then
+      local state = dev.pm
+      state.mode = pm.mode(dev)
+      if state.mode.host then error("device is in host mode; switch to onboard mode first") end
+      activate_profile(dev, state, slot)
+      return
+    end
     local state = refresh_onboard(dev)
     if state.mode == 2 then error("device is in host mode; switch to onboard mode first") end
     local enabled = false
@@ -955,6 +1081,12 @@ callbacks = {
     refresh_onboard(dev)
   end,
   restore_profile = function(dev, slot)
+    if dev.pm then
+      local state = dev.pm
+      pm.restore_profile(dev, state, slot)
+      if pm.active_profile(state) == slot then activate_profile(dev, state, slot) end
+      return
+    end
     if slot >= 0x0100 then error("profile is read-only") end
     local state = refresh_onboard(dev)
     if slot > state.rom_count then error("profile has no factory default") end
@@ -962,6 +1094,7 @@ callbacks = {
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_profile_enabled = function(dev, slot, enabled)
+    if dev.pm then error("the onboard profiles of this device cannot be disabled") end
     if slot >= 0x0100 then error("profile is read-only") end
     local state = refresh_onboard(dev)
     local found = false
@@ -1029,8 +1162,11 @@ callbacks = {
   end,
   set_boolean = function(dev, key, value)
     if key == "host_mode" and dev.lighting and profile_managed(dev) then
+      local last = dev.lighting.last_state
       if not value then lighting.release_rgb_control(dev)
-      elseif dev.lighting.last_state then callbacks.apply(dev, dev.lighting.last_state)
+      elseif last and not (last.mode == "native_effect" and last.id == "signature") then
+        dev.lighting.host = true
+        callbacks.apply(dev, last)
       else restore_rgb_control(dev) end
     elseif key == "host_mode" then
       if not dev.onboard then error("ONBOARD_PROFILES unavailable") end
@@ -1109,6 +1245,24 @@ callbacks = {
     if dev.lighting then dev.lighting.last_state = state end
     if state.mode == "native_effect" then
       if dev.lighting and dev.lighting.native then
+        local signature = dev.pm and state.id == "signature" and profile_signature(dev)
+        if signature then
+          -- The firmware plays its signature from the profile, so the host
+          -- hands the LEDs back after writing it.
+          local params = signature_params(state.params or {}, signature.params)
+          profile_lighting(dev, {
+            [1] = { id = signature.active, params = params },
+            [3] = { id = signature.inactive, params = params },
+          }, pm.FLAGS_SIGNATURE, false)
+          if dev.lighting.host ~= false then lighting.release_rgb_control(dev) end
+          return
+        end
+        if dev.pm and dev.lighting.host == false then
+          local wire, params = lighting.native_record(dev, state.id, state.params or {})
+          profile_lighting(dev, { [2] = { id = wire, params = params }, [4] = { id = wire, params = params } },
+            pm.FLAGS_CUSTOM)
+          return
+        end
         -- Match the native driver: every explicit state apply reclaims LED
         -- control. Onboard mode, reconnects, and prior effects can make the
         -- firmware silently ignore otherwise-valid per-key packets. It is also
@@ -1139,6 +1293,12 @@ callbacks = {
     end
     if state.mode ~= "static" then return end
     local color = state.color or { r = 0, g = 0, b = 0 }
+    if dev.pm and dev.lighting.host == false then
+      local wire, params = lighting.static_record(color)
+      profile_lighting(dev, { [2] = { id = wire, params = params }, [4] = { id = wire, params = params } },
+        pm.FLAGS_CUSTOM)
+      return
+    end
     if dev.lighting.wire == "per_key" then
       local colors = {}; for _ = 1, #dev.lighting.led_ids do colors[#colors + 1] = color end
       write_per_key_frame(dev, colors)

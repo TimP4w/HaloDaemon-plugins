@@ -1,6 +1,317 @@
 -- HID++ feature discovery fixture.  The replies retain the raw report header;
 -- this proves the package emits padded short ROOT and padded long FEATURE_SET
 -- requests with software id 1, exactly like the former messenger.
+local function profile_management_tests(h, report)
+  -- PROFILE_MANAGEMENT codecs against the live G915 X flash.
+  local PM = halod.require("lib.hidpp2.profile_mgmt")({ bytes = string.char,
+    feature = function() error("codec only") end, feature_id = 0x8101 })
+  local FKC = halod.require("lib.hidpp2.fkc")({ bytes = string.char,
+    feature = function() error("codec only") end, request = function() error("codec only") end,
+    feature_id = 0x1b05, control_list = 0x1b10 })
+  local function unhex(text)
+    return (text:gsub("%s+", ""):gsub("..", function(x) return string.char(tonumber(x, 16)) end))
+  end
+  h:assert_eq(PM.crc32("123456789"), 0xcbf43926, "profile files are checked with CRC-32")
+  local live_dir = unhex([[b8 38 06 b2 03 01 81 01 40 63 31 dc 31 09 08 02 81 01 40 63 f5 02 35 0e 09
+    03 81 01 40 63 00 67 34 cc 0a ff]])
+  local parsed_dir = PM.parse_directory(live_dir)
+  h:assert_eq(#parsed_dir.entries, 3, "the directory lists one entry per profile")
+  h:assert_eq(parsed_dir.entries[3], { id = 3, type = 0x8101, flags = 0x40, length = 99,
+    crc = 0x006734cc, location = 0x0a }, "directory entries decode")
+  h:assert_eq(PM.serialize_directory(parsed_dir), live_dir, "the directory round-trips with its checksum")
+  local live_profile = unhex([[
+    01 01 00 3c 01 2c ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff 18 ff
+    00 81 80 aa ff 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 19 ff 00 81 80 aa ff 00 00 64 00 00
+    00 00 00 00 00 00 00 00 00 00 03 00 00 00 00 00 00 00 00 00 00 00 00 44 00 18 08 ff ff ff ff ff
+    ff ff ff]])
+  h:assert_eq(PM.crc32(live_profile), 0x31dc3109, "a profile's directory checksum is its CRC-32")
+  local prof = PM.parse_profile(live_profile, 4)
+  h:assert_eq({ prof.id, prof.idle, prof.sleep, prof.flags }, { 1, 60, 300, 3 }, "profile header decodes")
+  h:assert_eq(prof.leds[1].id, 0x18, "LED record 0 holds the firmware signature")
+  h:assert_eq(prof.leds[3].id, 0x19, "LED record 2 holds the power-saving signature")
+  h:assert_eq(prof.refs, { false, false, false, false }, "unused file references decode as absent")
+  h:assert_eq(PM.serialize_profile(prof), live_profile, "a profile round-trips")
+  prof.refs[1] = 4
+  h:assert_eq({ PM.serialize_profile(prof):byte(92, 93) }, { 0, 4 }, "a file reference is a big-endian id")
+  h:assert_eq(PM.allocate(parsed_dir, 13), 1, "new files take the first free sector")
+  h:assert_eq(PM.allocate({ entries = { { length = 200, location = 1 } } }, 13), 3, "a long file spans sectors")
+  local preset_groups = FKC.decode_preset(FKC.encode_preset({
+    { cidx = 5, rows = { { opcode = 0x8002, action = 0x02, params = 0x04 }, { opcode = 0x8000 } } } }))
+  h:assert_eq(preset_groups[1].cidx, 5, "preset groups name the control-list index")
+  h:assert_eq(preset_groups[1].rows[1], { index = 0, modifiers = 0, action = 2, opcode = 0x8002, params = 4 },
+    "preset rows round-trip")
+  h:assert_eq(preset_groups[1].rows[2].index, 1, "rows are numbered across the file")
+  h:assert_eq(FKC.disable_preset({ 7, 2 }), unhex("00 02 02 01 00 00 00 00 00 00 80 00 00 07 01 01 00 00 00 00 00 80 00 00"),
+    "taken-over keys become sorted disabled rows")
+
+  -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
+  -- with both cluster and power-mode ownership claimed.
+  local function chunk_reports(sub, data, devnum)
+    local out = {}
+    for offset = 1, #data, 16 do
+      out[#out + 1] = report(0x11, devnum or 0x01, sub, 0xc1, { data:byte(offset, offset + 15) })
+    end
+    return out
+  end
+  -- The live factory profile, trimmed to one 0x1b05 file reference.
+  local FACTORY_PROFILE = live_profile:sub(1, 93)
+  local function directory(entries)
+    local out = {}
+    for _, e in ipairs(entries) do
+      out[#out + 1] = { id = e.id, type = e.type, flags = 0x40, length = #e.data,
+        crc = PM.crc32(e.data), location = e.location }
+    end
+    return PM.serialize_directory({ entries = out })
+  end
+  local function pm_reads(sub, user_dir, profile, devnum)
+    devnum = devnum or 0x01
+    local out = {
+      report(0x11, devnum, sub, 0x11, { 0x01, 0x02, 0x12, 0x13, 0x03, 0x0c, 0x0d, 0x0e, 0x0f, 0x07, 0x30,
+        0xe0, 0x1b, 0x05, 0xff }),
+      report(0x11, devnum, sub, 0x61, { 0x03, 0, 1 }),
+      report(0x11, devnum, sub, 0x81, {}),
+    }
+    for _, r in ipairs(chunk_reports(sub, user_dir, devnum)) do out[#out + 1] = r end
+    out[#out + 1] = report(0x11, devnum, sub, 0x81, {})
+    local factory_dir = directory({ { id = 1, type = 0x8101, data = FACTORY_PROFILE, location = 1 } })
+    for _, r in ipairs(chunk_reports(sub, factory_dir, devnum)) do out[#out + 1] = r end
+    out[#out + 1] = report(0x11, devnum, sub, 0x81, {})
+    for _, r in ipairs(chunk_reports(sub, profile, devnum)) do out[#out + 1] = r end
+    return out
+  end
+  local function queue_file_write(dev, sub, data, devnum)
+    devnum = devnum or 0x01
+    dev:queue_read(report(0x11, devnum, sub, 0x21, {}))
+    for _ = 1, math.ceil(#data / 16) do dev:queue_read(report(0x11, devnum, sub, 0x31, {})) end
+    for _, r in ipairs(chunk_reports(sub, data, devnum)) do dev:queue_read(r) end
+    dev:queue_read(report(0x11, devnum, sub, 0x71, {}))
+    dev:queue_read(report(0x11, devnum, sub, 0x81, {}))
+    for _, r in ipairs(chunk_reports(sub, data, devnum)) do dev:queue_read(r) end
+  end
+  local function find_write(writes, sub, fn, byte5)
+    for i, w in ipairs(writes) do
+      if w.data[3] == sub and w.data[4] == fn and (byte5 == nil or w.data[5] == byte5) then return w, i end
+    end
+  end
+  local function appended_file(writes, sub, first, length)
+    local parts, seen = {}, 0
+    for i = first, #writes do
+      local w = writes[i]
+      if w.data[3] == sub and w.data[4] == 0x31 then
+        parts[#parts + 1] = string.char(table.unpack(w.data, 5, 20))
+        seen = seen + 1
+        if seen * 16 >= length then break end
+      end
+    end
+    return table.concat(parts):sub(1, length)
+  end
+  local user_dir = directory({ { id = 1, type = 0x8101, data = FACTORY_PROFILE, location = 8 } })
+  local managed_reads = {
+    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
+    report(0x10, 0x01, 0x00, 0x01, { 3 }),
+    report(0x11, 0x01, 0x03, 0x01, { 2 }),
+    report(0x11, 0x01, 0x03, 0x11, { 0x80, 0x71 }),
+    report(0x11, 0x01, 0x03, 0x11, { 0x81, 0x01 }),
+  }
+  for _, r in ipairs(pm_reads(0x02, user_dir, FACTORY_PROFILE)) do managed_reads[#managed_reads + 1] = r end
+  for _, r in ipairs({
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 0, 2 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x01, { 0, 1, 0, 0x15 }),
+    report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }),
+    report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }),
+    report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }),
+    report(0x11, 0x01, 0x01, 0x71, { 1 }),
+  }) do managed_reads[#managed_reads + 1] = r end
+  local managed = h:open({ pid = 0xc547, key = "1", reads = managed_reads })
+  h:assert(managed:initialize(), "profile-managed keyboard initializes")
+  local managed_init = managed:writes()
+  local claim_mode, claim_at = find_write(managed_init, 0x02, 0x61, 0x05)
+  local claim_control = managed_init[claim_at + 1]
+  local timers = managed_init[claim_at + 3]
+  h:assert_eq(claim_mode.data[3], 0x02, "claim addresses PROFILE_MANAGEMENT first")
+  h:assert_eq(claim_mode.data[4], 0x61, "claim uses the mode function")
+  h:assert_eq(claim_mode.data[5], 0x05, "claim selects host mode")
+  h:assert_eq(claim_control.data[4], 0x51, "claim then takes RGB software control")
+  h:assert_eq(claim_control.data[6], 0x03, "claim owns clusters and power modes")
+  h:assert_eq(claim_control.data[7], 0x04, "claim subscribes to the idle timeout")
+  h:assert_eq(timers.data[8], 0x01, "idle timeout is moved to the firmware's sleep timeout")
+  h:assert_eq(timers.data[9], 0x2c, "idle timeout keeps the sleep timeout's low byte")
+  local managed_onboard
+  for _, cap in ipairs(managed:serialize().capabilities) do
+    if cap.kind == "onboard_profiles" then managed_onboard = cap.data end
+  end
+  h:assert(managed_onboard, "a tag-managed profile directory is an onboard-profile capability")
+  h:assert_eq(managed_onboard.active_slot, 0, "host mode shows no active onboard profile")
+  h:assert_eq(managed_onboard.slots[1].index, 1, "slots are the directory's profile ids")
+  h:assert(managed_onboard.slots[1].has_rom_default, "a factory copy makes the slot restorable")
+  local managed_effects = {}
+  for _, effect in ipairs(managed:lighting_descriptor().native_effects or {}) do managed_effects[effect.id] = effect end
+  h:assert(managed_effects.signature, "the profile's signature record is offered as a native effect")
+  h:assert_eq(managed_effects.signature.params[1].default, { r = 0xff, g = 0, b = 0x81 },
+    "signature colours come from the profile")
+  h:assert_eq(managed_effects.signature.params[2].default, { r = 0x80, g = 0xaa, b = 0xff },
+    "the second signature colour follows")
+
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:set_boolean("host_mode", false)
+  local release = managed:writes()
+  h:assert_eq(release[1].data[6], 0x00, "leaving host mode releases RGB software control")
+  h:assert_eq(release[2].data[5], 0x03, "leaving host mode returns to the onboard profile")
+
+  -- In onboard mode an effect is stored in the active profile instead.
+  local cycle_profile = PM.parse_profile(FACTORY_PROFILE, 1)
+  local cycle_params = { 0, 255, 0, 0, 0, 0, 0x27, 0x10, 100, 0 }
+  cycle_profile.leds[2] = { id = 0x15, params = cycle_params }
+  cycle_profile.leds[4] = { id = 0x15, params = cycle_params }
+  cycle_profile.flags = 0
+  local cycle_data = PM.serialize_profile(cycle_profile)
+  managed:clear()
+  queue_file_write(managed, 0x02, cycle_data)
+  queue_file_write(managed, 0x02, directory({ { id = 1, type = 0x8101, data = cycle_data, location = 8 } }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x91, {}))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
+  local managed_effect = managed:writes()
+  h:assert_eq(managed_effect[1].data[4], 0x21, "an onboard-mode effect opens the profile edit buffer")
+  h:assert_eq(appended_file(managed_effect, 0x02, 1, #cycle_data), cycle_data,
+    "the effect is written to LED records 1 and 3 with the custom flag")
+  local save = find_write(managed_effect, 0x02, 0x71)
+  h:assert_eq({ save.data[5], save.data[6], save.data[7], save.data[8] }, { 0, 8, 0, 93 },
+    "the profile is committed to its directory location")
+  local activate = find_write(managed_effect, 0x02, 0x91)
+  h:assert_eq({ table.unpack(activate.data, 5, 11) }, { 0x81, 0x01, 0x01, 0x00, 0x01, 0x00, 93 },
+    "activation names the profile file, id and length")
+  h:assert_eq(find_write(managed_effect, 0x02, 0x61, 0x05), nil, "an onboard-mode effect does not claim host mode")
+  local managed_status
+  for _, cap in ipairs(managed:serialize().capabilities) do
+    if cap.kind == "onboard_profiles" then managed_status = cap.data end
+  end
+  h:assert_eq(managed_status.active_slot, 1, "onboard mode reports the firmware's active profile")
+
+  -- The signature plays from the profile, so applying it hands the LEDs back.
+  local signature_profile = PM.parse_profile(cycle_data, 1)
+  local signature_params = { 1, 2, 3, 0x80, 0xaa, 0xff, 0, 0, 50, 0 }
+  signature_profile.leds[1] = { id = 0x18, params = signature_params }
+  signature_profile.leds[3] = { id = 0x19, params = signature_params }
+  signature_profile.flags = 3
+  local signature_data = PM.serialize_profile(signature_profile)
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
+  managed:set_boolean("host_mode", true)
+  local back_to_host = managed:writes()
+  h:assert_eq(back_to_host[1].data[5], 0x05, "turning host mode on claims the LEDs first")
+  h:assert_eq(back_to_host[#back_to_host].data[4], 0x11, "then the last effect plays live")
+  managed:clear()
+  queue_file_write(managed, 0x02, signature_data)
+  queue_file_write(managed, 0x02, directory({ { id = 1, type = 0x8101, data = signature_data, location = 8 } }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x91, {}))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:apply({ mode = "native_effect", id = "signature",
+    params = { color = { r = 1, g = 2, b = 3 }, brightness = 50 } })
+  local signature_writes = managed:writes()
+  h:assert_eq(appended_file(signature_writes, 0x02, 1, #signature_data), signature_data,
+    "the signature's colours and brightness go to LED records 0 and 2")
+  h:assert_eq(signature_writes[#signature_writes].data[5], 0x03, "the signature ends in onboard mode")
+  h:assert_eq(signature_writes[#signature_writes - 1].data[6], 0x00, "the signature releases software control")
+
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:set_boolean("host_mode", true)
+  h:assert_eq(#managed:writes(), 2, "host mode after the signature only claims the LEDs")
+  managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
+  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
+  managed_effect = managed:writes()
+  h:assert_eq(managed_effect[1].data[5], 0x05, "a live effect in host mode renews the claim")
+  h:assert_eq(managed_effect[3].data[4], 0x11, "the effect follows the claim")
+  h:assert_eq(managed_effect[3].data[6], 1, "the effect uses the slot the firmware reports")
+  managed:clear()
+  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 0 }))
+  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 1 }))
+  managed:pump_events()
+  h:assert_eq(#managed:writes(), 0, "the idle/active pair that follows a claim is ignored")
+
+  -- FULL_KEY_CUSTOMIZATION keyboards take keys over through a preset file in
+  -- PROFILE_MANAGEMENT flash and report them as triggers.
+  local fkc_reads = {
+    report(0x10, 0xff, 0x00, 0x01, { 4 }),
+    report(0x11, 0xff, 0x04, 0x01, { 3 }),
+    report(0x11, 0xff, 0x04, 0x11, { 0x81, 0x01 }),
+    report(0x11, 0xff, 0x04, 0x11, { 0x1b, 0x05 }),
+    report(0x11, 0xff, 0x04, 0x11, { 0x1b, 0x10 }),
+  }
+  for _, r in ipairs(pm_reads(0x01, user_dir, FACTORY_PROFILE, 0xff)) do fkc_reads[#fkc_reads + 1] = r end
+  fkc_reads[#fkc_reads + 1] = report(0x11, 0xff, 0x03, 0x01, { 3 })
+  fkc_reads[#fkc_reads + 1] = report(0x11, 0xff, 0x03, 0x11, { 0x01, 0x4c, 0x01, 0x22, 0x00, 0x4e })
+  local fkc_dev = h:open({ pid = 0xc356, reads = fkc_reads })
+  h:assert(fkc_dev:initialize(), "full-key-customization keyboard initializes")
+  local fkc_status = fkc_dev:key_remap_status()
+  h:assert_eq(#fkc_status.buttons, 3, "every control-list entry is a remappable key")
+  h:assert_eq(fkc_status.buttons[2].label, "Standard Key A", "keys are labelled by control id")
+  h:assert_eq(fkc_status.buttons[3].label, "Scroll Lock", "legacy control ids keep their names")
+  h:assert(not fkc_status.requires_host_mode, "onboard key assignments do not depend on host mode")
+
+  local preset = FKC.disable_preset({ 1 })
+  local profile_with_ref = FACTORY_PROFILE:sub(1, 91) .. "\0\2"
+  local dir_with_preset = directory({
+    { id = 1, type = 0x8101, data = FACTORY_PROFILE, location = 8 },
+    { id = 2, type = 0x1b05, data = preset, location = 1 },
+  })
+  local dir_with_ref = directory({
+    { id = 1, type = 0x8101, data = profile_with_ref, location = 8 },
+    { id = 2, type = 0x1b05, data = preset, location = 1 },
+  })
+  fkc_dev:clear()
+  queue_file_write(fkc_dev, 0x01, preset, 0xff)
+  queue_file_write(fkc_dev, 0x01, dir_with_preset, 0xff)
+  queue_file_write(fkc_dev, 0x01, profile_with_ref, 0xff)
+  queue_file_write(fkc_dev, 0x01, dir_with_ref, 0xff)
+  fkc_dev:queue_read(report(0x11, 0xff, 0x02, 0x31, { 1, 1 }))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x61, { 3, 0, 1 }))
+  fkc_dev:set_button_mapping({ cid = 0x0122,
+    base = { type = "disable" }, shifted = { type = "native" } })
+  local fkc_writes = fkc_dev:writes()
+  h:assert_eq(appended_file(fkc_writes, 0x01, 1, #preset), preset,
+    "the taken-over key is written as a disabled row in a new preset file")
+  local preset_save = find_write(fkc_writes, 0x01, 0x71)
+  h:assert_eq({ preset_save.data[5], preset_save.data[6], preset_save.data[8] }, { 0, 1, #preset },
+    "the preset is committed to the first free sector")
+  local _, preset_save_at = find_write(fkc_writes, 0x01, 0x71)
+  local after_preset = { table.unpack(fkc_writes, preset_save_at + 1) }
+  local dir_begin = find_write(after_preset, 0x01, 0x21)
+  h:assert_eq(dir_begin.data[6], #dir_with_preset, "the directory gains the preset's entry")
+  local dir_save = find_write(after_preset, 0x01, 0x71)
+  h:assert_eq({ table.unpack(dir_save.data, 5, 12) }, { 0, 0, 0, #dir_with_preset, dir_with_preset:byte(1, 4) },
+    "the directory is committed under its own header checksum")
+  local fkc_activate = find_write(fkc_writes, 0x01, 0x91)
+  h:assert_eq({ table.unpack(fkc_activate.data, 5, 9) }, { 0x81, 0x01, 0x01, 0x00, 0x01 },
+    "the profile that now references the preset is activated")
+  h:assert_eq(fkc_writes[#fkc_writes].data[4], 0x61, "activation is followed by a mode read")
+
+  fkc_dev:clear()
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, { 0x02 }))
+  local fkc_pressed = fkc_dev:pump_events()
+  h:assert_eq(fkc_pressed[1].pressed[1], 0x0122, "a trigger bitmap names the key by control id")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01, 0xff }))
+  local fkc_held = fkc_dev:pump_events()
+  h:assert_eq(#fkc_held[1].pressed + #fkc_held[1].released, 0, "a trigger list of the same key changes nothing")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, {}))
+  local fkc_released = fkc_dev:pump_events()
+  h:assert_eq(fkc_released[1].released[1], 0x0122, "an empty bitmap releases the key")
+end
+
 return function(h)
   local function report(report_id, devnum, sub, address, data)
     local out = { report_id, devnum, sub, address }
@@ -1464,58 +1775,9 @@ return function(h)
   h:assert_eq(tkl_keys[111].cell.col, 11.25, "TKL right-super keeps its bottom-row cell")
   h:assert_eq(tkl_keys[98].cell.id, "menu", "TKL menu key is placed explicitly")
 
-  -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
-  -- with both cluster and power-mode ownership claimed.
-  local managed = h:open({ pid = 0xc547, key = "1", reads = {
-    report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }),
-    report(0x10, 0x01, 0x00, 0x01, { 3 }),
-    report(0x11, 0x01, 0x03, 0x01, { 2 }),
-    report(0x11, 0x01, 0x03, 0x11, { 0x80, 0x71 }),
-    report(0x11, 0x01, 0x03, 0x11, { 0x81, 0x01 }),
-    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 1 }),
-    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 0, 2 }),
-    report(0x11, 0x01, 0x01, 0x01, { 0, 0, 0, 1 }),
-    report(0x11, 0x01, 0x01, 0x01, { 0, 1, 0, 0x15 }),
-    report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }),
-    report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }),
-    report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }),
-    report(0x11, 0x01, 0x01, 0x71, { 1 }),
-  } })
-  h:assert(managed:initialize(), "profile-managed keyboard initializes")
-  local managed_init = managed:writes()
-  local claim_mode = managed_init[10]
-  local claim_control = managed_init[11]
-  local timers = managed_init[13]
-  h:assert_eq(claim_mode.data[3], 0x02, "claim addresses PROFILE_MANAGEMENT first")
-  h:assert_eq(claim_mode.data[4], 0x61, "claim uses the mode function")
-  h:assert_eq(claim_mode.data[5], 0x05, "claim selects host mode")
-  h:assert_eq(claim_control.data[4], 0x51, "claim then takes RGB software control")
-  h:assert_eq(claim_control.data[6], 0x03, "claim owns clusters and power modes")
-  h:assert_eq(claim_control.data[7], 0x04, "claim subscribes to the idle timeout")
-  h:assert_eq(timers.data[8], 0x01, "idle timeout is moved to the firmware's sleep timeout")
-  h:assert_eq(timers.data[9], 0x2c, "idle timeout keeps the sleep timeout's low byte")
-  managed:clear()
-  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
-  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
-  managed:set_boolean("host_mode", false)
-  local release = managed:writes()
-  h:assert_eq(release[1].data[6], 0x00, "leaving host mode releases RGB software control")
-  h:assert_eq(release[2].data[5], 0x03, "leaving host mode returns to the onboard profile")
-  managed:clear()
-  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
-  managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
-  managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
-  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
-  local managed_effect = managed:writes()
-  h:assert_eq(managed_effect[1].data[5], 0x05, "a native effect re-enters host mode")
-  h:assert_eq(managed_effect[3].data[4], 0x11, "the effect follows the claim")
-  h:assert_eq(managed_effect[3].data[6], 1, "the effect uses the slot the firmware reports")
-  managed:clear()
-  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 0 }))
-  managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 1 }))
-  managed:pump_events()
-  h:assert_eq(#managed:writes(), 0, "the idle/active pair that follows a claim is ignored")
+  profile_management_tests(h, report)
 
+  do
   local profiles = halod.require("lib.hidpp2.profiles")()
   local function tkl_keyboard()
     local ids = {}
@@ -1550,4 +1812,14 @@ return function(h)
   h:assert_eq(bound_f1(profiles.keyboard_with_remap(tkl_keyboard(), "reprog", two_buttons)), nil,
     "other remap backends leave the keyboard alone")
   h:assert_eq(profiles.keyboard_with_remap(nil, "gkey", two_buttons), nil, "a mouse has no keyboard to bind")
+  local function bound_key(keyboard, key)
+    for _, mapping in ipairs(keyboard.ansi.keys) do
+      if mapping.key == key then return mapping.remap_cid end
+    end
+  end
+  local fkc_bound = profiles.keyboard_with_remap(tkl_keyboard(), "fkc", { { cid = 0x0122 }, { cid = 0x014c } })
+  h:assert_eq(bound_key(fkc_bound, "a"), 0x0122, "a full-key-customization keyboard binds keys by control id")
+  h:assert_eq(bound_key(fkc_bound, "escape"), 0x014c, "every documented standard key binds")
+  h:assert_eq(bound_key(fkc_bound, "b"), nil, "keys without a listed control stay unbound")
+  end
 end

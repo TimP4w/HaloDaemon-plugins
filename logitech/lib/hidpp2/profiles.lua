@@ -134,9 +134,27 @@ local function bind_gkeys_to_function_row(keyboard, gkey_count)
   end
 end
 
+local CONTROL_KEYS = halod.require("lib.hidpp2.control_keys")
+
+-- Standard keys carry their own control id on FULL_KEY_CUSTOMIZATION devices.
+local function bind_keys_to_controls(keyboard, buttons)
+  local cid_of_key = {}
+  for _, button in ipairs(buttons) do
+    local key = CONTROL_KEYS[button.cid]
+    if key then cid_of_key[key] = button.cid end
+  end
+  for _, variant in pairs({ keyboard.ansi, keyboard.iso }) do
+    for _, mapping in ipairs(variant.keys) do
+      if mapping.key and cid_of_key[mapping.key] then mapping.remap_cid = cid_of_key[mapping.key] end
+    end
+  end
+end
+
 local function keyboard_with_remap(keyboard, remap_backend, buttons)
   if keyboard and remap_backend == "gkey" then
     bind_gkeys_to_function_row(keyboard, #buttons)
+  elseif keyboard and remap_backend == "fkc" then
+    bind_keys_to_controls(keyboard, buttons)
   end
   return keyboard
 end

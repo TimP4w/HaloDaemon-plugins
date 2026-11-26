@@ -59,7 +59,7 @@ A receiver answers for a sleeping slot with a zeroed record rather than an error
 
 ### Feature codes (`v2/mod.rs`)
 
-ROOT `0x0000`, FEATURE_SET `0x0001`, FIRMWARE_VERSION `0x0003`, DEVICE_NAME `0x0005`, DEVICE_FRIENDLY_NAME `0x0007`, BATTERY_VOLTAGE `0x1001`, UNIFIED_BATTERY `0x1004`, WIRELESS_DEVICE_STATUS `0x1D4B`, ADC_MEASUREMENT `0x1F20`, HIRES_WHEEL `0x2121`, ADJUSTABLE_DPI `0x2201`, K375S_FN_INVERSION `0x40A3`, KEYBOARD_LAYOUT_2 `0x4540`, REPROG_CONTROLS_V4 `0x1b04`, BRIGHTNESS_CONTROL `0x8040`, REPORT_RATE `0x8060`, EXT_REPORT_RATE `0x8061`, RGB_EFFECTS `0x8071`, PER_KEY_LIGHTING_V2 `0x8081`, GKEY `0x8010`, ONBOARD_PROFILES `0x8100`, MOUSE_BUTTON_SPY `0x8110`, SIDETONE `0x8300`, EQUALIZER `0x8310`. PROFILE_MANAGEMENT `0x8101` (mode switch only). Declared but unused: `0x2202`, `0x1b10`, `0x1bc0`, `0x1b05`.
+ROOT `0x0000`, FEATURE_SET `0x0001`, FIRMWARE_VERSION `0x0003`, DEVICE_NAME `0x0005`, DEVICE_FRIENDLY_NAME `0x0007`, BATTERY_VOLTAGE `0x1001`, UNIFIED_BATTERY `0x1004`, WIRELESS_DEVICE_STATUS `0x1D4B`, ADC_MEASUREMENT `0x1F20`, HIRES_WHEEL `0x2121`, ADJUSTABLE_DPI `0x2201`, K375S_FN_INVERSION `0x40A3`, KEYBOARD_LAYOUT_2 `0x4540`, REPROG_CONTROLS_V4 `0x1b04`, BRIGHTNESS_CONTROL `0x8040`, REPORT_RATE `0x8060`, EXT_REPORT_RATE `0x8061`, RGB_EFFECTS `0x8071`, PER_KEY_LIGHTING_V2 `0x8081`, GKEY `0x8010`, ONBOARD_PROFILES `0x8100`, MOUSE_BUTTON_SPY `0x8110`, SIDETONE `0x8300`, EQUALIZER `0x8310`. PROFILE_MANAGEMENT `0x8101`, FULL_KEY_CUSTOMIZATION `0x1b05`, CONTROL_LIST `0x1b10`. Declared but unused: `0x2202`, `0x1bc0`.
 
 ### FIRMWARE_VERSION (`0x0003`) - `v2/firmware.rs`
 
@@ -299,17 +299,51 @@ pixmap frames can leave one strip LED at its previous colour.
 
 **Discovered keyboards.** Every per-key keyboard gets its layout from the firmware; no model has a hand-written key table. Standard keys use LED id = HID keyboard usage − 3 (`A` = 1 … `Menu` = 98, modifiers 104–111; id 47 is the ISO hash key). A per-key device whose bitmap contains the letter keys is a keyboard: the full-size template when any numpad id (80–96) is advertised, TKL otherwise. Vendor ids above 111 (media keys, G-keys, logo) are laid out in ascending order in a row above the keys; usage-range ids with no standard key stay addressable but unplaced. A model profile may only add data the firmware cannot report: the physical cell of a vendor key (`extra_key_cells`) and `gkeys_on_function_row` where G-keys share the F-row.
 
-### PROFILE_MANAGEMENT (`0x8101`) and software control
+### PROFILE_MANAGEMENT (`0x8101`) - `lib/hidpp2/profile_mgmt.lua`
 
-The file-based successor of ONBOARD_PROFILES on newer keyboards (G515 family, G915 X). Logitech publishes no specification; the function below follows the community notes in [logirgb's research](https://github.com/mevdschee/logirgb/blob/main/research/8101-profile-management.md) (MIT) and Solaar's claim sequence.
+The file-based successor of ONBOARD_PROFILES on newer keyboards (G515 family, G915 X). Logitech publishes no specification; the layout below was read from a G915 X LIGHTSPEED (every byte of its flash directories and profiles) and cross-checked with [logirgb's research](https://github.com/mevdschee/logirgb/blob/main/research/8101-profile-management.md) (MIT) and Solaar's claim sequence. Nothing in it is model-specific: the plugin uses it for any device that enumerates `0x8101`.
 
 | Function | Bytes sent | Reply | Notes |
 |----------|-----------|-------|-------|
-| getSetMode (`0x60`) | `[flags]`: `00` read, `05` host mode, `03` onboard | `[mode, active file u16]`, mode bit 0 = onboard | every written value except `05` means onboard |
+| getCapabilities (`0x00`) | none | `01 01 00 80 05 80 7f 7f 07 14 ff ff ff 20 03 07` on the G915 X | bytes 2–3 = buffer size (128), byte 14 = onboard profile count |
+| getTagList (`0x10`) | `[00, offset]` | tag bytes from `offset`, `ff` ends | see **Profile tags** |
+| startWrite (`0x20`) | `[len u16]` | - | opens the edit buffer |
+| writeBuffer (`0x30`) | 16 data bytes | - | appends to the buffer |
+| getSetMode (`0x60`) | `[flags]`: `00` read, `05` host mode, `03` onboard | `[mode, active file u16]`, mode bit 0 = onboard, bit 1 = firmware power management | every written value except `05` means onboard |
+| save (`0x70`) | `[address u16, len u16, crc32 u32]` | - | commits the buffer to flash. The checksum is CRC-32 (IEEE, big-endian) of the data for a file, and the directory's own header checksum for a directory; HID++ error `0x02` otherwise |
+| load (`0x80`) | `[address u16, len u16]` | - | flash to buffer; HID++ error `0x04` for a file never written |
+| configure (`0x90`) | `[type u16, 01, file id u16, len u16, crc32 u32]` | - | the firmware reloads the file: `81 01 01 00 01 00 63 <crc>` activates profile 1. Length and checksum must match the directory entry (HID++ error `0x04` otherwise), so the directory is written first |
+| readBuffer (`0xc0`) | `[offset u16]` | 16 buffer bytes | |
 
-On such a device RGB_EFFECTS `manageSwControl` (`0x50`) with flags `1` is accepted but the onboard lighting stays visible, so the claim is `0x8101 0x60 [05]` then `0x8071 0x50 [01 03 04]` (own clusters and power modes, report the idle timeout). Devices without `0x8101` keep `[01 01]`.
+**Addresses.** The high byte is the partition (`0x00` user, `0x01` factory), the low byte a 128-byte sector. Sector 0 of each partition holds the directory; a file occupies as many consecutive sectors as its length needs. The factory partition is never written.
 
-Owning power modes means the firmware no longer turns the LEDs off. The claim moves the firmware's idle timeout (`0x70`, `[getOrSet, flags u16, idle u16, sleep u16]`) to its sleep timeout; on the idle event (`0x8071` event `0x10`, byte 0 = `00`) the plugin sets power mode off (`0x80 [01 03]`) and subscribes to activity (`[01 03 02]`), and on activity it re-applies the last lighting state. The idle/active pair the firmware emits right after a claim is ignored for two seconds. The "Host mode" control releases with `0x8071 0x50 [01 00 00]` then `0x8101 0x60 [03]`.
+**Directory.** `[crc32 over the rest][count][count × entry][ff]`; entry = `[id, type u16, flags, len, crc32 of the file, sector]`. Live G915 X user directory: `b8 38 06 b2 03 | 01 8101 40 63 31dc3109 08 | 02 8101 40 63 f502350e 09 | 03 8101 40 63 006734cc 0a | ff` (three profiles in sectors 8–10; the factory copies sit in sectors 1–3 of partition `0x01`). File ids are unique across types; key presets (type `0x1b05`) get the next free id and the first free sector run.
+
+**Profile tags.** The tag list describes the profile layout: `01 02 12 13 03 0c 0d 0e 0f 07 30 e0 1b05 e1 1b05 e2 1b05 e3 1b05 ff` on the G915 X. A tag at or above `0xe0` is a two-byte reference to another feature's file (here four FULL_KEY_CUSTOMIZATION files; `ff ff` = none). The fixed tags give the 91-byte prefix every known profile shares:
+
+| Offset | Size | Field | Live G915 X |
+|--------|------|-------|-------------|
+| 0 | 1 | profile id | `01`–`03` |
+| 1 | 1 | version | `01` |
+| 2 | 2 | idle timeout, s, BE | 60 |
+| 4 | 2 | sleep timeout, s, BE | 300 |
+| 6 | 24 | name (UTF-16 BE) | `ff` |
+| 30 | 44 | 4 × LED record `[effect id, p0..p9]` | records 0/2 = `18`/`19` (signature pair), 1/3 zero |
+| 74 | 1 | lighting flags: `03` play records 0 and 2 (signature), `00` records 1 and 3 | `03` |
+| 75 | 16 | game-mode disabled-controls bitmap over the CONTROL_LIST index | `… 44 00 18 08` |
+| 91 | 2 × refs | feature file references | `ff ff` × 4 |
+
+LED records use the RGB_EFFECTS parameter layouts; records 0/1 run while active, 2/3 after the idle timeout.
+
+**What the plugin does with it.**
+
+- *Onboard profiles*: each user directory profile is a slot; the slot is restorable when the factory partition holds the same id, and switching uses configure. Entries cannot be disabled, so that control is rejected.
+- *Host mode*: RGB_EFFECTS `manageSwControl` (`0x50`) with flags `1` is accepted but the onboard lighting stays visible, so the claim is `0x8101 0x60 [05]` then `0x8071 0x50 [01 03 04]` (own clusters and power modes, report the idle timeout). Devices without `0x8101` keep `[01 01]`. Owning power modes means the firmware no longer turns the LEDs off: the claim moves the idle timeout (`0x70`, `[getOrSet, flags u16, idle u16, sleep u16]`) to the sleep timeout; on the idle event (`0x8071` event `0x10`, byte 0 = `00`) the plugin sets power mode off (`0x80 [01 03]`) and subscribes to activity (`[01 03 02]`), and on activity it re-applies the last lighting state. The idle/active pair the firmware emits right after a claim is ignored for two seconds. The "Host mode" control releases with `0x8071 0x50 [01 00 00]` then `0x8101 0x60 [03]`; turning it back on claims first and replays the last live effect.
+- *Onboard lighting*: while host mode is off, a static colour or native effect is stored in the active profile (records 1 and 3, flags `00`) and the profile is re-activated, so the keyboard keeps it without the daemon. Streaming states still claim host mode.
+- *Signature*: when record 0 holds a signature pair (`18`/`19`, `1a`/`1b`, `0f`/`10`) the plugin offers it as the native effect `signature` with its two colours and brightness read from the record. Applying it writes records 0 and 2, sets flags `03` and hands the LEDs back (the effect is not in the RGB_EFFECTS table, only the firmware plays it).
+- *Restore to default*: copies the factory file of the same id over the user file, updates the directory entry's length and checksum, and re-activates the profile when it is the active one.
+
+Every write fills the buffer, reads it back, commits, then reads the flash copy back; a mismatch aborts before the directory is touched. Verified on a G915 X: file and directory saves, adding a `0x1b05` entry, re-configuring a changed profile, and restoring the original bytes.
 
 ### COLOR_LED_EFFECTS (`0x8070`) - `rgb/color_led.rs`
 
@@ -362,12 +396,31 @@ GKEY uses a single **global** software-control toggle. MOUSE_BUTTON_SPY reports 
 
 Physical button *n* is bit *n−1* of the spy event's **big-endian** u16. The plugin's cids number the same bits little-endian (`cid = bit + 1`), so physical button *n* is cid `((n − 1) XOR 8) + 1`: left click = cid 9, G9 = cid 1.
 
+### FULL_KEY_CUSTOMIZATION (`0x1b05`) / CONTROL_LIST (`0x1b10`) - `lib/hidpp2/fkc.lua`
+
+Keyboards without REPROG_CONTROLS or GKEY (G915 X, G515) run their key assignments from a **preset file** in PROFILE_MANAGEMENT flash. The file layout was reconstructed from the vendor software; the G915 X accepts and registers such a file, but whether a row suppresses its key and raises a trigger event is **unverified on hardware**.
+
+| Function | Bytes sent | Reply |
+|----------|-----------|-------|
+| `0x1b10` getCount (`0x00`) | none | `[count]` (G915 X: 128) |
+| `0x1b10` getControlList (`0x10`) | `[index]` | 8 × BE-u16 control ids from `index`; the position is the key's `cidx` |
+| `0x1b05` getCapabilities (`0x00`) | none | `[config ver, macro ver, config max u16, macro max u16, max triggers, sw caps]` (G915 X: `01 00 0580 0580 7f 01`) |
+| `0x1b05` getSetPowerOnParams (`0x10`) | `[set, state]` | `[power-on state]` |
+| `0x1b05` getToggleKeyList (`0x20`) | none | 8 key pairs that toggle customization |
+| `0x1b05` getSetEnabled (`0x30`) | `[set flags, fkc state, toggle keys state]`; `00 00 00` reads | `[fkc state, toggle keys state]` (G915 X: `01 01`) |
+| `0x1b05` getSetSWConfigCookie (`0x40`) | `[set, cookie]` | `[cookie]` |
+
+**Preset file** (type `0x1b05`): `[00][group count]` then per key `[cidx][row count]` and 9-byte rows `[row index][modifiers][00][action bits u16 LE][opcode u16 LE][params u16 LE]`. Opcodes: `0x8000` disable (action bits `0x4000` | modifier bits = press modifiers only), `0x8001` mouse button (params = button mask), `0x8002` keystroke (action bits = modifier mask, params = HID keycode), `0x8003` consumer usage, `0x8004` with params `0002` = G-shift. The active profile's first `0x1b05` reference names the file.
+
+The plugin keeps every assignment host-side like the other backends: a mapped key becomes a disabled row, the firmware swallows it and reports it through the trigger events, and the daemon runs the action. Clearing the last mapping leaves an empty preset. Keys are labelled by control id and bound to the keyboard picture through the documented standard-key control ids (`lib/hidpp2/control_keys.lua`).
+
 ### Button-event notifications
 
 | Source | Payload | Decoder |
 |--------|---------|---------|
 | REPROG_CONTROLS_V4 `divertedButtonsEvent` | up to 4 × BE-u16 pressed CIDs, zero-padded | `parse_diverted_buttons_event` |
 | GKEY / MOUSE_BUTTON_SPY | 16-bit LE press bitmap; bit *N* = CID `N+1` | `parse_button_bitmap_event` |
+| FULL_KEY_CUSTOMIZATION trigger events | function nibble 0/2/4: list of pressed `cidx` (`ff` ends); 1/3/5: 128-bit bitmap over `cidx`; base, Fn and G-shift layer | `fkc.trigger_event` |
 
 ---
 
