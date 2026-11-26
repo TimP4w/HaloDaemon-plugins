@@ -285,6 +285,7 @@ local function profile_management_tests(h, report)
   queue_file_write(fkc_dev, 0x01, dir_with_ref, 0xff)
   fkc_dev:queue_read(report(0x11, 0xff, 0x02, 0x31, { 1, 1 }))
   fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
   fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x61, { 3, 0, 1 }))
   fkc_dev:set_button_mapping({ cid = 0x0122,
     base = { type = "disable" }, shifted = { type = "native" } })
@@ -301,7 +302,10 @@ local function profile_management_tests(h, report)
   local dir_save = find_write(after_preset, 0x01, 0x71)
   h:assert_eq({ table.unpack(dir_save.data, 5, 12) }, { 0, 0, 0, #dir_with_preset, dir_with_preset:byte(1, 4) },
     "the directory is committed under its own header checksum")
-  local fkc_activate = find_write(fkc_writes, 0x01, 0x91)
+  local preset_activate, preset_activate_at = find_write(fkc_writes, 0x01, 0x91)
+  h:assert_eq({ table.unpack(preset_activate.data, 5, 11) }, { 0x1b, 0x05, 0x01, 0x00, 0x02, 0x00, #preset },
+    "the preset file is configured so the firmware loads it")
+  local fkc_activate = find_write({ table.unpack(fkc_writes, preset_activate_at + 1) }, 0x01, 0x91)
   h:assert_eq({ table.unpack(fkc_activate.data, 5, 9) }, { 0x81, 0x01, 0x01, 0x00, 0x01 },
     "the profile that now references the preset is activated")
   h:assert_eq(fkc_writes[#fkc_writes].data[4], 0x61, "activation is followed by a mode read")

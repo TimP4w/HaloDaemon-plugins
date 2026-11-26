@@ -542,12 +542,15 @@ local function write_fkc_preset(dev, cidxs)
   log(string.format("logitech: key preset for profile %d takes over %d key(s)", id, #cidxs), "info")
   if #state.refs == 0 then error("onboard profile cannot reference a key preset") end
   local file_id = p.refs[1] or next_file_id(state.user)
-  pm.write_entry(dev, state, file_id, pm.FKC_TYPE, fkc.disable_preset(cidxs))
+  local entry = pm.write_entry(dev, state, file_id, pm.FKC_TYPE, fkc.disable_preset(cidxs))
   if p.refs[1] ~= file_id then
     p.refs[1] = file_id
     pm.write_profile(dev, state, id, pm.serialize_profile(p))
   end
   if not fkc.enabled(dev) then fkc.set_enabled(dev, true) end
+  -- The firmware loads a preset only once the preset file itself is
+  -- configured; reloading the profile alone leaves the old rows in place.
+  pm.activate(dev, pm.FKC_TYPE, file_id, entry.length, entry.crc)
   activate_profile(dev, state, id)
 end
 local onboard_mode = onboard.mode
