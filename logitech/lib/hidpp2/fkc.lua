@@ -10,7 +10,7 @@ local FKC, CONTROL_LIST = api.feature_id, api.control_list
 local M = {}
 
 M.OP_DISABLE, M.OP_MOUSE, M.OP_KEY, M.OP_CONSUMER, M.OP_GSHIFT = 0x8000, 0x8001, 0x8002, 0x8003, 0x8004
-M.MODIFIER_ONLY = 0x4000
+M.ACTION_DISABLE, M.ACTION_MODIFIER_ONLY = 0x8000, 0x4000
 M.ROW_SIZE = 9
 
 local function u16(s, i) return ((s:byte(i) or 0) << 8) | (s:byte(i + 1) or 0) end
@@ -48,17 +48,18 @@ function M.control_list(dev)
   return cids
 end
 
-local function le16(v) return v & 0xff, (v >> 8) & 0xff end
+local function be16(v) return (v >> 8) & 0xff, v & 0xff end
 
 -- Preset file: [0x00][group count] then per group [cidx][row count] rows.
--- Row: [index][modifiers][0][action bits lo hi][opcode lo hi][params lo hi].
+-- Row: [index][flags][0][action bits u16][opcode u16][params u16], big-endian.
+-- Action bits: 0x8000 disable, 0x4000 modifiers only, low byte modifier mask.
 function M.encode_preset(groups)
   local out, index = { bytes(0, #groups) }, 0
   for _, group in ipairs(groups) do
     out[#out + 1] = bytes(group.cidx, #group.rows)
     for _, row in ipairs(group.rows) do
-      out[#out + 1] = bytes(index, row.modifiers or 0, 0)
-        .. bytes(le16(row.action or 0)) .. bytes(le16(row.opcode)) .. bytes(le16(row.params or 0))
+      out[#out + 1] = bytes(index, row.flags or 0, 0)
+        .. bytes(be16(row.action or 0)) .. bytes(be16(row.opcode)) .. bytes(be16(row.params or 0))
       index = index + 1
     end
   end
@@ -76,9 +77,8 @@ function M.decode_preset(data)
       local r = data:sub(pos, pos + M.ROW_SIZE - 1)
       if #r < M.ROW_SIZE then break end
       rows[#rows + 1] = {
-        index = r:byte(1), modifiers = r:byte(2),
-        action = r:byte(4) | (r:byte(5) << 8), opcode = r:byte(6) | (r:byte(7) << 8),
-        params = r:byte(8) | (r:byte(9) << 8),
+        index = r:byte(1), flags = r:byte(2),
+        action = u16(r, 4), opcode = u16(r, 6), params = u16(r, 8),
       }
       pos = pos + M.ROW_SIZE
     end
@@ -93,7 +93,7 @@ function M.disable_preset(cidxs)
   table.sort(cidxs)
   local groups = {}
   for _, cidx in ipairs(cidxs) do
-    groups[#groups + 1] = { cidx = cidx, rows = { { opcode = M.OP_DISABLE } } }
+    groups[#groups + 1] = { cidx = cidx, rows = { { action = M.ACTION_DISABLE, opcode = M.OP_DISABLE } } }
   end
   return M.encode_preset(groups)
 end

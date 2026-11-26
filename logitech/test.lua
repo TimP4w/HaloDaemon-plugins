@@ -38,11 +38,11 @@ local function profile_management_tests(h, report)
   local preset_groups = FKC.decode_preset(FKC.encode_preset({
     { cidx = 5, rows = { { opcode = 0x8002, action = 0x02, params = 0x04 }, { opcode = 0x8000 } } } }))
   h:assert_eq(preset_groups[1].cidx, 5, "preset groups name the control-list index")
-  h:assert_eq(preset_groups[1].rows[1], { index = 0, modifiers = 0, action = 2, opcode = 0x8002, params = 4 },
+  h:assert_eq(preset_groups[1].rows[1], { index = 0, flags = 0, action = 2, opcode = 0x8002, params = 4 },
     "preset rows round-trip")
   h:assert_eq(preset_groups[1].rows[2].index, 1, "rows are numbered across the file")
-  h:assert_eq(FKC.disable_preset({ 7, 2 }), unhex("00 02 02 01 00 00 00 00 00 00 80 00 00 07 01 01 00 00 00 00 00 80 00 00"),
-    "taken-over keys become sorted disabled rows")
+  h:assert_eq(FKC.disable_preset({ 7, 2 }), unhex("00 02 02 01 00 00 00 80 00 80 00 00 00 07 01 01 00 00 80 00 80 00 00 00"),
+    "taken-over keys become sorted big-endian disabled rows")
 
   -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
   -- with both cluster and power-mode ownership claimed.
@@ -219,7 +219,7 @@ local function profile_management_tests(h, report)
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   managed:apply({ mode = "native_effect", id = "signature",
-    params = { color = { r = 1, g = 2, b = 3 }, brightness = 50 } })
+    params = { color1 = { r = 1, g = 2, b = 3 }, brightness = 50 } })
   local signature_writes = managed:writes()
   h:assert_eq(appended_file(signature_writes, 0x02, 1, #signature_data), signature_data,
     "the signature's colours and brightness go to LED records 0 and 2")
@@ -233,15 +233,15 @@ local function profile_management_tests(h, report)
   managed:set_boolean("host_mode", true)
   h:assert_eq(#managed:writes(), 3, "host mode after the signature only claims the LEDs")
   managed:clear()
-  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
   managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
   managed_effect = managed:writes()
-  h:assert_eq(managed_effect[1].data[5], 0x05, "a live effect in host mode renews the claim")
-  h:assert_eq(managed_effect[4].data[4], 0x11, "the effect follows the claim")
-  h:assert_eq(managed_effect[4].data[6], 1, "the effect uses the slot the firmware reports")
+  h:assert_eq(managed_effect[1].data[4], 0x51, "a live effect in host mode renews the software-control claim")
+  h:assert_eq(find_write(managed_effect, 0x02, 0x61), nil, "host mode is not re-sent while it holds")
+  h:assert_eq(managed_effect[3].data[4], 0x11, "the effect follows the claim")
+  h:assert_eq(managed_effect[3].data[6], 1, "the effect uses the slot the firmware reports")
   managed:clear()
   managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 0 }))
   managed:queue_event(report(0x11, 0x01, 0x01, 0x10, { 1 }))

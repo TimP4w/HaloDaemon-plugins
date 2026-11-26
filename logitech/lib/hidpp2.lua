@@ -592,7 +592,7 @@ local function signature_params(params, defaults)
     if type(c) ~= "table" then return defaults[offset + 1], defaults[offset + 2], defaults[offset + 3] end
     return c.r or 0, c.g or 0, c.b or 0
   end
-  local r1, g1, b1 = rgb(params.color, 0)
+  local r1, g1, b1 = rgb(params.color1 or params.color, 0)
   local r2, g2, b2 = rgb(params.color2, 3)
   local brightness = math.floor(math.max(1, math.min(100, params.brightness or defaults[9] or 100)) + 0.5)
   return { r1, g1, b1, r2, g2, b2, 0, 0, brightness, 0 }
@@ -819,7 +819,7 @@ callbacks = {
           native_descriptors[#native_descriptors + 1] = {
             id = "signature", name = profile.signature_name or "Signature",
             params = {
-              { id = "color", label = "Color", kind = { kind = "color" },
+              { id = "color1", label = "Primary Color", kind = { kind = "color" },
                 default = { r = p[1], g = p[2], b = p[3] } },
               { id = "color2", label = "Second Color", kind = { kind = "color" },
                 default = { r = p[4], g = p[5], b = p[6] } },
@@ -1011,6 +1011,7 @@ callbacks = {
     if dev.pm and report_devnum == dev.hidpp.devnum
         and sub == dev.hidpp.features[PROFILE_MANAGEMENT] and (event.report:byte(4) & 0x0f) == 0 then
       dev.pm.mode = pm.mode(dev)
+      if dev.lighting then dev.lighting.host = dev.pm.mode.host end
       return { state_changed = true }
     end
     local active = lighting.user_activity_report(dev, event.report)
@@ -1181,7 +1182,7 @@ callbacks = {
       local last = dev.lighting.last_state
       if not value then lighting.release_rgb_control(dev)
       elseif last and not (last.mode == "native_effect" and last.id == "signature") then
-        dev.lighting.host = true
+        lighting.enter_host_mode(dev)
         callbacks.apply(dev, last)
       else restore_rgb_control(dev) end
     elseif key == "host_mode" then

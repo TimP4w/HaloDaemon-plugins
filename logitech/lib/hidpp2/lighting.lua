@@ -398,10 +398,10 @@ local OWN_CLUSTERS_AND_POWER = 0x03
 local NOTIFY_IDLE, NOTIFY_ACTIVITY = 0x04, 0x02
 local POWER_FULL, POWER_OFF = 0x01, 0x03
 
-local function retried(dev, code, func, args)
+local function retried(dev, code, func, args, patient)
   local last_error
   for _ = 1, 3 do
-    local ok, err = pcall(feature, dev, code, func, args)
+    local ok, err = pcall(feature, dev, code, func, args, patient)
     if ok then return err end
     last_error = err
     if not tostring(err):find("HID++ response did not arrive", 1, true) then error(err) end
@@ -422,13 +422,20 @@ local function idle_off_after_sleep_timeout(dev)
   pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, sleep_hi, sleep_lo, sleep_hi, sleep_lo))
 end
 
+local function enter_host_mode(dev)
+  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(HOST_MODE), true)
+  dev.lighting.host = true
+end
+
 local function restore_rgb_control(dev)
   if not dev.lighting then return end
   -- Reclaiming means the firmware owned the LEDs, so the streaming frame cache
   -- no longer describes what is lit and must not suppress the write that follows.
   dev.lighting.frame_cache = nil
   if profile_managed(dev) then
-    retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(HOST_MODE))
+    -- Host mode holds until released or changed by the firmware (reported by
+    -- a PROFILE_MANAGEMENT event), so it is only re-sent after that.
+    if not dev.lighting.host then enter_host_mode(dev) end
     retried(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
     dev.lighting.claimed_at = halod.monotonic_ms()
     dev.lighting.host = true
@@ -450,11 +457,11 @@ local function release_rgb_control(dev)
   dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
   dev.lighting.host = false
   retried(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
-  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE))
+  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE), true)
 end
 
 local function host_mode(dev)
-  return ((feature(dev, PROFILE_MANAGEMENT, 0x60, bytes(0)):byte(1) or 1) & 0x01) == 0
+  return ((feature(dev, PROFILE_MANAGEMENT, 0x60, bytes(0), true):byte(1) or 1) & 0x01) == 0
 end
 
 local function user_activity_report(dev, report)
@@ -487,6 +494,7 @@ return {
   write_rgb_zone = write_rgb_zone,
   restore_rgb_control = restore_rgb_control,
   release_rgb_control = release_rgb_control,
+  enter_host_mode = enter_host_mode,
   profile_managed = profile_managed,
   host_mode = host_mode,
   user_activity_report = user_activity_report,
