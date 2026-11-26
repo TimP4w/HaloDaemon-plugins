@@ -67,9 +67,12 @@ local function send_channel(dev, channel_byte, grb)
   dev.transport:write(lighting_commit(channel_byte))
 end
 
+-- Channels running a firmware effect are left alone until they get a frame.
+local native = { ring = false, chain = false }
+
 local function send_channels(dev)
-  send_channel(dev, 0x01, ring_grb)
-  if ext_grb then
+  if not native.ring then send_channel(dev, 0x01, ring_grb) end
+  if ext_grb and not native.chain then
     send_channel(dev, 0x02, ext_grb)
   end
 end
@@ -443,7 +446,7 @@ return {
         -- The radiator fan header carries both the accessory chain and the fan
         -- itself; a detected accessory takes `fan1` over from the Kraken.
         { id="0", name="Aer/F Fan", chainable=true, max_leds=40,
-          cooling_channel="fan1" },
+          cooling_channel="fan1", native_effects=true },
       },
       cooling = { channels = {
         { id="pump", name="Pump", kind="pump", controllable=true },
@@ -465,7 +468,9 @@ return {
     read_report(dev)
   end,
 
-  apply = function(dev, state)
+  -- `channel` is set when a chain child runs an effect on its own output.
+  apply = function(dev, state, channel)
+    if state.mode ~= "native_effect" then native.ring = false end
     if state.mode == "static" then
       local fill = {}
       for i = 1, RING_LEDS do fill[i] = state.color end
@@ -480,8 +485,12 @@ return {
       ring_grb = grb_from_colors(fill, RING_SLOTS)
       send_channels(dev)
     elseif state.mode == "native_effect" then
-      dev.transport:write(effects.packet(state.id, state.params, 0x01, RING_LEDS))
+      if channel == nil then
+        native.ring = true
+        dev.transport:write(effects.packet(state.id, state.params, 0x01, RING_LEDS))
+      end
       if chain_leds > 0 then
+        native.chain = true
         dev.transport:write(effects.packet(state.id, state.params, 0x02, chain_leds))
       end
     end
@@ -492,8 +501,10 @@ return {
   local colors = {}
   for i = 1, #bytes, 3 do colors[#colors + 1] = { r = bytes[i] or 0, g = bytes[i + 1] or 0, b = bytes[i + 2] or 0 } end
     if channel == "ring" then
+      native.ring = false
       ring_grb = grb_from_colors(colors, RING_SLOTS)
     else
+      native.chain = false
       ext_grb = grb_from_colors(colors, #colors)
     end
     send_channels(dev)

@@ -188,6 +188,17 @@ return function(h)
     h:assert_eq({ p[5], p[6] }, { 0x0E, 50 }, "tai chi mode and slowest speed")
     h:assert_eq({ p[8], p[9], p[10], p[11], p[12], p[13] }, { 2, 1, 3, 5, 4, 6 }, "two GRB colours")
     h:assert_eq({ p[57], p[58] }, { 2, 5 }, "colour count and tai chi constant")
+
+    fx:clear()
+    fx:apply({ mode = "native_effect", id = "pulse", params = {} }, "0")
+    w = fx:writes()
+    h:assert_eq(#w, 1, "a chain child's effect touches only the chain")
+    h:assert_eq(w[1].data[3], 0x02, "effect sent to the chain channel")
+    fx:clear()
+    fx:write_frame("ring", { 1, 2, 3 })
+    w = fx:writes()
+    h:assert_eq(#w, 2, "a ring frame leaves the chain effect running")
+    h:assert_eq(w[1].data[3], 0x01, "only the ring is re-sent")
   end
 
   for _, case in ipairs({{0x3008,{0x72,1,0,0}},{0x300e,{0x72,1,1,0}}}) do

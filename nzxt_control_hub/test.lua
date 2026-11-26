@@ -87,6 +87,11 @@ return function(h)
   h:assert_eq({ w[1].data[1], w[1].data[2], w[1].data[3], w[1].data[5], w[1].data[59] },
     { 0x2A, 0x04, 0x01, 0x02, 24 }, "channel 0 runs spectrum wave over its 24 LEDs")
   h:assert_eq({ w[3].data[3], w[3].data[59] }, { 0x10, 8 }, "channel 4 uses its own LED count")
+  dev:clear()
+  dev:apply({ mode = "native_effect", id = "pulse", params = {} }, "1")
+  w = dev:writes()
+  h:assert_eq(#w, 1, "a child's effect touches only its own output")
+  h:assert_eq(w[1].data[3], 0x02, "channel 1 mask")
 
   -- Smart Device V2: three fans and RGB ports that are not tied to them.
   local info = {}
