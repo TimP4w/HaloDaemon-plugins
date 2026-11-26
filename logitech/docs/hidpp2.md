@@ -412,7 +412,7 @@ Keyboards without REPROG_CONTROLS or GKEY (G915 X, G515) run their key assignmen
 
 **Preset file** (type `0x1b05`): `[00][group count]` then per key `[cidx][row count]` and 9-byte rows `[row index][modifiers][00][action bits u16 LE][opcode u16 LE][params u16 LE]`. Opcodes: `0x8000` disable (action bits `0x4000` | modifier bits = press modifiers only), `0x8001` mouse button (params = button mask), `0x8002` keystroke (action bits = modifier mask, params = HID keycode), `0x8003` consumer usage, `0x8004` with params `0002` = G-shift. The active profile's first `0x1b05` reference names the file.
 
-The plugin keeps every assignment host-side like the other backends: a mapped key becomes a disabled row, the firmware swallows it and reports it through the trigger events, and the daemon runs the action. Clearing the last mapping leaves an empty preset. Keys are labelled by control id and bound to the keyboard picture through the documented standard-key control ids (`lib/hidpp2/control_keys.lua`).
+The plugin keeps every assignment host-side like the other backends: a mapped key becomes a disabled row, the firmware swallows it and reports it through the trigger events, and the daemon runs the action. Clearing the last mapping leaves an empty preset. Keys are labelled by control id and bound to the keyboard picture through their control ids (`lib/hidpp2/control_keys.lua`): Logitech's documented standard keys `0x0122`–`0x0161`, plus the numpad (`0x016b`–`0x017b`), alt/start (`0x018b`–`0x018d`) and G-key (`0x018f`–`0x0197`) ids observed on a full-size keyboard. Ids with no known key keep a hexadecimal label.
 
 ### Button-event notifications
 

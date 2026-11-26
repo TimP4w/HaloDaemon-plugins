@@ -1821,5 +1821,8 @@ return function(h)
   h:assert_eq(bound_key(fkc_bound, "a"), 0x0122, "a full-key-customization keyboard binds keys by control id")
   h:assert_eq(bound_key(fkc_bound, "escape"), 0x014c, "every documented standard key binds")
   h:assert_eq(bound_key(fkc_bound, "b"), nil, "keys without a listed control stay unbound")
+  h:assert_eq(halod.require("lib.hidpp2.control_keys")[0x0177], "num7", "numpad control ids bind to numpad keys")
+  h:assert_eq(halod.require("lib.hidpp2.controls")[0x0192], "G4", "G-key control ids are labelled")
+  h:assert_eq(halod.require("lib.hidpp2.controls")[0x018c], "Left Start", "alt/start control ids are labelled")
   end
 end

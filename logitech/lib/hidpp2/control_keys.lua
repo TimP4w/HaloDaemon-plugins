@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
 -- REPROG_CONTROLS control id -> keyboard key id (the names used by the
--- runtime keyboard layout), for the standard keys Logitech assigns a control id.
+-- runtime keyboard layout). 0x0122-0x0161 are Logitech's documented standard
+-- keys; the numpad, G-key and alt/start ids above were read from a full-size
+-- keyboard's key positions.
 
 local keys = {
   [0x004c] = "print_screen", [0x004d] = "pause", [0x004e] = "scroll_lock", [0x004f] = "menu",
@@ -20,6 +22,11 @@ local keys = {
   [0x0156] = "backspace", [0x0157] = "equals", [0x0158] = "minus", [0x015a] = "left_bracket",
   [0x015b] = "right_bracket", [0x015c] = "semicolon", [0x015d] = "quote", [0x015e] = "slash",
   [0x015f] = "period", [0x0160] = "comma", [0x0161] = "space",
+  [0x016b] = "num_lock", [0x016c] = "num_div", [0x016d] = "num_mul", [0x016e] = "num_sub",
+  [0x016f] = "num_add", [0x0170] = "num_enter", [0x0171] = "num1", [0x0172] = "num2",
+  [0x0173] = "num3", [0x0174] = "num4", [0x0175] = "num5", [0x0176] = "num6", [0x0177] = "num7",
+  [0x0178] = "num8", [0x0179] = "num9", [0x017a] = "num0", [0x017b] = "num_dot",
+  [0x018b] = "left_alt", [0x018c] = "left_super", [0x018d] = "right_alt",
 }
 for i = 0, 25 do keys[0x0122 + i] = string.char(string.byte("a") + i) end
 
