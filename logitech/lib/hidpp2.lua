@@ -11,7 +11,9 @@ return function(hidpp1_factory)
 
 local SHORT, LONG = 0x10, 0x11
 local DIRECT = 0xff
-local SW_ID = 0x01
+-- Not 0x01: the kernel's hid-logitech-hidpp uses it, and ROOT replies carry
+-- nothing else to tell its lookups from ours.
+local SW_ID = 0x0a
 
 local FEATURE_SET = 0x0001
 local DEVICE_NAME = 0x0005
@@ -99,7 +101,7 @@ local function error_response(reply)
   error(string.format("HID++ error 0x%02x (%s) from %s, feature index 0x%02x func 0x%02x",
     code, names[code] or "unnamed",
     receiver and "the receiver (HID++ 1.0)" or "the device (HID++ 2.0)",
-    reply:byte(4) or 0, reply:byte(5) or 0))
+    reply:byte(4) or 0, (reply:byte(5) or 0) & (receiver and 0xff or 0xf0)))
 end
 
 -- Failures are strings because they cross into the daemon; these read back

@@ -16,7 +16,7 @@ A feature call is a **long (20-byte) report** (`build_packet`, see [protocol.md]
 byte 0     0x11               report ID (HIDPP_LONG; 0x10 for a short ROOT call)
 byte 1     dd                 device number (1–6 wireless via receiver; 0xFF wired direct)
 byte 2     fi                 feature index (resolved via ROOT; 0 = ROOT itself)
-byte 3     func | swid        function high-nibble | software-id (always 1) → e.g. 0x31
+byte 3     func | swid        function high-nibble | software-id (always 0xA) → e.g. 0x3A
 byte 4…    params, zero-padded to 20 bytes
 ```
 
@@ -26,9 +26,9 @@ This is the shape behind every `11 dd fi <func> ··` template in the tables bel
 
 ## 1. Function + software-ID byte (byte 3)
 
-Every 2.0 function byte is `function | software_id`, where the function occupies the **high nibble** (`0x00`, `0x10`, `0x20`, … `0xF0`) and the software ID the low nibble. HaloDaemon uses a **fixed software ID of 1**, so function `0x30` is sent as byte 3 = `0x31`, function `0x00` as `0x01`. The device echoes the same byte, letting the host correlate replies. (`feature_request` takes the high-nibble byte and stamps swid 1.)
+Every 2.0 function byte is `function | software_id`, where the function occupies the **high nibble** (`0x00`, `0x10`, `0x20`, … `0xF0`) and the software ID the low nibble. HaloDaemon uses a **fixed software ID of 0xA**, so function `0x30` is sent as byte 3 = `0x3A`, function `0x00` as `0x0A`. The device echoes the same byte, letting the host correlate replies. Software ID 1 belongs to the kernel's `hid-logitech-hidpp` driver, which probes a device on connect; ROOT replies do not echo the requested feature, so sharing its ID would hand the plugin the kernel's answers. (`request` takes the high-nibble byte and stamps the software ID.)
 
-In the tables below, outgoing byte templates are the full report as `build_packet` emits it: `dd` = device number, `fi` = feature index (resolved via ROOT), `··` = zero padding. So a function shown as `0x30` is sent with byte 3 = `0x31`.
+In the tables below, outgoing byte templates are the full report as `build_packet` emits it: `dd` = device number, `fi` = feature index (resolved via ROOT), `··` = zero padding. So a function shown as `0x30` is sent with byte 3 = `0x3A`.
 
 **Short vs long selection.** A request is **short** (`0x10`, 7 bytes) only when *both* the feature index is `0` and the payload is ≤ 3 bytes; in practice only ROOT calls. Every other feature has a non-zero index and always uses **long** (`0x11`, 20 bytes). Force-long devices (LIGHTSPEED headsets) route ROOT onto long too; see [protocol.md](protocol.md).
 
