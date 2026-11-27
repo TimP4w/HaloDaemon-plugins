@@ -88,7 +88,7 @@ return {
         { id="ring", name="Ring", topology="ring", led_count=8 },
         { id="logo", name="Logo", topology="linear", led_count=1 },
         -- This accessory header carries lighting only.
-        { id="0", name="Aer/F Fan", chainable=true, max_leds=40 },
+        { id="0", name="Aer/F Fan", chainable=true, max_leds=40, native_effects=true },
       },
       cooling = {channels={{id="pump",name="Pump",min_duty=20,max_duty=100,can_stop=false}}},
       accessories = catalogue.list(false),
@@ -96,7 +96,15 @@ return {
     }
   end,
 
-  apply = function(dev, state)
+  -- `channel` is set when the chain child runs an effect on its output; the
+  -- cooler's own call never touches the chain, which belongs to that child.
+  apply = function(dev, state, channel)
+    if channel then
+      if state.mode == "native_effect" and chain_leds > 0 then
+        dev.transport:write(effects.packet(state.id, state.params, 0x01, chain_leds))
+      end
+      return
+    end
     if state.mode == "static" then
       local fill = {}
       for i = 1, RING_LEDS do fill[i] = state.color end
@@ -115,9 +123,6 @@ return {
     elseif state.mode == "native_effect" then
       dev.transport:write(effects.packet(state.id, state.params, 0x02, RING_LEDS))
       dev.transport:write(effects.packet(state.id, state.params, 0x04, 1))
-      if chain_leds > 0 then
-        dev.transport:write(effects.packet(state.id, state.params, 0x01, chain_leds))
-      end
     end
   end,
 

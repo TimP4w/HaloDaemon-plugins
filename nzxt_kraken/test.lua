@@ -175,12 +175,11 @@ return function(h)
     fx:clear()
     fx:apply({ mode = "native_effect", id = "spectrum_wave", params = { speed = "fastest", direction = "backward" } })
     local w = fx:writes()
-    h:assert_eq(#w, 2, "ring and radiator chain each get the effect")
+    h:assert_eq(#w, 1, "the Kraken's own effect runs on the ring only; the chain belongs to its child")
     local p = w[1].data
     h:assert_eq({ p[1], p[2], p[3], p[4], p[5] }, { 0x2A, 0x04, 0x01, 0x01, 0x02 }, "spectrum wave on the ring")
     h:assert_eq({ p[6], p[7] }, { 80, 0 }, "fastest spectrum speed")
     h:assert_eq({ p[56], p[57], p[59], p[60] }, { 2, 0, 24, 3 }, "backward, no colours, 24 LEDs, length 3")
-    h:assert_eq({ w[2].data[3], w[2].data[59] }, { 0x02, 24 }, "chain uses its accessory LED count")
     fx:clear()
     fx:apply({ mode = "native_effect", id = "tai_chi", params = {
       color1 = { r = 1, g = 2, b = 3 }, color2 = { r = 4, g = 5, b = 6 }, speed = "slowest" } })
@@ -188,6 +187,17 @@ return function(h)
     h:assert_eq({ p[5], p[6] }, { 0x0E, 50 }, "tai chi mode and slowest speed")
     h:assert_eq({ p[8], p[9], p[10], p[11], p[12], p[13] }, { 2, 1, 3, 5, 4, 6 }, "two GRB colours")
     h:assert_eq({ p[57], p[58] }, { 2, 5 }, "colour count and tai chi constant")
+
+    fx:clear()
+    fx:apply({ mode = "native_effect", id = "pulse", params = {} }, "0")
+    w = fx:writes()
+    h:assert_eq(#w, 1, "a chain child's effect touches only the chain")
+    h:assert_eq({ w[1].data[3], w[1].data[59] }, { 0x02, 24 }, "effect sent to the chain channel with its accessory LED count")
+    fx:clear()
+    fx:write_frame("ring", { 1, 2, 3 })
+    w = fx:writes()
+    h:assert_eq(#w, 2, "a ring frame leaves the chain effect running")
+    h:assert_eq(w[1].data[3], 0x01, "only the ring is re-sent")
   end
 
   for _, case in ipairs({{0x3008,{0x72,1,0,0}},{0x300e,{0x72,1,1,0}}}) do

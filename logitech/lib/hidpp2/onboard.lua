@@ -28,7 +28,7 @@ local function set_onboard_mode(dev, host)
       return
     end
     last_error = value
-    if not tostring(value):find("HID++ response did not arrive", 1, true) then error(value) end
+    if not api.unanswered(value) then error(value, 0) end
 
     -- Some firmware applies a mode transition but drops its acknowledgement.
     -- Read the state back before retrying so an applied command is not reported
@@ -63,7 +63,7 @@ local function with_sector_crc(data, size)
 end
 
 local function read_sector(dev, sector, size)
-  if size < 16 then error("HID++ onboard profile description unavailable") end
+  if size < 16 then error(api.asleep) end
   local chunks, offset = {}, 0
   while offset + 15 < size do
     local reply
@@ -149,10 +149,11 @@ local function patch_sector_dpi(data, size, steps)
 end
 
 local function refresh_onboard(dev)
-  local previous=dev.onboard
+  local previous = dev.onboard
   local info = feature(dev, ONBOARD_PROFILES, 0x00)
   local size = ((info:byte(8) or 0) << 8) | (info:byte(9) or 0)
-  if size < 16 then error("HID++ onboard profile description unavailable") end
+  -- The receiver zeroes the description of a sleeping slot.
+  if size < 16 then error(api.asleep) end
   if info:byte(1) ~= 1 or (info:byte(2) or 0) > 5 then
     error("unsupported HID++ onboard profile format")
   end
@@ -182,10 +183,11 @@ local function refresh_onboard(dev)
     dev.onboard.signature_active = active_sig or (previous and previous.signature_active)
     dev.onboard.signature_inactive = inactive_sig or (previous and previous.signature_inactive)
     dev.onboard.current_index = dev.onboard.profile_data:byte(2) or 0
-    if previous and previous.active_sector==active and dev.onboard.profile_steps[(previous.current_index or 0)+1] then
-      dev.onboard.current_index=previous.current_index or 0
-    elseif mode~=2 then
-      dev.current_dpi=dev.onboard.profile_steps[dev.onboard.current_index+1] or dev.current_dpi
+    if previous and previous.active_sector == active
+        and dev.onboard.profile_steps[(previous.current_index or 0) + 1] then
+      dev.onboard.current_index = previous.current_index or 0
+    elseif mode ~= 2 then
+      dev.current_dpi = dev.onboard.profile_steps[dev.onboard.current_index + 1] or dev.current_dpi
     end
   else
     dev.onboard.profile_steps = {}

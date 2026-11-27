@@ -74,6 +74,7 @@ local function describe(dev, rgb_count)
       id = tostring(i), name = channel_name(i),
       chainable = true, max_leds = m.max_leds, color_order = "rgb",
       cooling_channel = (m.paired and i < m.fans) and tostring(i) or nil,
+      native_effects = true,
     }
   end
   for i = 0, m.fans - 1 do
@@ -123,11 +124,13 @@ return {
     }
   end,
 
-  apply = function(dev, state)
+  -- `channel` is set when a chain child runs an effect on its own output.
+  apply = function(dev, state, channel)
     if state.mode ~= "native_effect" then return end
+    local only = channel and tonumber(channel)
     for ch = 0, 7 do
       local leds = channel_leds[ch]
-      if leds and leds > 0 then
+      if leds and leds > 0 and (only == nil or only == ch) then
         dev.transport:write(effects.packet(state.id, state.params, 1 << ch, leds))
       end
     end

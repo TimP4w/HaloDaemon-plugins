@@ -41,6 +41,12 @@ Halo LCD Widgets (halo_lcd)
   Source SPDX licenses:
     - GPL-3.0-or-later
 
+Philips Hue (hue)
+  Plugin license: GPL-3.0-or-later
+  Source SPDX licenses:
+    - GPL-3.0-or-later
+      Copyright: HaloDaemon
+
 Linux Hardware Monitoring (hwmon)
   Plugin license: GPL-3.0-or-later
   Source SPDX licenses:
