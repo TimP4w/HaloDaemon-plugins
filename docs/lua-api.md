@@ -182,6 +182,14 @@ anywhere — channel list, cached status, and fan curves. With nothing attached 
 stays an ordinary channel of the parent. The id must be one the same
 `initialize` declares under `cooling.channels`, or the device is rejected.
 
+A chainable channel may also declare `native_effects = true`. The child detected
+on that output then advertises the parent's `native_effects` list, and a firmware
+effect picked on the child arrives as `apply(dev, state, channel_id)` with the
+chainable channel's id as the third argument. Calls for the parent's own zones
+carry no third argument. A plugin that declares the flag should drive only that
+output when the argument is present, and leave the output alone otherwise. The
+flag is rejected on channels that are not chainable.
+
 ### `close(dev)`
 
 Optional cleanup before the worker exits. HaloDaemon also removes managed audio
@@ -204,7 +212,7 @@ host values and are commonly zero-based.
 
 | Capability | Callback signature |
 |---|---|
-| Lighting | `apply(dev, state)`; `write_frame(dev, channel_id, bytes)` |
+| Lighting | `apply(dev, state, channel_id?)` (`channel_id` only for a chain child's firmware effect, see above); `write_frame(dev, channel_id, bytes)` |
 | Cooling | `initialize` returns `cooling = { channels = {{id, name, kind = "fan"|"pump", controllable}, ...} }`; `get_cooling_status(dev, channel_id) -> {id, name, kind, controllable, duty?, rpm?}`; `set_cooling_duty(dev, channel_id, duty)` |
 | Sensor | `get_sensors(dev) -> sensors` |
 | Poll | `read_status(dev) -> any` for slowly refreshed state without notifications. HID/button notifications use `event()`. |
