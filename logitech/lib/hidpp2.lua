@@ -548,10 +548,11 @@ local function write_fkc_preset(dev, cidxs)
     pm.write_profile(dev, state, id, pm.serialize_profile(p))
   end
   if not fkc.enabled(dev) then fkc.set_enabled(dev, true) end
-  -- The firmware loads a preset only once the preset file itself is
-  -- configured; reloading the profile alone leaves the old rows in place.
-  pm.activate(dev, pm.FKC_TYPE, file_id, entry.length, entry.crc)
+  -- The firmware runs a preset only once the preset file itself is configured,
+  -- and reloading the profile (or re-entering host mode) drops it again, so
+  -- the preset is configured last.
   activate_profile(dev, state, id)
+  pm.activate(dev, pm.FKC_TYPE, file_id, entry.length, entry.crc)
 end
 local onboard_mode = onboard.mode
 local set_onboard_mode = onboard.set_mode
