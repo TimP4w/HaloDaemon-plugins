@@ -5,7 +5,7 @@
 
 return function(api)
 local bytes, request, feature = api.bytes, api.request, api.feature
-local DIRECT, device_profile = api.direct, api.device_profile
+local DIRECT = api.direct
 local REPROG_CONTROLS_V4 = api.reprog_controls_v4
 local GKEY, MOUSE_BUTTON_SPY = api.gkey, api.mouse_button_spy
 local FKC, CONTROL_LIST = api.full_key_customization, api.control_list
@@ -14,10 +14,6 @@ local CONTROLS = halod.require("lib.hidpp2.controls")
 
 local function action_is_native(action)
   return not action or action.type == nil or action.type == "native"
-end
-
-local function mapping_is_native(mapping)
-  return action_is_native(mapping.base) and action_is_native(mapping.shifted)
 end
 
 local function remap_buttons(dev)
@@ -43,7 +39,7 @@ local function remap_buttons(dev)
     for i = 1, math.min(count, 16) do buttons[#buttons + 1] = { cid = i, label = "G" .. i, divertable = true, group = 0 } end
   elseif features[MOUSE_BUTTON_SPY] then
     backend = "spy"
-    local labels = device_profile(dev).buttons
+    local labels = dev.profile.buttons
     for i = 1, 16 do
       if not labels or labels[i] then
         buttons[#buttons + 1] = { cid = i, label = labels and labels[i] or ("Button " .. i), divertable = true, group = 0 }
@@ -62,7 +58,7 @@ local function remap_buttons(dev)
     dev.fkc = { index = index, cids = {} }
     for cid, cidx in pairs(index) do dev.fkc.cids[cidx] = cid end
   end
-  dev.remap = { backend = backend, base = {}, shifted = {}, layer = false, previous = {} }
+  dev.remap = { backend = backend, buttons = buttons, base = {}, shifted = {}, layer = false, previous = {} }
   if backend == "spy" then
     local ok, reply = pcall(request, dev, devnum, features[MOUSE_BUTTON_SPY], 0x30)
     if ok and #reply >= 16 then
@@ -285,8 +281,6 @@ local function button_events(dev, packet_in)
 end
 
 return {
-  mapping_is_native = mapping_is_native,
-  action_is_native = action_is_native,
   buttons = remap_buttons,
   set_mapping = set_mapping,
   set_layer = set_layer,

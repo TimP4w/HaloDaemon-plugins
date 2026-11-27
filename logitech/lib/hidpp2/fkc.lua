@@ -18,15 +18,6 @@ M.LIST_PADDING = 0xff
 
 local function u16(s, i) return ((s:byte(i) or 0) << 8) | (s:byte(i + 1) or 0) end
 
-function M.capabilities(dev)
-  local caps = feature(dev, FKC, 0x00)
-  return {
-    config_version = caps:byte(1) or 0, macro_version = caps:byte(2) or 0,
-    config_max_size = u16(caps, 3), macro_max_size = u16(caps, 5),
-    max_triggers = caps:byte(7) or 0, sw_capabilities = caps:byte(8) or 0,
-  }
-end
-
 function M.enabled(dev)
   local reply = feature(dev, FKC, 0x30, bytes(0, 0, 0))
   return (reply:byte(1) or 0) ~= 0, (reply:byte(2) or 0) ~= 0

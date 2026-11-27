@@ -44,10 +44,6 @@ local BRIGHTNESS_CONTROL = 0x8040
 
 local function bytes(...) return string.char(...) end
 
-local function long_only(dev)
-  return dev.long_only == true
-end
-
 local function packet(devnum, sub_id, address, payload, long)
   local size, report = long and 20 or 7, long and LONG or SHORT
   local out = bytes(report, devnum, sub_id, address) .. (payload or "")
@@ -106,6 +102,43 @@ local function error_response(reply)
     reply:byte(4) or 0, reply:byte(5) or 0))
 end
 
+-- Failures are strings because they cross into the daemon; these read back
+-- the two messages raised here, so no caller matches error text itself.
+local UNANSWERED = "HID++ response did not arrive"
+local ASLEEP = "HID++ device asleep (zeroed reply)"
+
+local function unanswered(err)
+  return tostring(err):find(UNANSWERED, 1, true) ~= nil
+end
+
+-- A sleeping slot either answers nothing or lets the receiver answer with a
+-- zeroed record in place of the device.
+local function unreachable(err)
+  local text = tostring(err)
+  return text:find(UNANSWERED, 1, true) ~= nil or text:find(ASLEEP, 1, true) ~= nil
+end
+
+-- The code of an error reply and whether the receiver raised it; nil for any
+-- other failure.
+local function hidpp_error(err)
+  local code, source = tostring(err):match("HID%+%+ error 0x(%x%x) %(.-%) from the (%a+)")
+  if code then return tonumber(code, 16), source == "receiver" end
+end
+
+-- Repeats a request the device left unanswered. A late reply to an earlier
+-- attempt carries the same devnum, feature index, function and software id,
+-- so it satisfies the repeat.
+local function retry(fn, ...)
+  local last_error
+  for _ = 1, 3 do
+    local ok, value = pcall(fn, ...)
+    if ok then return value end
+    if not unreachable(value) then error(value, 0) end
+    last_error = value
+  end
+  error(last_error, 0)
+end
+
 local function dispatch(dev, devnum, sub, address, selector, patient)
   local deadline = halod.monotonic_ms() + (patient and PATIENT_BUDGET_MS or DISPATCH_BUDGET_MS)
   local max_empty = patient and PATIENT_EMPTY_WINDOWS or MAX_EMPTY_WINDOWS
@@ -131,12 +164,12 @@ local function dispatch(dev, devnum, sub, address, selector, patient)
       end
     end
   end
-  error("HID++ response did not arrive")
+  error(UNANSWERED)
 end
 
 local function request(dev, devnum, feature_index, func, args, patient)
   args = args or ""
-  local long = long_only(dev) or feature_index ~= 0 or #args > 3
+  local long = dev.long_only or feature_index ~= 0 or #args > 3
   local address = func | SW_ID
   if long then
     send(dev, packet(devnum, feature_index, address, args, true))
@@ -148,7 +181,7 @@ local function request(dev, devnum, feature_index, func, args, patient)
   if pcall(send, dev, packet(devnum, feature_index, address, args, false)) then
     local ok, reply = pcall(dispatch, dev, devnum, feature_index, address, nil, patient)
     if ok then return reply end
-    if not tostring(reply):find("HID++ response did not arrive", 1, true) then error(reply) end
+    if not unanswered(reply) then error(reply, 0) end
   end
   dev.long_only = true
   send(dev, packet(devnum, feature_index, address, args, true))
@@ -168,30 +201,19 @@ local v1_read, v1_write = hidpp1.read, hidpp1.write
 -- Receiver identity is transport metadata, not a special case of one device
 -- PID. Keep the Solaar-compatible HID++ 1.x families here; Bolt and the old
 -- EX100 use protocols this plugin does not implement.
-local RECEIVERS = {
-  [0xc52b] = { name = "Logitech Unifying Receiver", max_slots = 6 },
-  [0xc532] = { name = "Logitech Unifying Receiver", max_slots = 6 },
-  [0xc518] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc51a] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc51b] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc521] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc525] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc526] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc52e] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc52f] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc531] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc534] = { name = "Logitech Nano Receiver", max_slots = 2 },
-  [0xc535] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc537] = { name = "Logitech Nano Receiver", max_slots = 6 },
-  [0xc539] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc53a] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc53d] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc53f] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc541] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc545] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc547] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
-  [0xc54d] = { name = "Logitech LIGHTSPEED Receiver", max_slots = 6 },
+local RECEIVER_FAMILIES = {
+  { name = "Logitech Unifying Receiver", pids = { 0xc52b, 0xc532 } },
+  { name = "Logitech Nano Receiver", pids = { 0xc518, 0xc51a, 0xc51b, 0xc521, 0xc525, 0xc526,
+    0xc52e, 0xc52f, 0xc531, 0xc534, 0xc535, 0xc537 } },
+  { name = "Logitech LIGHTSPEED Receiver", pids = { 0xc539, 0xc53a, 0xc53d, 0xc53f, 0xc541,
+    0xc545, 0xc547, 0xc54d } },
 }
+local RECEIVERS = {}
+for _, family in ipairs(RECEIVER_FAMILIES) do
+  for _, pid in ipairs(family.pids) do
+    RECEIVERS[pid] = { name = family.name, max_slots = pid == 0xc534 and 2 or 6 }
+  end
+end
 
 local PAIRED_KINDS = { [1] = "keyboard", [2] = "mouse", [3] = "keyboard", [0x0d] = "headset" }
 
@@ -214,9 +236,7 @@ local PING_DATA = 0x5a
 
 local function ping(dev, devnum)
   local reply = request(dev, devnum, 0, 0x10, bytes(0, 0, PING_DATA))
-  if (reply:byte(1) or 0) == 0 or reply:byte(3) ~= PING_DATA then
-    error("HID++ feature set unavailable")
-  end
+  if (reply:byte(1) or 0) == 0 or reply:byte(3) ~= PING_DATA then error(ASLEEP) end
 end
 
 local function enumerate_features(dev, devnum)
@@ -229,7 +249,7 @@ local function enumerate_features(dev, devnum)
   local fs = feature_index(dev, devnum, FEATURE_SET)
   -- A receiver answers ROOT for a sleeping slot with a zeroed record, not an
   -- error; accepting it would publish a capability-less device.
-  if not fs then error("HID++ feature set unavailable") end
+  if not fs then error(ASLEEP) end
   local count = request(dev, devnum, fs, 0x00):byte(1) or 0
   local features = { [0] = 0, [FEATURE_SET] = fs }
   local discovered = 0
@@ -244,31 +264,8 @@ local function enumerate_features(dev, devnum)
   -- ROOT can be answered from the receiver's pairing cache while the slot
   -- itself is still unreachable, so the zeroed record moves to the count or
   -- the ids. A device that enumerates nothing is asleep, not featureless.
-  if discovered == 0 then error("HID++ feature set unavailable") end
+  if discovered == 0 then error(ASLEEP) end
   return features
-end
-
--- A sleeping slot either answers nothing or lets the receiver answer with a
--- zeroed record in place of the device; both read as "unavailable" here.
-local function device_unreachable(err)
-  local text = tostring(err)
-  return text:find("HID++ response did not arrive", 1, true) ~= nil
-      or text:find("HID%+%+ .- unavailable") ~= nil
-end
-
-local function enumerate_features_with_retry(dev, devnum)
-  local last_error
-  -- A cold direct device can take longer than one transport window to
-  -- answer its first ROOT request. Retrying the same request is safe: HID++
-  -- replies carry the same devnum, feature index, function, and software id,
-  -- so a late response from the prior attempt satisfies this attempt too.
-  for _ = 1, 3 do
-    local ok, value = pcall(enumerate_features, dev, devnum)
-    if ok then return value end
-    last_error = value
-    if not device_unreachable(value) then error(value) end
-  end
-  error(last_error or "HID++ feature discovery failed")
 end
 
 local function read_name(dev, devnum, features)
@@ -313,7 +310,6 @@ local device_profile = profiles.device_profile
 local keyboard_with_remap = profiles.keyboard_with_remap
 local discovered_keyboard = profiles.discovered_keyboard
 local function has(features, code) return features[code] ~= nil end
-local profile_signature
 
 local VOLTAGE_CURVE = {
   { 100, 4186 }, { 90, 4067 }, { 80, 3989 }, { 70, 3922 },
@@ -414,12 +410,16 @@ local function send_feature_packets(dev, packets)
   end
 end
 
+local pm = halod.require("lib.hidpp2.profile_mgmt")({
+  bytes = bytes, feature = patient_feature, feature_id = PROFILE_MANAGEMENT,
+  hidpp_error = hidpp_error,
+})
 local lighting = halod.require("lib.hidpp2.lighting")({
   bytes = bytes, packet = packet, request = request, feature = feature,
-  send_feature_packets = send_feature_packets, sw_id = SW_ID,
+  send_feature_packets = send_feature_packets, sw_id = SW_ID, retry = retry,
   rgb_effects = RGB_EFFECTS, color_led_effects = COLOR_LED_EFFECTS,
   per_key_lighting_v2 = PER_KEY_LIGHTING_V2,
-  profile_management = PROFILE_MANAGEMENT,
+  profile_management = PROFILE_MANAGEMENT, pm = pm,
 })
 local resolve_native_effects = lighting.resolve_native_effects
 local apply_native_effect = lighting.apply_native_effect
@@ -494,7 +494,7 @@ local function equalizer_read(dev)
     bands[#bands + 1] = { index = i - 1, label = label, min = min, max = max, step = 1, value = value }
   end
   local presets, selected = {{ id = "custom", label = "Custom", is_custom = true, is_firmware = false }}, 0
-  for _, preset in ipairs((device_profile(dev).eq_presets) or {}) do
+  for _, preset in ipairs(dev.profile.eq_presets or {}) do
     if #preset.bands == count then
       presets[#presets + 1] = { id = preset.id, label = preset.label, is_custom = false,
         is_firmware = false, bands = preset.bands }
@@ -510,10 +510,7 @@ end
 
 local onboard = halod.require("lib.hidpp2.onboard")({
   bytes = bytes, feature = feature, feature_id = ONBOARD_PROFILES,
-  restore_rgb_control = restore_rgb_control,
-})
-local pm = halod.require("lib.hidpp2.profile_mgmt")({
-  bytes = bytes, feature = patient_feature, feature_id = PROFILE_MANAGEMENT,
+  restore_rgb_control = restore_rgb_control, unanswered = unanswered, asleep = ASLEEP,
 })
 local fkc = halod.require("lib.hidpp2.fkc")({
   bytes = bytes, feature = feature, request = request,
@@ -539,13 +536,7 @@ local function activate_profile(dev, state, id, reclaim)
   state.mode = pm.mode(dev)
   if reclaim == false or not dev.lighting or not dev.lighting.host then return end
   restore_rgb_control(dev)
-  local last = dev.lighting.last_state
-  if last and not dev.lighting.replaying then
-    dev.lighting.replaying = true
-    local ok, err = pcall(callbacks.apply, dev, last)
-    dev.lighting.replaying = nil
-    if not ok then error(err) end
-  end
+  if dev.lighting.last_state then callbacks.apply(dev, dev.lighting.last_state) end
 end
 
 -- Writes the LED records of the active profile and makes the firmware reload
@@ -615,19 +606,16 @@ local restore_profile = onboard.restore_profile
 local set_signature = onboard.set_signature
 local remap = halod.require("lib.hidpp2.remap")({
   bytes = bytes, request = request, feature = feature, direct = DIRECT,
-  device_profile = device_profile,
   reprog_controls_v4 = REPROG_CONTROLS_V4, gkey = GKEY,
   mouse_button_spy = MOUSE_BUTTON_SPY,
   full_key_customization = FULL_KEY_CUSTOMIZATION, control_list = CONTROL_LIST,
   fkc = fkc, write_fkc_presets = write_fkc_presets,
 })
-local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
 local set_remap_mapping = remap.set_mapping
-local action_is_native = remap.action_is_native
 local button_events = remap.events
 -- The firmware's signature pair in the active profile, if the profile carries one.
-profile_signature = function(dev)
+local function profile_signature(dev)
   local state = dev.pm
   local id = state and pm.active_profile(state)
   local p = id and state.profiles[id].parsed
@@ -651,14 +639,13 @@ end
 local function set_sensor_dpi(dev, dpi)
   local index = dev.hidpp and dev.hidpp.features[ADJUSTABLE_DPI]
   if not index then error("ADJUSTABLE_DPI unavailable") end
-  local args, last_error = bytes(0, (dpi >> 8) & 0xff, dpi & 0xff), nil
-  for _ = 1, 3 do
-    local ok, err = pcall(request, dev, dev.hidpp.devnum, index, 0x30, args)
-    if ok then dev.current_dpi = dpi; return end
-    last_error = err
-    if not tostring(err):find("HID++ response did not arrive", 1, true) then error(err) end
-  end
-  error(last_error)
+  retry(request, dev, dev.hidpp.devnum, index, 0x30, bytes(0, (dpi >> 8) & 0xff, dpi & 0xff))
+  dev.current_dpi = dpi
+end
+
+-- The DPI the active onboard profile's current step selects.
+local function profile_dpi(state)
+  return state.profile_steps[(state.current_index or 0) + 1]
 end
 local function write_eq_bands(dev, values)
   local eq = dev.equalizer or equalizer_read(dev)
@@ -673,6 +660,253 @@ local function write_eq_bands(dev, values)
   end
   feature(dev, EQUALIZER, 0x30, bytes(table.unpack(out)))
   for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
+end
+
+local function describe_device(dev)
+  -- Direct USB devices use 0xff. Receiver children are added through the
+  -- controller-discovery path and carry their paired slot in dev.match.index.
+  -- A receiver is only the transport root; paired slot children are the
+  -- actual devices. Direct devices retain 0xff.
+  dev.receiver = not dev.match.key and RECEIVERS[dev.match.pid] or nil
+  if dev.receiver then
+    -- Set wireless (0x000100) and software-present (0x000800) notification
+    -- flags without clearing bits other software enabled.
+    local ok, flags = pcall(v1_read, dev, DIRECT, 0x0000)
+    local f0, f1, f2 = 0, 0, 0
+    if ok then f0, f1, f2 = flags:byte(1) or 0, flags:byte(2) or 0, flags:byte(3) or 0 end
+    v1_write(dev, DIRECT, 0x0000, bytes(f0, f1 | 0x09, f2), true)
+    dev.receiver = { name = dev.receiver.name,
+      max_slots = receiver_capacity(dev) or dev.receiver.max_slots }
+    return { ok = true, model = dev.receiver.name, capabilities = { "pairing" } }
+  end
+  local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
+  -- A cold direct device can take longer than one transport window to
+  -- answer its first ROOT request.
+  local features = retry(enumerate_features, dev, devnum)
+  dev.hidpp = { devnum = devnum, features = features }
+  local profile = device_profile(dev)
+  dev.profile = profile
+  local layout
+  local name = read_name(dev, devnum, features) or UNNAMED_DEVICE
+
+  local result = { ok = true, model = name, capabilities = {},
+    controls = { ranges = {}, choices = {}, booleans = {}, actions = {} } }
+  local function capability(name) result.capabilities[#result.capabilities + 1] = name end
+  -- Declares a range, choice or boolean control with its current value.
+  local function declare(kind, control, value)
+    local list = result.controls[kind]
+    list[#list + 1] = control
+    if value ~= nil then
+      result[kind] = result[kind] or {}
+      result[kind][control.key] = value
+    end
+  end
+  local function per_key_channel(led_ids)
+    local keyboard, form_factor = discovered_keyboard(led_ids, profile)
+    if keyboard then
+      layout = keyboard_layout(dev)
+      keyboard.detected_language = layout
+      if profile.gkeys_on_function_row or dev.remap.backend == "fkc" then
+        keyboard_with_remap(keyboard, dev.remap.backend, dev.remap.buttons)
+      end
+      result.keyboard = keyboard
+      capability("keyboard_layout")
+    end
+    return { id = "zone_0", name = keyboard and "Keys" or "Lighting",
+      topology = keyboard and "keyboard" or "linear",
+      led_count = #led_ids, led_ids = led_ids,
+      keyboard_form_factor = keyboard and form_factor or nil,
+      keyboard_layout = layout }
+  end
+  -- Declare only capabilities actually advertised by the feature table.
+  -- Their packet implementations are added below as the corresponding
+  -- protocol codecs are ported; this keeps unknown devices inert rather than
+  -- advertising controls that their firmware cannot service.
+  if has(features, ONBOARD_PROFILES) then
+    local state = refresh_onboard(dev)
+    declare("booleans", { key = "host_mode", label = "Host mode", category = "Onboard Memory" }, state.mode == 2)
+    if #state.directory > 0 then capability("onboard_profiles") end
+  elseif has(features, PROFILE_MANAGEMENT) then
+    local state = pm.refresh(dev)
+    if next(state.profiles) then capability("onboard_profiles") end
+  end
+  if has(features, ADJUSTABLE_DPI) then
+    local available = dpi_list(dev, features[ADJUSTABLE_DPI])
+    local current = request(dev, devnum, features[ADJUSTABLE_DPI], 0x20)
+    local dpi = #current >= 3 and ((current:byte(2) << 8) | current:byte(3))
+        or (#current >= 2 and ((current:byte(1) << 8) | current:byte(2))) or 0
+    if dpi == 0 and #current >= 5 then dpi = (current:byte(4) << 8) | current:byte(5) end
+    local profile_steps = dev.onboard and dev.onboard.profile_steps or {}
+    dev.software_dpi_steps = { table.unpack(#profile_steps > 0 and profile_steps or available) }
+    dev.available_dpis, dev.current_dpi = available, dpi
+    if dev.onboard then
+      for i, value in ipairs(profile_steps) do
+        if value == dpi then dev.onboard.current_index = i - 1; break end
+      end
+    end
+    result.dpi = callbacks.dpi_status(dev)
+    capability("dpi")
+  end
+  local buttons = remap_buttons(dev)
+  if #buttons > 0 then
+    local exposed, defaults = {}, {}
+    for _, button in ipairs(buttons) do exposed[button.cid] = true end
+    for _, mapping in ipairs(profile.defaults or {}) do
+      if exposed[mapping.cid] then defaults[#defaults + 1] = mapping end
+    end
+    -- Firmware ignores per-control divert while a mouse is in onboard mode;
+    -- remap only takes effect in host mode. See docs/hidpp2.md.
+    result.key_remap = { buttons = buttons, requires_host_mode = dev.onboard ~= nil,
+      default_mappings = defaults }
+    capability("key_remap")
+  end
+  local rates = report_rates(dev)
+  if rates and #rates.options > 0 then
+    dev.report_rates = rates
+    local selected = 0
+    for i, option in ipairs(rates.options) do if option.wire == rates.current then selected = i - 1 end end
+    declare("choices", { key = "report_rate", label = "Report rate", options = rates.options,
+      default = selected, category = "Performance" }, selected)
+  end
+  if has(features, RGB_EFFECTS) then
+    local count = request(dev, devnum, features[RGB_EFFECTS], 0x00, bytes(0xff, 0xff, 0)):byte(3) or 0
+    if count > 0 then
+      local static_slots, effect_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
+      local led_ids = has(features, PER_KEY_LIGHTING_V2)
+        and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
+      local wire = #led_ids > 0 and "per_key" or "rgb_effects"
+      local native, native_descriptors = resolve_native_effects(effect_slots)
+      dev.lighting = { wire = wire, channels = count, static_slots = static_slots,
+        effect_slots = effect_slots, native = native, led_ids = led_ids }
+      result.channels = {}
+      if #led_ids > 0 then
+        result.channels[1] = per_key_channel(led_ids)
+      else
+        for zone = 0, count - 1 do result.channels[#result.channels + 1] = {
+          id = "zone_" .. zone, name = "Zone " .. (zone + 1), topology = "linear", led_count = 1 } end
+      end
+      -- The firmware's own signature animation lives in the onboard profile's
+      -- LED records, not in the RGB_EFFECTS table.
+      if dev.onboard and dev.onboard.signature_active then
+        native_descriptors[#native_descriptors + 1] = {
+          id = "signature", name = profile.signature_name or "Signature",
+          params = {{ id = "brightness", label = "Brightness",
+            kind = { kind = "range", min = 1, max = 100, step = 1 }, default = 100 }},
+        }
+      end
+      -- A tag-managed profile keeps the firmware's two-colour signature in
+      -- its first LED record.
+      local signature = dev.pm and profile_signature(dev)
+      if signature then
+        local p = signature.params
+        native_descriptors[#native_descriptors + 1] = {
+          id = "signature", name = profile.signature_name or "Signature",
+          params = {
+            { id = "color1", label = "Primary Color", kind = { kind = "color" },
+              default = { r = p[1], g = p[2], b = p[3] } },
+            { id = "color2", label = "Second Color", kind = { kind = "color" },
+              default = { r = p[4], g = p[5], b = p[6] } },
+            { id = "brightness", label = "Brightness",
+              kind = { kind = "range", min = 1, max = 100, step = 1 }, default = p[9] > 0 and p[9] or 100 },
+          },
+        }
+      end
+      result.native_effects = native_descriptors
+      restore_rgb_control(dev)
+      if profile_managed(dev) then
+        declare("booleans", { key = "host_mode", label = "Host mode", category = "Onboard Memory" }, true)
+      end
+      capability("lighting")
+    end
+  elseif has(features, COLOR_LED_EFFECTS) then
+    local count = request(dev, devnum, features[COLOR_LED_EFFECTS], 0x00):byte(1) or 0
+    if count > 0 then
+      local channels, static_slots, effect_slots =
+        color_led_zones(dev, features[COLOR_LED_EFFECTS], count, profile.zone_names)
+      local native, native_descriptors = resolve_native_effects(effect_slots)
+      dev.lighting = { wire = "color_led", channels = count, static_slots = static_slots,
+        effect_slots = effect_slots, native = native, led_ids = {} }
+      result.channels = channels
+      result.native_effects = native_descriptors
+      feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
+      capability("lighting")
+    end
+  elseif has(features, PER_KEY_LIGHTING_V2) then
+    local led_ids = discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order)
+    if #led_ids > 0 then
+      dev.lighting = { wire = "per_key", channels = 1, static_slots = { 0 }, led_ids = led_ids }
+      result.channels = { per_key_channel(led_ids) }
+      capability("lighting")
+    end
+  end
+  if has(features, SIDETONE) then
+    local level = feature(dev, SIDETONE, 0x00):byte(1) or 0
+    declare("ranges", { key = "sidetone", label = "Sidetone", min = 0, max = 100, step = 1,
+      default = level, category = "Audio" }, level)
+  end
+  if has(features, EQUALIZER) then equalizer_read(dev); capability("equalizer") end
+  if has(features, BASS_TONE) then
+    local level = feature(dev, BASS_TONE, 0x00):byte(1) or 0
+    local key = profile.bass_key or "bass_tone"
+    dev.bass_key = key
+    declare("ranges", { key = key, label = profile.bass_label or "Bass", min = 0, max = 100, step = 1,
+      default = level, category = "Audio" }, level)
+  end
+  -- Only the audio products' vendor collection lacks a short report, so the
+  -- long-only switch identifies them without a model list.
+  if has(features, ADC_MEASUREMENT) and dev.long_only then
+    -- Auto power-off timer in minutes (0x10 get / 0x20 set).
+    local ok, reply = pcall(feature, dev, ADC_MEASUREMENT, 0x10)
+    local minutes = ok and reply:byte(1) or nil
+    if minutes and minutes > 0 then
+      dev.power_off_timer = true
+      declare("ranges", { key = "power_off_timer", label = "Auto Power Off (min)", min = 1, max = 60,
+        step = 1, default = minutes, category = "Power" }, minutes)
+    end
+  end
+  if has(features, HIRES_WHEEL) then
+    local caps = feature(dev, HIRES_WHEEL, 0x00)
+    local mode = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
+    dev.hires = { has_invert = ((caps:byte(2) or 0) & 0x08) ~= 0, mode = mode }
+    if dev.hires.has_invert then
+      declare("booleans", { key = "hires_invert", label = "Scroll Wheel Direction", category = "Scroll Wheel" })
+    end
+    declare("booleans", { key = "hires_resolution", label = "Scroll Wheel Resolution", category = "Scroll Wheel" })
+    declare("booleans", { key = "hires_diversion", label = "Scroll Wheel Diversion", category = "Scroll Wheel" })
+  end
+  if has(features, K375S_FN_INVERSION) then
+    -- Reply is [host, inverted, default, caps]; host 0 addresses the current host.
+    local current = feature(dev, K375S_FN_INVERSION, 0x00, bytes(0))
+    dev.fn_inversion = { value = (current:byte(2) or 0) ~= 0, writeable = true }
+    declare("booleans", { key = "fn_inversion", label = "Swap Fx Function", category = "Keyboard",
+      read_only = not dev.fn_inversion.writeable })
+  end
+  if has(features, BRIGHTNESS_CONTROL) then
+    local info = feature(dev, BRIGHTNESS_CONTROL, 0x00)
+    local max = #info >= 2 and ((info:byte(1) << 8) | info:byte(2)) or 100
+    local min = #info >= 6 and ((info:byte(5) << 8) | info:byte(6)) or 0
+    local level_reply = feature(dev, BRIGHTNESS_CONTROL, 0x10)
+    local level = #level_reply >= 2 and ((level_reply:byte(1) << 8) | level_reply:byte(2)) or max
+    local has_on_off = ((info:byte(4) or 0) & 0x04) ~= 0
+    dev.brightness = { has_on_off = has_on_off }
+    declare("ranges", { key = "brightness", label = "Brightness", min = min, max = max, step = 1,
+      default = level, category = "Lighting" }, level)
+    if has_on_off then
+      dev.brightness.on = ((feature(dev, BRIGHTNESS_CONTROL, 0x30):byte(1) or 0) & 1) ~= 0
+      declare("booleans", { key = "brightness_on", label = "Keyboard Brightness", category = "Keyboard" })
+    end
+  end
+  if has(features, UNIFIED_BATTERY) or has(features, ADC_MEASUREMENT) or has(features, BATTERY_VOLTAGE) then
+    capability("battery")
+  end
+  if dev.match.key or has(features, WIRELESS_DEVICE_STATUS) then
+    capability("connection")
+  end
+  if #result.controls.ranges > 0 or #result.controls.choices > 0
+      or #result.controls.booleans > 0 or #result.controls.actions > 0 then
+    capability("controls")
+  end
+  return result
 end
 
 callbacks = {
@@ -733,265 +967,20 @@ callbacks = {
       max_slots = dev.receiver.max_slots, slots = slots }
   end,
   initialize = function(dev)
-    -- Direct USB devices use 0xff. Receiver children are added through the
-    -- controller-discovery path and carry their paired slot in dev.match.index.
-    -- A receiver is only the transport root; paired slot children are the
-    -- actual devices. Direct devices retain 0xff.
-    dev.receiver = not dev.match.key and RECEIVERS[dev.match.pid] or nil
-    if dev.receiver then
-      -- Set wireless (0x000100) and software-present (0x000800) notification
-      -- flags without clearing bits other software enabled.
-      local ok, flags = pcall(v1_read, dev, DIRECT, 0x0000)
-      local f0, f1, f2 = 0, 0, 0
-      if ok then f0, f1, f2 = flags:byte(1) or 0, flags:byte(2) or 0, flags:byte(3) or 0 end
-      v1_write(dev, DIRECT, 0x0000, bytes(f0, f1 | 0x09, f2), true)
-      dev.receiver = { name = dev.receiver.name,
-        max_slots = receiver_capacity(dev) or dev.receiver.max_slots }
-      return { ok = true, model = dev.receiver.name, capabilities = { "pairing" } }
-    end
-    local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT
-    local features = enumerate_features_with_retry(dev, devnum)
-    dev.hidpp = { devnum = devnum, features = features }
-    local profile = device_profile(dev)
-    dev.profile = profile
-    local layout, remap_controls = nil, {}
-    local name = read_name(dev, devnum, features) or UNNAMED_DEVICE
-
-    local result = { ok = true, model = name, capabilities = {},
-      controls = { ranges = {}, choices = {}, booleans = {}, actions = {} } }
-    local function capability(name) result.capabilities[#result.capabilities + 1] = name end
-    local function per_key_channel(led_ids)
-      local keyboard, form_factor = discovered_keyboard(led_ids, profile)
-      if keyboard then
-        layout = keyboard_layout(dev)
-        keyboard.detected_language = layout
-        if profile.gkeys_on_function_row or dev.remap.backend == "fkc" then
-          keyboard_with_remap(keyboard, dev.remap.backend, remap_controls)
-        end
-        result.keyboard = keyboard
-        capability("keyboard_layout")
-      end
-      return { id = "zone_0", name = keyboard and "Keys" or "Lighting",
-        topology = keyboard and "keyboard" or "linear",
-        led_count = #led_ids, led_ids = led_ids,
-        keyboard_form_factor = keyboard and form_factor or nil,
-        keyboard_layout = layout }
-    end
-    -- Declare only capabilities actually advertised by the feature table.
-    -- Their packet implementations are added below as the corresponding
-    -- protocol codecs are ported; this keeps unknown devices inert rather than
-    -- advertising controls that their firmware cannot service.
-    if has(features, ONBOARD_PROFILES) then
-      local state = refresh_onboard(dev)
-      result.controls.booleans[#result.controls.booleans + 1] = {
-        key = "host_mode", label = "Host mode", category = "Onboard Memory"
-      }
-      result.booleans = result.booleans or {}; result.booleans.host_mode = state.mode == 2
-      if #state.directory > 0 then capability("onboard_profiles") end
-    elseif has(features, PROFILE_MANAGEMENT) then
-      local state = pm.refresh(dev)
-      if next(state.profiles) then capability("onboard_profiles") end
-    end
-    if has(features, ADJUSTABLE_DPI) then
-      local available = dpi_list(dev, features[ADJUSTABLE_DPI])
-      local current = request(dev, devnum, features[ADJUSTABLE_DPI], 0x20)
-      local dpi = #current >= 3 and ((current:byte(2) << 8) | current:byte(3))
-          or (#current >= 2 and ((current:byte(1) << 8) | current:byte(2))) or 0
-      if dpi == 0 and #current >= 5 then dpi = (current:byte(4) << 8) | current:byte(5) end
-      local profile_steps = dev.onboard and dev.onboard.profile_steps or {}
-      local steps = #profile_steps > 0 and profile_steps or available
-      dev.software_dpi_steps = { table.unpack(steps) }
-      dev.available_dpis, dev.current_dpi = available, dpi
-      if dev.onboard then
-        for i,value in ipairs(profile_steps) do if value==dpi then dev.onboard.current_index=i-1; break end end
-      end
-      result.dpi = { min = available[1] or dpi or 100,
-        max = available[#available] or dpi or 25600, steps = steps,
-        available_dpis = available,
-        onboard = dev.onboard ~= nil and dev.onboard.mode ~= 2,
-        mode_control = dev.onboard and "host_mode" or nil, current = dpi }
-      capability("dpi")
-    end
-    local buttons = remap_buttons(dev)
-    if #buttons > 0 then
-      local exposed, defaults = {}, {}
-      for _, button in ipairs(buttons) do exposed[button.cid] = true end
-      for _, mapping in ipairs(profile.defaults or {}) do
-        if exposed[mapping.cid] then defaults[#defaults + 1] = mapping end
-      end
-      -- Firmware ignores per-control divert while a mouse is in onboard mode;
-      -- remap only takes effect in host mode. See docs/hidpp2.md.
-      result.key_remap = { buttons = buttons, requires_host_mode = dev.onboard ~= nil,
-        default_mappings = defaults }
-      remap_controls = buttons
-      capability("key_remap")
-    end
-    local rates = report_rates(dev)
-    if rates and #rates.options > 0 then
-      dev.report_rates = rates
-      local selected = 0
-      for i, option in ipairs(rates.options) do if option.wire == rates.current then selected = i - 1 end end
-      result.controls.choices[#result.controls.choices + 1] = {
-        key = "report_rate", label = "Report rate", options = rates.options, default = selected, category = "Performance"
-      }
-      result.choices = result.choices or {}; result.choices.report_rate = selected
-    end
-    if has(features, RGB_EFFECTS) then
-      local count = request(dev, devnum, features[RGB_EFFECTS], 0x00, bytes(0xff, 0xff, 0)):byte(3) or 0
-      if count > 0 then
-        local static_slots, effect_slots = rgb_static_slots(dev, features[RGB_EFFECTS], count)
-        local led_ids = has(features, PER_KEY_LIGHTING_V2)
-          and discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order) or {}
-        local wire = #led_ids > 0 and "per_key" or "rgb_effects"
-        local native, native_descriptors = resolve_native_effects(effect_slots)
-        dev.lighting = { wire = wire, channels = count, static_slots = static_slots,
-          effect_slots = effect_slots, native = native, led_ids = led_ids }
-        result.channels = {}
-        if #led_ids > 0 then
-          result.channels[1] = per_key_channel(led_ids)
-        else
-          for zone = 0, count - 1 do result.channels[#result.channels + 1] = {
-            id = "zone_" .. zone, name = "Zone " .. (zone + 1), topology = "linear", led_count = 1 } end
-        end
-        -- The firmware's own signature animation lives in the onboard profile's
-        -- LED records, not in the RGB_EFFECTS table.
-        if dev.onboard and dev.onboard.signature_active then
-          native_descriptors[#native_descriptors + 1] = {
-            id = "signature", name = profile.signature_name or "Signature",
-            params = {{ id = "brightness", label = "Brightness",
-              kind = { kind = "range", min = 1, max = 100, step = 1 }, default = 100 }},
-          }
-        end
-        -- A tag-managed profile keeps the firmware's two-colour signature in
-        -- its first LED record.
-        local signature = dev.pm and profile_signature(dev)
-        if signature then
-          local p = signature.params
-          native_descriptors[#native_descriptors + 1] = {
-            id = "signature", name = profile.signature_name or "Signature",
-            params = {
-              { id = "color1", label = "Primary Color", kind = { kind = "color" },
-                default = { r = p[1], g = p[2], b = p[3] } },
-              { id = "color2", label = "Second Color", kind = { kind = "color" },
-                default = { r = p[4], g = p[5], b = p[6] } },
-              { id = "brightness", label = "Brightness",
-                kind = { kind = "range", min = 1, max = 100, step = 1 }, default = p[9] > 0 and p[9] or 100 },
-            },
-          }
-        end
-        result.native_effects = native_descriptors
-        restore_rgb_control(dev)
-        if profile_managed(dev) then
-          result.controls.booleans[#result.controls.booleans + 1] = {
-            key = "host_mode", label = "Host mode", category = "Onboard Memory"
-          }
-          result.booleans = result.booleans or {}; result.booleans.host_mode = true
-        end
-        capability("lighting")
-      end
-    elseif has(features, COLOR_LED_EFFECTS) then
-      local count = request(dev, devnum, features[COLOR_LED_EFFECTS], 0x00):byte(1) or 0
-      if count > 0 then
-        local channels, static_slots, effect_slots =
-          color_led_zones(dev, features[COLOR_LED_EFFECTS], count, profile.zone_names)
-        local native, native_descriptors = resolve_native_effects(effect_slots)
-        dev.lighting = { wire = "color_led", channels = count, static_slots = static_slots,
-          effect_slots = effect_slots, native = native, led_ids = {} }
-        result.channels = channels
-        result.native_effects = native_descriptors
-        feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
-        capability("lighting")
-      end
-    elseif has(features, PER_KEY_LIGHTING_V2) then
-      local led_ids = discover_per_key_ids(dev, features[PER_KEY_LIGHTING_V2], profile.led_order)
-      if #led_ids > 0 then
-        dev.lighting = { wire = "per_key", channels = 1, static_slots = { 0 }, led_ids = led_ids }
-        result.channels = { per_key_channel(led_ids) }
-        capability("lighting")
-      end
-    end
-    if has(features, SIDETONE) then
-      local level = feature(dev, SIDETONE, 0x00):byte(1) or 0
-      result.controls.ranges[#result.controls.ranges + 1] = {
-        key = "sidetone", label = "Sidetone", min = 0, max = 100, step = 1, default = level, category = "Audio"
-      }
-      result.ranges = result.ranges or {}; result.ranges.sidetone = level
-    end
-    if has(features, EQUALIZER) then equalizer_read(dev); capability("equalizer") end
-    if has(features, BASS_TONE) then
-      local level = feature(dev, BASS_TONE, 0x00):byte(1) or 0
-      local key = profile.bass_key or "bass_tone"
-      dev.bass_key = key
-      result.controls.ranges[#result.controls.ranges + 1] = {
-        key = key, label = profile.bass_label or "Bass", min = 0, max = 100, step = 1,
-        default = level, category = "Audio"
-      }
-      result.ranges = result.ranges or {}; result.ranges[key] = level
-    end
-    if has(features, ADC_MEASUREMENT) and long_only(dev) then
-      -- LIGHTSPEED headsets: auto power-off timer in minutes (0x10 get / 0x20 set).
-      local ok, reply = pcall(feature, dev, ADC_MEASUREMENT, 0x10)
-      local minutes = ok and reply:byte(1) or nil
-      if minutes and minutes > 0 then
-        dev.power_off_timer = true
-        result.controls.ranges[#result.controls.ranges + 1] = {
-          key = "power_off_timer", label = "Auto Power Off (min)", min = 1, max = 60, step = 1,
-          default = minutes, category = "Power"
-        }
-        result.ranges = result.ranges or {}; result.ranges.power_off_timer = minutes
-      end
-    end
-    if has(features, HIRES_WHEEL) then
-      local caps = feature(dev, HIRES_WHEEL, 0x00)
-      local mode = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
-      feature(dev, HIRES_WHEEL, 0x30) -- retain native capability probe ordering
-      dev.hires = { has_invert = ((caps:byte(2) or 0) & 0x08) ~= 0 }
-      if dev.hires.has_invert then result.controls.booleans[#result.controls.booleans + 1] = {
-        key = "hires_invert", label = "Scroll Wheel Direction", category = "Scroll Wheel" } end
-      result.controls.booleans[#result.controls.booleans + 1] = {
-        key = "hires_resolution", label = "Scroll Wheel Resolution", category = "Scroll Wheel" }
-      result.controls.booleans[#result.controls.booleans + 1] = {
-        key = "hires_diversion", label = "Scroll Wheel Diversion", category = "Scroll Wheel" }
-      dev.hires.mode = mode
-    end
-    if has(features, K375S_FN_INVERSION) then
-      -- Reply is [host, inverted, default, caps]; host 0 addresses the current host.
-      local current = feature(dev, K375S_FN_INVERSION, 0x00, bytes(0))
-      dev.fn_inversion = { value = (current:byte(2) or 0) ~= 0, writeable = true }
-      result.controls.booleans[#result.controls.booleans + 1] = {
-        key = "fn_inversion", label = "Swap Fx Function", category = "Keyboard",
-        read_only = not dev.fn_inversion.writeable
-      }
-    end
-    if has(features, BRIGHTNESS_CONTROL) then
-      local info = feature(dev, BRIGHTNESS_CONTROL, 0x00)
-      local max = #info >= 2 and ((info:byte(1) << 8) | info:byte(2)) or 100
-      local min = #info >= 6 and ((info:byte(5) << 8) | info:byte(6)) or 0
-      local level_reply = feature(dev, BRIGHTNESS_CONTROL, 0x10)
-      local level = #level_reply >= 2 and ((level_reply:byte(1) << 8) | level_reply:byte(2)) or max
-      local has_on_off = ((info:byte(4) or 0) & 0x04) ~= 0
-      dev.brightness = { has_on_off = has_on_off }
-      result.controls.ranges[#result.controls.ranges + 1] = {
-        key = "brightness", label = "Brightness", min = min, max = max, step = 1, default = level, category = "Lighting"
-      }
-      result.ranges = result.ranges or {}; result.ranges.brightness = level
-      if has_on_off then
-        dev.brightness.on = ((feature(dev, BRIGHTNESS_CONTROL, 0x30):byte(1) or 0) & 1) ~= 0
-        result.controls.booleans[#result.controls.booleans + 1] = {
-          key = "brightness_on", label = "Keyboard Brightness", category = "Keyboard" }
-      end
-    end
-    if has(features, UNIFIED_BATTERY) or has(features, ADC_MEASUREMENT) or has(features, BATTERY_VOLTAGE) then
-      capability("battery")
-    end
-    if dev.match.key or has(features, WIRELESS_DEVICE_STATUS) then
-      capability("connection")
-    end
-    if #result.controls.ranges > 0 or #result.controls.choices > 0
-        or #result.controls.booleans > 0 or #result.controls.actions > 0 then
-      capability("controls")
-    end
-    return result
+    local ok, result = pcall(describe_device, dev)
+    if ok then return result end
+    -- A powered-off device stays enumerated through its dongle: a receiver
+    -- answers for an absent slot with its own error, an audio dongle with a
+    -- device error or a refused write, and Linux may answer ROOT from cache
+    -- and fail on a later request.
+    local code, receiver = hidpp_error(result)
+    local off = unreachable(result)
+      or (receiver and (code == 0x04 or code == 0x08 or code == 0x09))
+      or (dev.long_only
+        and (code == 0x05 or tostring(result):find("HID write error", 1, true) ~= nil))
+    if not off then error(result, 0) end
+    log("logitech: device is not powered on: " .. tostring(result), "trace")
+    return { ok = false }
   end,
 
   -- Exported callbacks deliberately use the same feature helper, so packet
@@ -1054,8 +1043,7 @@ callbacks = {
           return { state_changed = true }
         end
       elseif address == 0 then
-        local state=refresh_onboard(dev)
-        dev.current_dpi=state.profile_steps[(state.current_index or 0)+1] or dev.current_dpi
+        dev.current_dpi = profile_dpi(refresh_onboard(dev)) or dev.current_dpi
         return { state_changed = true }
       end
     end
@@ -1098,11 +1086,10 @@ callbacks = {
   end,
   dpi_status = function(dev)
     if not dev.available_dpis then return nil end
-    local onboard = dev.onboard and onboard_mode(dev) ~= 2
+    local onboard = dev.onboard ~= nil and onboard_mode(dev) ~= 2
     local steps = onboard and dev.onboard.profile_steps or dev.software_dpi_steps
     if not steps or #steps == 0 then steps = dev.available_dpis end
     local current = dev.current_dpi
-
     return { min = dev.available_dpis[1] or current or 100,
       max = dev.available_dpis[#dev.available_dpis] or current or 25600,
       steps = steps, available_dpis = dev.available_dpis, onboard = onboard,
@@ -1243,7 +1230,7 @@ callbacks = {
       if not dev.onboard then error("ONBOARD_PROFILES unavailable") end
       set_onboard_mode(dev, value)
       if value then remap.rearm(dev)
-      else dev.current_dpi=dev.onboard.profile_steps[(dev.onboard.current_index or 0)+1] or dev.current_dpi end
+      else dev.current_dpi = profile_dpi(dev.onboard) or dev.current_dpi end
     elseif key == "hires_invert" or key == "hires_resolution" or key == "hires_diversion" then
       local current = feature(dev, HIRES_WHEEL, 0x10):byte(1) or 0
       local mask = key == "hires_invert" and 0x04 or key == "hires_resolution" and 0x02 or 0x01
@@ -1266,7 +1253,7 @@ callbacks = {
     local out = {}
     if dev.onboard then out[#out + 1] = { key = "host_mode", value = onboard_mode(dev) == 2 } end
     if dev.lighting and profile_managed(dev) then
-      out[#out + 1] = { key = "host_mode", value = lighting.host_mode(dev) }
+      out[#out + 1] = { key = "host_mode", value = pm.mode(dev).host }
     end
     if dev.hires then
       local current = feature(dev, HIRES_WHEEL, 0x10):byte(1) or dev.hires.mode or 0
@@ -1385,29 +1372,6 @@ callbacks = {
   end,
   close = function(_dev) end,
 }
-
--- A powered-off device stays enumerated through its dongle. Linux may answer
--- ROOT from cache and fail on a later request; Windows can reject the first
--- write before HID++ receives the packet.
-local describe_device = callbacks.initialize
-callbacks.initialize = function(dev)
-  local ok, result = pcall(describe_device, dev)
-  if ok then return result end
-  local text = tostring(result)
-  local unavailable = device_unreachable(result)
-      or (text:find("from the receiver", 1, true)
-        and (text:find("HID++ error 0x04", 1, true)
-          or text:find("HID++ error 0x08", 1, true)
-          or text:find("HID++ error 0x09", 1, true)))
-      or (long_only(dev) and text:find("HID++ error 0x05", 1, true))
-      or (long_only(dev)
-        and text:find("HID write error", 1, true))
-  if not unavailable then
-    error(result)
-  end
-  log("logitech: device is not powered on: " .. text, "trace")
-  return { ok = false }
-end
 
 return callbacks
 end

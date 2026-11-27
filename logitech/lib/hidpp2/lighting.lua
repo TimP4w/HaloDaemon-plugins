@@ -4,7 +4,7 @@
 return function(api)
 local bytes, packet = api.bytes, api.packet
 local request, feature = api.request, api.feature
-local send_feature_packets = api.send_feature_packets
+local send_feature_packets, retry, pm = api.send_feature_packets, api.retry, api.pm
 local SW_ID = api.sw_id
 local RGB_EFFECTS = api.rgb_effects
 local COLOR_LED_EFFECTS = api.color_led_effects
@@ -222,6 +222,32 @@ local function color_led_zones(dev, index, count, zone_names)
   return channels, slots, effect_slots
 end
 
+local SET_INDIVIDUAL, SET_CONSECUTIVE, SET_RANGE, COMMIT = 0x10, 0x20, 0x50, 0x70
+
+local function per_key_packet(dev, func, payload)
+  return packet(dev.hidpp.devnum, dev.hidpp.features[PER_KEY_LIGHTING_V2], func | SW_ID,
+    bytes(table.unpack(payload)), true)
+end
+
+-- SET_INDIVIDUAL carries four (id, r, g, b) entries; a short last packet
+-- repeats its final entry. The commit follows.
+local function individual_packets(dev, entries)
+  local packets = {}
+  for start = 1, #entries, 4 do
+    local finish, payload = math.min(start + 3, #entries), {}
+    for offset = 0, 3 do
+      local entry = entries[math.min(start + offset, finish)]
+      payload[#payload + 1] = entry.id
+      payload[#payload + 1] = entry.r
+      payload[#payload + 1] = entry.g
+      payload[#payload + 1] = entry.b
+    end
+    packets[#packets + 1] = per_key_packet(dev, SET_INDIVIDUAL, payload)
+  end
+  packets[#packets + 1] = per_key_packet(dev, COMMIT, { 0 })
+  return packets
+end
+
 local EXPLICIT_WRITE_MAX_LEDS = 8
 
 local function write_per_key_frame(dev, colors)
@@ -243,25 +269,9 @@ local function write_per_key_frame(dev, colors)
   -- two SET_INDIVIDUAL packets, so SET_CONSECUTIVE saves nothing and can leave
   -- one LED at its previous colour during pixmap streaming.
   if #ids <= EXPLICIT_WRITE_MAX_LEDS then
-    local dirty, packets = {}, {}
+    local dirty = {}
     for _, state in ipairs(states) do if state.dirty then dirty[#dirty + 1] = state end end
-    for start = 1, #dirty, 4 do
-      local finish = math.min(start + 3, #dirty)
-      local last, payload = dirty[finish], {}
-      for offset = 0, 3 do
-        local entry = dirty[math.min(start + offset, finish)] or last
-        payload[#payload + 1] = entry.id
-        payload[#payload + 1] = entry.r
-        payload[#payload + 1] = entry.g
-        payload[#payload + 1] = entry.b
-      end
-      packets[#packets + 1] = packet(dev.hidpp.devnum,
-        dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x10 | SW_ID,
-        bytes(table.unpack(payload)), true)
-    end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
-    send_feature_packets(dev, packets)
+    send_feature_packets(dev, individual_packets(dev, dirty))
     for _, state in ipairs(states) do cache[state.id] = { state.r, state.g, state.b } end
     return
   end
@@ -304,9 +314,7 @@ local function write_per_key_frame(dev, colors)
             payload[#payload + 1] = entry.g
             payload[#payload + 1] = entry.b
           end
-          packets[#packets + 1] = packet(dev.hidpp.devnum,
-            dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x20 | SW_ID,
-            bytes(table.unpack(payload)), true)
+          packets[#packets + 1] = per_key_packet(dev, SET_CONSECUTIVE, payload)
           start = finish + 1
         end
       else
@@ -323,12 +331,9 @@ local function write_per_key_frame(dev, colors)
     for n = start, math.min(start + 2, #ranges) do
       for _, value in ipairs(ranges[n]) do payload[#payload + 1] = value end
     end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x50 | SW_ID,
-      bytes(table.unpack(payload)), true)
+    packets[#packets + 1] = per_key_packet(dev, SET_RANGE, payload)
   end
-  packets[#packets + 1] = packet(dev.hidpp.devnum,
-    dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
+  packets[#packets + 1] = per_key_packet(dev, COMMIT, { 0 })
   send_feature_packets(dev, packets)
   for _, state in ipairs(states) do cache[state.id] = { state.r, state.g, state.b } end
 end
@@ -351,25 +356,7 @@ local function write_per_key_pairs(dev, channels)
   end
   if #entries == 0 then return end
   table.sort(entries, function(a, b) return a.id < b.id end)
-
-  local packets = {}
-  for start = 1, #entries, 4 do
-    local finish = math.min(start + 3, #entries)
-    local last, payload = entries[finish], {}
-    for offset = 0, 3 do
-      local entry = entries[math.min(start + offset, finish)] or last
-      payload[#payload + 1] = entry.id
-      payload[#payload + 1] = entry.r
-      payload[#payload + 1] = entry.g
-      payload[#payload + 1] = entry.b
-    end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x10 | SW_ID,
-      bytes(table.unpack(payload)), true)
-  end
-  packets[#packets + 1] = packet(dev.hidpp.devnum,
-    dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
-  send_feature_packets(dev, packets)
+  send_feature_packets(dev, individual_packets(dev, entries))
 
   local cache = dev.lighting.frame_cache or {}
   dev.lighting.frame_cache = cache
@@ -393,21 +380,9 @@ local function write_rgb_zone(dev, zone_id, colors)
 end
 
 local CLAIM_SETTLE_MS = 2000
-local HOST_MODE, ONBOARD_MODE = 0x05, 0x03
 local OWN_CLUSTERS_AND_POWER = 0x03
 local NOTIFY_IDLE, NOTIFY_ACTIVITY = 0x04, 0x02
 local POWER_FULL, POWER_OFF = 0x01, 0x03
-
-local function retried(dev, code, func, args, patient)
-  local last_error
-  for _ = 1, 3 do
-    local ok, err = pcall(feature, dev, code, func, args, patient)
-    if ok then return err end
-    last_error = err
-    if not tostring(err):find("HID++ response did not arrive", 1, true) then error(err) end
-  end
-  error(last_error)
-end
 
 local function profile_managed(dev)
   return dev.hidpp.features[PROFILE_MANAGEMENT] ~= nil and dev.hidpp.features[RGB_EFFECTS] ~= nil
@@ -430,7 +405,7 @@ local function restore_power_timers(dev)
 end
 
 local function enter_host_mode(dev)
-  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(HOST_MODE), true)
+  retry(pm.set_mode, dev, pm.HOST_MODE)
   dev.lighting.host = true
 end
 
@@ -443,20 +418,20 @@ local function restore_rgb_control(dev)
     -- Host mode holds until released or changed by the firmware (reported by
     -- a PROFILE_MANAGEMENT event), so it is only re-sent after that.
     if not dev.lighting.host then enter_host_mode(dev) end
-    retried(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
+    retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
     dev.lighting.claimed_at = halod.monotonic_ms()
     dev.lighting.host = true
     -- The firmware may have parked the LEDs in power save before the claim.
     dev.lighting.sleeping = false
-    retried(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
+    retry(feature, dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
     if not dev.lighting.power_configured then
       dev.lighting.power_configured = true
       idle_off_after_sleep_timeout(dev)
     end
   elseif dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
-    retried(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
+    retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, 1))
   elseif dev.lighting.wire == "color_led" then
-    retried(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
+    retry(feature, dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
   end
 end
 
@@ -464,12 +439,8 @@ local function release_rgb_control(dev)
   dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
   dev.lighting.host = false
   restore_power_timers(dev)
-  retried(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
-  retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE), true)
-end
-
-local function host_mode(dev)
-  return ((feature(dev, PROFILE_MANAGEMENT, 0x60, bytes(0), true):byte(1) or 1) & 0x01) == 0
+  retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
+  retry(pm.set_mode, dev, pm.ONBOARD_MODE)
 end
 
 local function user_activity_report(dev, report)
@@ -504,7 +475,6 @@ return {
   release_rgb_control = release_rgb_control,
   enter_host_mode = enter_host_mode,
   profile_managed = profile_managed,
-  host_mode = host_mode,
   user_activity_report = user_activity_report,
   sleep_lighting = sleep_lighting,
 }

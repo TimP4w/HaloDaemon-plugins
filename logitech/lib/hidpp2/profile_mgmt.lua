@@ -3,8 +3,9 @@
 -- per partition, CRC-32 checked files and tag-described profiles. docs/hidpp2.md.
 
 return function(api)
-local bytes, feature = api.bytes, api.feature
+local bytes, feature, hidpp_error = api.bytes, api.feature, api.hidpp_error
 local PROFILE_MANAGEMENT = api.feature_id
+local PROFILE = halod.require("lib.hidpp2.profile")
 
 local M = {}
 M.USER, M.FACTORY = 0x0000, 0x0100
@@ -32,15 +33,6 @@ local function be16(v) return (v >> 8) & 0xff, v & 0xff end
 local function be32(v) return (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff end
 local function u16(s, i) return ((s:byte(i) or 0) << 8) | (s:byte(i + 1) or 0) end
 local function u32(s, i) return (u16(s, i) << 16) | u16(s, i + 2) end
-
-local function hidpp_error(err, code)
-  return tostring(err):find(string.format("HID++ error 0x%02x", code), 1, true) ~= nil
-end
-
-function M.capabilities(dev)
-  local info = feature(dev, PROFILE_MANAGEMENT, 0x00)
-  return { buffer_size = u16(info, 3), profile_count = info:byte(15) or 0 }
-end
 
 -- Byte 0 bit 0: onboard profile active; bit 1: firmware power management.
 function M.mode(dev)
@@ -107,14 +99,7 @@ function M.ref_index(state, feature, ordinal)
   end
 end
 
--- Returns nil for a file the device has never written (HID++ error 0x04).
-function M.read_file(dev, address, length)
-  local hi, lo = be16(address)
-  local ok, err = pcall(feature, dev, PROFILE_MANAGEMENT, 0x80, bytes(hi, lo, be16(length)))
-  if not ok then
-    if hidpp_error(err, 0x04) then return nil end
-    error(err)
-  end
+local function read_buffer(dev, length)
   local chunks = {}
   for offset = 0, length - 1, 16 do
     chunks[#chunks + 1] = feature(dev, PROFILE_MANAGEMENT, 0xc0, bytes(be16(offset)))
@@ -122,12 +107,15 @@ function M.read_file(dev, address, length)
   return table.concat(chunks):sub(1, length)
 end
 
-local function read_buffer(dev, length)
-  local chunks = {}
-  for offset = 0, length - 1, 16 do
-    chunks[#chunks + 1] = feature(dev, PROFILE_MANAGEMENT, 0xc0, bytes(be16(offset)))
+-- Returns nil for a file the device has never written (HID++ error 0x04).
+function M.read_file(dev, address, length)
+  local hi, lo = be16(address)
+  local ok, err = pcall(feature, dev, PROFILE_MANAGEMENT, 0x80, bytes(hi, lo, be16(length)))
+  if not ok then
+    if hidpp_error(err) == 0x04 then return nil end
+    error(err, 0)
   end
-  return table.concat(chunks):sub(1, length)
+  return read_buffer(dev, length)
 end
 
 -- Fills the edit buffer, checks it, commits it to flash and reads it back.
@@ -251,11 +239,8 @@ end
 
 -- Records 1-2 run while active, 3-4 while power saving; flags 0x03 selects the
 -- firmware's signature pair (1 and 3), 0x00 the host-written pair (2 and 4).
-M.SIGNATURE_EFFECTS = { [0x18] = 0x19, [0x1a] = 0x1b, [0x0f] = 0x10 }
-function M.signature(p)
-  local id = p.leds[1].id
-  if M.SIGNATURE_EFFECTS[id] then return id, M.SIGNATURE_EFFECTS[id] end
-end
+-- LED records share the ONBOARD_PROFILES layout, signature ids included.
+M.signature = PROFILE.signature
 
 local function sectors(length) return (length + M.SECTOR - 1) // M.SECTOR end
 
@@ -312,12 +297,10 @@ function M.write_entry(dev, state, id, file_type, data)
   end
   local dir = state.user
   local e = M.entry(dir, id, file_type)
-  if e and sectors(data and #data or 0) > sectors(e.length) then
-    e.location = M.allocate({ entries = (function()
-      local others = {}
-      for _, o in ipairs(dir.entries) do if o ~= e then others[#others + 1] = o end end
-      return others
-    end)() }, #data)
+  if e and sectors(#data) > sectors(e.length) then
+    local others = {}
+    for _, o in ipairs(dir.entries) do if o ~= e then others[#others + 1] = o end end
+    e.location = M.allocate({ entries = others }, #data)
   elseif not e then
     e = { id = id, type = file_type, flags = 0x40, length = #data, crc = 0,
       location = M.allocate(dir, #data) }
