@@ -155,15 +155,22 @@ end
 local CONTROL_KEYS = halod.require("lib.hidpp2.control_keys")
 
 -- Standard keys carry their own control id on FULL_KEY_CUSTOMIZATION devices;
--- a vendor key is bound through the control id its model profile names.
+-- a vendor key is bound through the control id its model profile names. The
+-- ISO variant binds its two extra keys over the ANSI ids.
 local function bind_keys_to_controls(keyboard, buttons)
-  local cid_of_key, present = {}, {}
-  for _, button in ipairs(buttons) do
-    present[button.cid] = true
-    local key = CONTROL_KEYS[button.cid]
-    if key then cid_of_key[key] = button.cid end
-  end
-  for _, variant in pairs({ keyboard.ansi, keyboard.iso }) do
+  local present = {}
+  for _, button in ipairs(buttons) do present[button.cid] = true end
+  for name, variant in pairs({ ansi = keyboard.ansi, iso = keyboard.iso }) do
+    local cid_of_key = {}
+    for _, button in ipairs(buttons) do
+      local key = CONTROL_KEYS.keys[button.cid]
+      if key then cid_of_key[key] = button.cid end
+    end
+    if name == "iso" then
+      for cid, key in pairs(CONTROL_KEYS.iso) do
+        if present[cid] then cid_of_key[key] = cid end
+      end
+    end
     for _, mapping in ipairs(variant.keys) do
       if mapping.key and cid_of_key[mapping.key] then mapping.remap_cid = cid_of_key[mapping.key]
       elseif mapping.vendor_cid and present[mapping.vendor_cid] then mapping.remap_cid = mapping.vendor_cid end

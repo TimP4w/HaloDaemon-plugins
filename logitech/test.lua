@@ -151,11 +151,14 @@ local function profile_management_tests(h, report)
   h:assert_eq(timers.data[8], 0x01, "idle timeout is moved to the firmware's sleep timeout")
   h:assert_eq(timers.data[9], 0x2c, "idle timeout keeps the sleep timeout's low byte")
   local managed_onboard
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   for _, cap in ipairs(managed:serialize().capabilities) do
     if cap.kind == "onboard_profiles" then managed_onboard = cap.data end
   end
   h:assert(managed_onboard, "a tag-managed profile directory is an onboard-profile capability")
   h:assert_eq(managed_onboard.active_slot, 0, "host mode shows no active onboard profile")
+  h:assert(managed_onboard.slots_fixed, "profile files cannot be disabled")
   h:assert_eq(managed_onboard.slots[1].index, 1, "slots are the directory's profile ids")
   h:assert(managed_onboard.slots[1].has_rom_default, "a factory copy makes the slot restorable")
   local managed_effects = {}
@@ -199,10 +202,12 @@ local function profile_management_tests(h, report)
     "activation names the profile file, id and length")
   h:assert_eq(find_write(managed_effect, 0x02, 0x61, 0x05), nil, "an onboard-mode effect does not claim host mode")
   local managed_status
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   for _, cap in ipairs(managed:serialize().capabilities) do
     if cap.kind == "onboard_profiles" then managed_status = cap.data end
   end
-  h:assert_eq(managed_status.active_slot, 1, "onboard mode reports the firmware's active profile")
+  h:assert_eq(managed_status.active_slot, 1, "onboard mode reads the firmware's active profile live")
 
   -- The signature plays from the profile, so applying it hands the LEDs back.
   local signature_profile = PM.parse_profile(cycle_data, 1)
@@ -1857,7 +1862,7 @@ return function(h)
   h:assert_eq(bound_key(fkc_bound, "a"), 0x0122, "a full-key-customization keyboard binds keys by control id")
   h:assert_eq(bound_key(fkc_bound, "escape"), 0x014c, "every documented standard key binds")
   h:assert_eq(bound_key(fkc_bound, "b"), nil, "keys without a listed control stay unbound")
-  h:assert_eq(halod.require("lib.hidpp2.control_keys")[0x0177], "num7", "numpad control ids bind to numpad keys")
+  h:assert_eq(halod.require("lib.hidpp2.control_keys").keys[0x0177], "num7", "numpad control ids bind to numpad keys")
   local full_ids = {}
   for id = 1, 111 do full_ids[#full_ids + 1] = id end
   for _, id in ipairs({ 153, 155, 156, 157, 158, 180, 181, 182, 183, 184, 185, 186, 187, 188, 210 }) do
@@ -1876,5 +1881,17 @@ return function(h)
   h:assert_eq(g915_keys[1].remap_cid, 0x0122, "standard keys still bind by control id")
   h:assert_eq(halod.require("lib.hidpp2.controls")[0x0192], "G4", "G-key control ids are labelled")
   h:assert_eq(halod.require("lib.hidpp2.controls")[0x018c], "Left Start", "alt/start control ids are labelled")
+  local layouts = profiles.discovered_keyboard(full_ids, profiles.device_profile({ match = { pid = 0xc356 } }))
+  profiles.keyboard_with_remap(layouts, "fkc",
+    { { cid = 0x010b }, { cid = 0x0153 }, { cid = 0x011e }, { cid = 0x0169 }, { cid = 0x016a } })
+  local function bound(variant, key)
+    for _, mapping in ipairs(variant.keys) do if mapping.key == key then return mapping.remap_cid end end
+  end
+  h:assert_eq(bound(layouts.ansi, "equals"), 0x0153, "the equals key binds to its control id")
+  h:assert_eq(bound(layouts.ansi, "backtick"), 0x010b, "the grave key binds to its control id")
+  h:assert_eq(bound(layouts.ansi, "backslash"), 0x011e, "the ANSI backslash key binds to the ANSI id")
+  h:assert_eq(bound(layouts.iso, "backslash"), 0x0169, "the ISO hash key binds to the ISO id")
+  h:assert_eq(bound(layouts.iso, "iso_extra"), 0x016a, "the ISO key next to left shift binds")
+  h:assert_eq(bound(layouts.ansi, "iso_extra"), nil, "the ANSI variant has no ISO key")
   end
 end

@@ -412,7 +412,17 @@ Keyboards without REPROG_CONTROLS or GKEY (G915 X, G515) run their key assignmen
 
 **Preset file** (type `0x1b05`): `[00][group count]` then per key `[cidx][row count]` and 9-byte rows `[row index][flags][00][action bits u16][opcode u16][params u16]`, all big-endian. Row indexes count up through the file and name the key in the trigger event; flags `0x80` marks a row that runs an action on the plain key press (disabled rows carry `0x00`). Action bits: `0x8000` disable, `0x4000` press modifiers only, low byte = modifier mask. Opcodes: `0x8000` disable, `0x8001` mouse button (params = button mask), `0x8002` keystroke (action bits = modifier mask, params = HID keycode), `0x8003` consumer usage, `0x8004` with params `0002` = G-shift. The active profile's first `0x1b05` reference names the file. After writing it the plugin activates the profile and configures the preset file (`0x90` with type `1b05`) **last**: the firmware keeps running the old rows until the preset itself is configured, and a profile reload after that drops the preset again.
 
-A disabled key, a mouse button (`0x8001`, params = button mask, left = bit 0) and a media key (`0x8003`, params = consumer usage: play `cd`, next `b5`, previous `b6`, volume `e9`/`ea`, mute `e2`) are written as rows the firmware runs on its own; the plugin does not report their presses. Every other action becomes a disabled row: the firmware swallows the key and reports it through the trigger events, and the daemon runs the action. Clearing the last mapping leaves an empty preset. Keys are labelled by control id and bound to the keyboard picture through their control ids (`lib/hidpp2/control_keys.lua`): Logitech's documented standard keys `0x0122`–`0x0161`, plus the numpad (`0x016b`–`0x017b`), alt/start (`0x018b`–`0x018d`) and G-key (`0x018f`–`0x0197`) ids observed on a full-size keyboard. Ids with no known key keep a hexadecimal label.
+A disabled key, a mouse button (`0x8001`, params = button mask, left = bit 0) and a media key (`0x8003`, params = consumer usage: play `cd`, next `b5`, previous `b6`, volume `e9`/`ea`, mute `e2`) are written as rows the firmware runs on its own; the plugin does not report their presses. Every other action becomes a disabled row: the firmware swallows the key and reports it through the trigger events, and the daemon runs the action. Clearing the last mapping leaves an empty preset. Keys are labelled by control id and bound to the keyboard picture through the control id table in `lib/hidpp2/control_keys.lua`; ids with no known key keep a hexadecimal label.
+
+| Control ids | Keys |
+|-------------|------|
+| `0x004c`–`0x004f`, `0x00eb`–`0x00f6` | print screen, pause, scroll lock, menu, arrows, F1–F8 |
+| `0x010b`–`0x011e` | grave, tab, caps lock, modifiers, navigation block, backslash |
+| `0x0122`–`0x0161` | letters, digits, escape, F9–F12, up/down, equals, enter, backspace, minus, punctuation, space |
+| `0x0169`, `0x016a` | ISO hash key and the key next to left shift (ISO variant only) |
+| `0x016b`–`0x017b` | numpad |
+| `0x018b`–`0x018d` | alt / start |
+| `0x018f`–`0x0197` | G1–G9 |
 
 ### Button-event notifications
 

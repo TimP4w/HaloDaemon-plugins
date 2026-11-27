@@ -1089,6 +1089,7 @@ callbacks = {
   onboard_profiles_status = function(dev)
     if not dev.pm then return onboard_status(dev) end
     local state = dev.pm
+    state.mode = pm.mode(dev)
     local host = dev.lighting and dev.lighting.host
     if host == nil then host = state.mode.host end
     local active = not host and state.mode.active or 0
@@ -1099,7 +1100,8 @@ callbacks = {
           active = active == e.id, has_rom_default = pm.entry(state.factory, e.id, pm.PROFILE_TYPE) ~= nil }
       end
     end
-    return { active_slot = active, slots = slots }
+    -- The file system has no enabled flag: every profile file is a slot.
+    return { active_slot = active, slots = slots, slots_fixed = true }
   end,
   switch_profile = function(dev, slot)
     if dev.pm then
