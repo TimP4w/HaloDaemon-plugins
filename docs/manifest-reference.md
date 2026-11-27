@@ -493,6 +493,36 @@ config:
 The destination is resolved once through the SSRF guard; set `allow_private:
 true` only for a LAN device. See [docs/lua-api.md](lua-api.md) for `halod.udp`.
 
+An optional `dtls` block wraps the socket in a DTLS 1.2 pre-shared-key session.
+`halod.udp` is unchanged: the plugin sends and receives plaintext datagrams.
+
+```yaml
+transports:
+  udp:
+    host_key: host
+    port_key: port
+    dtls:
+      profile: psk                # the only profile
+      identity: client_id         # config field holding the PSK identity
+      psk: client_secret          # secure config field holding the key
+      psk_encoding: hex           # hex (default), base64, or raw
+      ciphers: [TLS_PSK_WITH_AES_128_GCM_SHA256]
+      session_idle_ms: 2500       # optional, 1–600000
+config:
+  fields:
+    - { key: host, label: Host, kind: host }
+    - { key: port, label: Port, kind: port }
+    - { key: client_id, label: Client ID }
+    - { key: client_secret, label: Client secret, secure: true }
+```
+
+`ciphers` must be non-empty and may contain `TLS_PSK_WITH_AES_128_GCM_SHA256`,
+`TLS_PSK_WITH_AES_128_CCM`, and `TLS_PSK_WITH_AES_128_CCM_8`. The handshake runs
+on the first `send`, bounded by `send_timeout_ms`. A failed send or receive ends
+the session and the next `send` handshakes again; with `session_idle_ms`, so does
+a `send` after a longer gap. When either credential is empty the plugin has no
+`halod.udp`.
+
 ### Command
 
 ```yaml

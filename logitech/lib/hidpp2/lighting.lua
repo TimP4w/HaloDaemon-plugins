@@ -4,11 +4,12 @@
 return function(api)
 local bytes, packet = api.bytes, api.packet
 local request, feature = api.request, api.feature
-local send_feature_packets = api.send_feature_packets
+local send_feature_packets, retry, pm = api.send_feature_packets, api.retry, api.pm
 local SW_ID = api.sw_id
 local RGB_EFFECTS = api.rgb_effects
 local COLOR_LED_EFFECTS = api.color_led_effects
 local PER_KEY_LIGHTING_V2 = api.per_key_lighting_v2
+local PROFILE_MANAGEMENT = api.profile_management
 
 local function clamp(value, min, max)
   return math.floor(math.max(min, math.min(max, value)) + 0.5)
@@ -138,6 +139,18 @@ local function apply_native_effect(dev, id, params)
   end
 end
 
+-- The onboard profile stores an effect as its wire id and parameter bytes.
+local function native_record(dev, id, params)
+  local zones = dev.lighting and dev.lighting.native and dev.lighting.native[id]
+  if not zones then error("native effect is not supported by this device") end
+  local entry = zones[0] or zones[next(zones)]
+  return entry.variant.wire, entry.variant.encode(params or {})
+end
+
+local function static_record(color)
+  return 0x01, { color.r or 0, color.g or 0, color.b or 0, 0x02, 0, 0, 0, 0, 0, 0 }
+end
+
 local function ordered_led_ids(ids, preferred)
   if not preferred then table.sort(ids); return ids end
   local present, out = {}, {}
@@ -209,6 +222,34 @@ local function color_led_zones(dev, index, count, zone_names)
   return channels, slots, effect_slots
 end
 
+local SET_INDIVIDUAL, SET_CONSECUTIVE, SET_RANGE, COMMIT = 0x10, 0x20, 0x50, 0x70
+
+local function per_key_packet(dev, func, payload)
+  return packet(dev.hidpp.devnum, dev.hidpp.features[PER_KEY_LIGHTING_V2], func | SW_ID,
+    bytes(table.unpack(payload)), true)
+end
+
+-- SET_INDIVIDUAL carries four (id, r, g, b) entries; a short last packet
+-- repeats its final entry. The commit follows.
+local function individual_packets(dev, entries)
+  local packets = {}
+  for start = 1, #entries, 4 do
+    local finish, payload = math.min(start + 3, #entries), {}
+    for offset = 0, 3 do
+      local entry = entries[math.min(start + offset, finish)]
+      payload[#payload + 1] = entry.id
+      payload[#payload + 1] = entry.r
+      payload[#payload + 1] = entry.g
+      payload[#payload + 1] = entry.b
+    end
+    packets[#packets + 1] = per_key_packet(dev, SET_INDIVIDUAL, payload)
+  end
+  packets[#packets + 1] = per_key_packet(dev, COMMIT, { 0 })
+  return packets
+end
+
+local EXPLICIT_WRITE_MAX_LEDS = 8
+
 local function write_per_key_frame(dev, colors)
   local ids = dev.lighting.led_ids or {}
   local cache, states = dev.lighting.frame_cache or {}, {}
@@ -224,30 +265,13 @@ local function write_per_key_frame(dev, colors)
   local any = false; for _, state in ipairs(states) do if state.dirty then any = true; break end end
   if not any then return end
 
-  -- The G502's short mouse strip is most reliable with explicit LED writes.
-  -- Eight LEDs still fit in two reports, so SET_CONSECUTIVE saves nothing over
-  -- two SET_INDIVIDUAL packets and can leave one strip LED at its previous
-  -- colour during pixmap streaming.
-  if dev.profile and dev.profile.device_type == "mouse" then
-    local dirty, packets = {}, {}
+  -- A short strip is most reliable with explicit LED writes: its LEDs fit in
+  -- two SET_INDIVIDUAL packets, so SET_CONSECUTIVE saves nothing and can leave
+  -- one LED at its previous colour during pixmap streaming.
+  if #ids <= EXPLICIT_WRITE_MAX_LEDS then
+    local dirty = {}
     for _, state in ipairs(states) do if state.dirty then dirty[#dirty + 1] = state end end
-    for start = 1, #dirty, 4 do
-      local finish = math.min(start + 3, #dirty)
-      local last, payload = dirty[finish], {}
-      for offset = 0, 3 do
-        local entry = dirty[math.min(start + offset, finish)] or last
-        payload[#payload + 1] = entry.id
-        payload[#payload + 1] = entry.r
-        payload[#payload + 1] = entry.g
-        payload[#payload + 1] = entry.b
-      end
-      packets[#packets + 1] = packet(dev.hidpp.devnum,
-        dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x10 | SW_ID,
-        bytes(table.unpack(payload)), true)
-    end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
-    send_feature_packets(dev, packets)
+    send_feature_packets(dev, individual_packets(dev, dirty))
     for _, state in ipairs(states) do cache[state.id] = { state.r, state.g, state.b } end
     return
   end
@@ -290,9 +314,7 @@ local function write_per_key_frame(dev, colors)
             payload[#payload + 1] = entry.g
             payload[#payload + 1] = entry.b
           end
-          packets[#packets + 1] = packet(dev.hidpp.devnum,
-            dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x20 | SW_ID,
-            bytes(table.unpack(payload)), true)
+          packets[#packets + 1] = per_key_packet(dev, SET_CONSECUTIVE, payload)
           start = finish + 1
         end
       else
@@ -309,12 +331,9 @@ local function write_per_key_frame(dev, colors)
     for n = start, math.min(start + 2, #ranges) do
       for _, value in ipairs(ranges[n]) do payload[#payload + 1] = value end
     end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x50 | SW_ID,
-      bytes(table.unpack(payload)), true)
+    packets[#packets + 1] = per_key_packet(dev, SET_RANGE, payload)
   end
-  packets[#packets + 1] = packet(dev.hidpp.devnum,
-    dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
+  packets[#packets + 1] = per_key_packet(dev, COMMIT, { 0 })
   send_feature_packets(dev, packets)
   for _, state in ipairs(states) do cache[state.id] = { state.r, state.g, state.b } end
 end
@@ -337,25 +356,7 @@ local function write_per_key_pairs(dev, channels)
   end
   if #entries == 0 then return end
   table.sort(entries, function(a, b) return a.id < b.id end)
-
-  local packets = {}
-  for start = 1, #entries, 4 do
-    local finish = math.min(start + 3, #entries)
-    local last, payload = entries[finish], {}
-    for offset = 0, 3 do
-      local entry = entries[math.min(start + offset, finish)] or last
-      payload[#payload + 1] = entry.id
-      payload[#payload + 1] = entry.r
-      payload[#payload + 1] = entry.g
-      payload[#payload + 1] = entry.b
-    end
-    packets[#packets + 1] = packet(dev.hidpp.devnum,
-      dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x10 | SW_ID,
-      bytes(table.unpack(payload)), true)
-  end
-  packets[#packets + 1] = packet(dev.hidpp.devnum,
-    dev.hidpp.features[PER_KEY_LIGHTING_V2], 0x70 | SW_ID, bytes(0), true)
-  send_feature_packets(dev, packets)
+  send_feature_packets(dev, individual_packets(dev, entries))
 
   local cache = dev.lighting.frame_cache or {}
   dev.lighting.frame_cache = cache
@@ -378,21 +379,92 @@ local function write_rgb_zone(dev, zone_id, colors)
   end
 end
 
+local CLAIM_SETTLE_MS = 2000
+local OWN_CLUSTERS_AND_POWER = 0x03
+local NOTIFY_IDLE, NOTIFY_ACTIVITY = 0x04, 0x02
+local POWER_FULL, POWER_OFF = 0x01, 0x03
+
+local function profile_managed(dev)
+  return dev.hidpp.features[PROFILE_MANAGEMENT] ~= nil and dev.hidpp.features[RGB_EFFECTS] ~= nil
+end
+
+local function idle_off_after_sleep_timeout(dev)
+  local ok, timers = pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(0))
+  if not ok or #timers < 7 then return end
+  local idle_hi, idle_lo, sleep_hi, sleep_lo = timers:byte(4, 7)
+  local sleep = (sleep_hi << 8) | sleep_lo
+  if sleep == 0 or sleep == 0xffff or (idle_hi == sleep_hi and idle_lo == sleep_lo) then return end
+  dev.lighting.saved_timers = { idle_hi, idle_lo, sleep_hi, sleep_lo }
+  pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, sleep_hi, sleep_lo, sleep_hi, sleep_lo))
+end
+
+local function restore_power_timers(dev)
+  local saved = dev.lighting.saved_timers
+  dev.lighting.saved_timers, dev.lighting.power_configured = nil, nil
+  if saved then pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, table.unpack(saved))) end
+end
+
+local function enter_host_mode(dev)
+  retry(pm.set_mode, dev, pm.HOST_MODE)
+  dev.lighting.host = true
+end
+
 local function restore_rgb_control(dev)
   if not dev.lighting then return end
   -- Reclaiming means the firmware owned the LEDs, so the streaming frame cache
   -- no longer describes what is lit and must not suppress the write that follows.
   dev.lighting.frame_cache = nil
-  if dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
-    feature(dev, RGB_EFFECTS, 0x50, bytes(1, 1))
+  if profile_managed(dev) then
+    -- Host mode holds until released or changed by the firmware (reported by
+    -- a PROFILE_MANAGEMENT event), so it is only re-sent after that.
+    if not dev.lighting.host then enter_host_mode(dev) end
+    retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_IDLE))
+    dev.lighting.claimed_at = halod.monotonic_ms()
+    dev.lighting.host = true
+    -- The firmware may have parked the LEDs in power save before the claim.
+    dev.lighting.sleeping = false
+    retry(feature, dev, RGB_EFFECTS, 0x80, bytes(1, POWER_FULL))
+    if not dev.lighting.power_configured then
+      dev.lighting.power_configured = true
+      idle_off_after_sleep_timeout(dev)
+    end
+  elseif dev.lighting.wire == "rgb_effects" or dev.hidpp.features[RGB_EFFECTS] then
+    retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, 1))
   elseif dev.lighting.wire == "color_led" then
-    feature(dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
+    retry(feature, dev, COLOR_LED_EFFECTS, 0x80, bytes(1))
   end
+end
+
+local function release_rgb_control(dev)
+  dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
+  dev.lighting.host = false
+  restore_power_timers(dev)
+  retry(feature, dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
+  retry(pm.set_mode, dev, pm.ONBOARD_MODE)
+end
+
+local function user_activity_report(dev, report)
+  if not dev.lighting or not dev.lighting.claimed_at then return nil end
+  if report:byte(2) ~= dev.hidpp.devnum or report:byte(3) ~= dev.hidpp.features[RGB_EFFECTS]
+      or report:byte(4) ~= 0x10 then
+    return nil
+  end
+  return (report:byte(5) or 0) ~= 0
+end
+
+local function sleep_lighting(dev)
+  if dev.lighting.sleeping then return end
+  if halod.monotonic_ms() - dev.lighting.claimed_at < CLAIM_SETTLE_MS then return end
+  dev.lighting.sleeping = true
+  feature(dev, RGB_EFFECTS, 0x80, bytes(1, POWER_OFF))
+  feature(dev, RGB_EFFECTS, 0x50, bytes(1, OWN_CLUSTERS_AND_POWER, NOTIFY_ACTIVITY))
 end
 
 return {
   resolve_native_effects = resolve_native_effects,
   apply_native_effect = apply_native_effect,
+  native_record = native_record,
+  static_record = static_record,
   discover_per_key_ids = discover_per_key_ids,
   rgb_static_slots = rgb_static_slots,
   color_led_zones = color_led_zones,
@@ -400,5 +472,10 @@ return {
   write_per_key_pairs = write_per_key_pairs,
   write_rgb_zone = write_rgb_zone,
   restore_rgb_control = restore_rgb_control,
+  release_rgb_control = release_rgb_control,
+  enter_host_mode = enter_host_mode,
+  profile_managed = profile_managed,
+  user_activity_report = user_activity_report,
+  sleep_lighting = sleep_lighting,
 }
 end

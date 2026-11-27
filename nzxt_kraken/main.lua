@@ -468,8 +468,16 @@ return {
     read_report(dev)
   end,
 
-  -- `channel` is set when a chain child runs an effect on its own output.
+  -- `channel` is set when the chain child runs an effect on its output; the
+  -- Kraken's own call never touches the chain, which belongs to that child.
   apply = function(dev, state, channel)
+    if channel then
+      if state.mode == "native_effect" and chain_leds > 0 then
+        native.chain = true
+        dev.transport:write(effects.packet(state.id, state.params, 0x02, chain_leds))
+      end
+      return
+    end
     if state.mode ~= "native_effect" then native.ring = false end
     if state.mode == "static" then
       local fill = {}
@@ -485,14 +493,8 @@ return {
       ring_grb = grb_from_colors(fill, RING_SLOTS)
       send_channels(dev)
     elseif state.mode == "native_effect" then
-      if channel == nil then
-        native.ring = true
-        dev.transport:write(effects.packet(state.id, state.params, 0x01, RING_LEDS))
-      end
-      if chain_leds > 0 then
-        native.chain = true
-        dev.transport:write(effects.packet(state.id, state.params, 0x02, chain_leds))
-      end
+      native.ring = true
+      dev.transport:write(effects.packet(state.id, state.params, 0x01, RING_LEDS))
     end
   end,
 

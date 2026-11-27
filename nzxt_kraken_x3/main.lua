@@ -96,8 +96,15 @@ return {
     }
   end,
 
-  -- `channel` is set when a chain child runs an effect on its own output.
+  -- `channel` is set when the chain child runs an effect on its output; the
+  -- cooler's own call never touches the chain, which belongs to that child.
   apply = function(dev, state, channel)
+    if channel then
+      if state.mode == "native_effect" and chain_leds > 0 then
+        dev.transport:write(effects.packet(state.id, state.params, 0x01, chain_leds))
+      end
+      return
+    end
     if state.mode == "static" then
       local fill = {}
       for i = 1, RING_LEDS do fill[i] = state.color end
@@ -114,13 +121,8 @@ return {
       local logo_map = channels.logo or {}
       write_logo(dev, logo_map["0"] or { r = 0, g = 0, b = 0 })
     elseif state.mode == "native_effect" then
-      if channel == nil then
-        dev.transport:write(effects.packet(state.id, state.params, 0x02, RING_LEDS))
-        dev.transport:write(effects.packet(state.id, state.params, 0x04, 1))
-      end
-      if chain_leds > 0 then
-        dev.transport:write(effects.packet(state.id, state.params, 0x01, chain_leds))
-      end
+      dev.transport:write(effects.packet(state.id, state.params, 0x02, RING_LEDS))
+      dev.transport:write(effects.packet(state.id, state.params, 0x04, 1))
     end
   end,
 

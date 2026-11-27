@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
 -- Device-specific profiles and physical keyboard layouts for HID++2.
 
-return function(product_name)
+return function()
 
 local G502X_LED_ORDER = { 3, 4, 8, 7, 6, 5, 2, 1 }
 local G502X_BUTTONS = {
@@ -17,8 +17,7 @@ local G502_HERO_BUTTONS = {
 local function device_profile(dev)
   local pid, wpid = dev.match.pid, dev.match.wpid
   if pid == 0xc095 or wpid == 0x4099 then
-    return { name = "Logitech G502 X Plus", device_type = "mouse", wireless = true,
-      zone_name = "Lighting", topology = "linear",
+    return {
       led_order = G502X_LED_ORDER, buttons = G502X_BUTTONS, signature_name = "Pulsar Point",
       defaults = {
         { cid = 2, base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } },
@@ -26,17 +25,38 @@ local function device_profile(dev)
         { cid = 13, base = { type = "momentary_dpi", dpi = 400 }, shifted = { type = "native" } },
       } }
   elseif pid == 0xc08b then
-    return { name = "Logitech G502 Hero", device_type = "mouse", buttons = G502_HERO_BUTTONS,
+    return { buttons = G502_HERO_BUTTONS,
       defaults = {
         { cid = 16, base = { type = "dpi_cycle", direction = "up" }, shifted = { type = "native" } },
         { cid = 15, base = { type = "dpi_cycle", direction = "down" }, shifted = { type = "native" } },
         { cid = 14, base = { type = "momentary_dpi", dpi = 400 }, shifted = { type = "native" } },
       } }
   elseif pid == 0xc352 or wpid == 0x40b0 then
-    return { name = "Logitech G PRO X TKL", device_type = "keyboard", wireless = true,
-      zone_name = "Keys", topology = "keyboard", button_prefix = "G" }
+    return { gkeys_on_function_row = true,
+      extra_key_cells = {
+        [150] = { col = 5.0, row = -1.5 }, [155] = { col = 11.0, row = -1.5 },
+        [152] = { col = 12.0, row = -1.5 }, [154] = { col = 13.0, row = -1.5 },
+        [153] = { col = 14.0, row = -1.5 },
+      } }
+  elseif pid == 0xc356 or wpid == 0x40b5 then
+    -- Vendor LEDs: logo, G6-G9 above F1-F4, brightness above F8, media keys
+    -- above the numpad, G1-G5 in a column left of the main block.
+    local cells = {
+      [210] = { col = -1.25, row = -1.5 },
+      [185] = { col = 2.0, row = -1.5 }, [186] = { col = 3.0, row = -1.5 },
+      [187] = { col = 4.0, row = -1.5 }, [188] = { col = 5.0, row = -1.5 },
+      [153] = { col = 9.5, row = -1.5 },
+      [158] = { col = 19.5, row = 0.0 }, [155] = { col = 20.5, row = 0.0 },
+      [157] = { col = 21.5, row = 0.0 }, [156] = { col = 22.5, row = 0.0 },
+    }
+    local controls = { [158] = 0x00e4, [155] = 0x00e5, [157] = 0x00e6, [156] = 0x00e7 }
+    for n = 1, 9 do
+      controls[179 + n] = 0x018e + n
+      if n <= 5 then cells[179 + n] = { col = -1.25, row = n + 0.5 } end
+    end
+    return { extra_key_cells = cells, vendor_key_controls = controls }
   elseif pid == 0x0a78 then
-    return { name = "Logitech G560", device_type = "speaker",
+    return {
       zone_names = { [0] = "Left Secondary", [1] = "Right Secondary", [2] = "Left Primary", [3] = "Right Primary" },
       bass_key = "subwoofer_volume", bass_label = "Subwoofer Volume",
       brightness_levels = { 0, 25, 50, 100 },
@@ -49,66 +69,73 @@ local function device_profile(dev)
         { id = "communications", label = "Communications", bands = { 0, -1, -1, 2, 4, 4, 4, 4, 2, 1 } },
       } }
   end
-  return { name = product_name(pid, wpid), device_type = "other" }
+  return {}
 end
 
--- G PRO X TKL firmware LED id -> standard host key. Geometry for standard
--- keys comes from Halo's generic TKL templates; only Logitech-specific keys
--- carry explicit cells. This is the same map used by the former native driver.
-local GPRO_TKL_KEYS = {
-  {38,"escape"},{55,"f1"},{56,"f2"},{57,"f3"},{58,"f4"},{59,"f5"},{60,"f6"},
-  {61,"f7"},{62,"f8"},{63,"f9"},{64,"f10"},{65,"f11"},{66,"f12"},
-  {67,"print_screen"},{68,"scroll_lock"},{69,"pause"},
-  {50,"backtick"},{27,"digit1"},{28,"digit2"},{29,"digit3"},{30,"digit4"},
-  {31,"digit5"},{32,"digit6"},{33,"digit7"},{34,"digit8"},{35,"digit9"},
-  {36,"digit0"},{42,"minus"},{43,"equals"},{39,"backspace"},
-  {70,"insert"},{71,"home"},{72,"page_up"},
-  {40,"tab"},{17,"q"},{23,"w"},{5,"e"},{18,"r"},{20,"t"},{25,"y"},
-  {21,"u"},{9,"i"},{15,"o"},{16,"p"},{44,"left_bracket"},
-  {45,"right_bracket"},{46,"backslash"},{73,"delete"},{74,"end"},
-  {75,"page_down"},{37,"enter"},
-  {54,"caps_lock"},{1,"a"},{19,"s"},{4,"d"},{6,"f"},{7,"g"},{8,"h"},
-  {10,"j"},{11,"k"},{12,"l"},{48,"semicolon"},{49,"quote"},
-  {105,"left_shift"},{97,"iso_extra"},{26,"z"},{24,"x"},{3,"c"},{22,"v"},
-  {2,"b"},{14,"n"},{13,"m"},{51,"comma"},{52,"period"},{53,"slash"},
-  {109,"right_shift"},{79,"up"},
-  {104,"left_ctrl"},{107,"left_super"},{106,"left_alt"},{41,"space"},
-  {110,"right_alt"},{108,"right_ctrl"},{77,"left"},{78,"down"},{76,"right"},
+local USAGE_ORDER_KEYS = {
+  "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+  "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+  "digit1", "digit2", "digit3", "digit4", "digit5", "digit6", "digit7", "digit8",
+  "digit9", "digit0", "enter", "escape", "backspace", "tab", "space", "minus",
+  "equals", "left_bracket", "right_bracket", "backslash", false, "semicolon",
+  "quote", "backtick", "comma", "period", "slash", "caps_lock",
+  "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
+  "print_screen", "scroll_lock", "pause", "insert", "home", "page_up", "delete",
+  "end", "page_down", "right", "left", "down", "up",
+  "num_lock", "num_div", "num_mul", "num_sub", "num_add", "num_enter",
+  "num1", "num2", "num3", "num4", "num5", "num6", "num7", "num8", "num9",
+  "num0", "num_dot", "iso_extra", "menu",
 }
-
-local GPRO_TKL_EXTRA_KEYS = {
-  { led_id = 150, cell = { col = 5.0, row = -1.5 } },
-  { led_id = 155, cell = { col = 11.0, row = -1.5 } },
-  { led_id = 152, cell = { col = 12.0, row = -1.5 } },
-  { led_id = 154, cell = { col = 13.0, row = -1.5 } },
-  { led_id = 153, cell = { col = 14.0, row = -1.5 } },
-  { led_id = 111, cell = { col = 11.25, row = 5.5 } },
-  { led_id = 98, cell = { col = 12.25, row = 5.5 } },
+local MODIFIER_KEYS = {
+  [104] = "left_ctrl", [105] = "left_shift", [106] = "left_alt", [107] = "left_super",
+  [108] = "right_ctrl", [109] = "right_shift", [110] = "right_alt", [111] = "right_super",
 }
+local ISO_HASH_LED, LAST_USAGE_LED = 47, 111
+local FIRST_NUMPAD_LED, LAST_NUMPAD_LED = 80, 96
 
-local function gpro_tkl_variant(iso)
-  local keys = {}
-  for _, mapping in ipairs(GPRO_TKL_KEYS) do
-    local key = mapping[2]
-    if not (iso and key == "backslash") and not (not iso and key == "iso_extra") then
-      keys[#keys + 1] = { led_id = mapping[1], key = key }
+local function usage_key(led_id)
+  return USAGE_ORDER_KEYS[led_id] or MODIFIER_KEYS[led_id] or nil
+end
+
+local function discovered_variant(led_ids, iso, full_size, extra_cells, vendor_controls)
+  local keys, next_extra_col = {}, 0
+  for _, id in ipairs(led_ids) do
+    local key = usage_key(id)
+    if iso and id == ISO_HASH_LED then key = "backslash"
+    elseif iso and key == "backslash" then key = nil
+    elseif not iso and key == "iso_extra" then key = nil
+    elseif not full_size and id >= FIRST_NUMPAD_LED and id <= LAST_NUMPAD_LED then key = nil end
+    if key then
+      keys[#keys + 1] = { led_id = id, key = key }
+    elseif id > LAST_USAGE_LED then
+      local cell = extra_cells[id]
+      if not cell then
+        cell = { col = next_extra_col, row = -1.5 }
+        next_extra_col = next_extra_col + 1
+      end
+      keys[#keys + 1] = { led_id = id, cell = cell, vendor_cid = vendor_controls[id] }
     end
   end
-  for _, key in ipairs(GPRO_TKL_EXTRA_KEYS) do keys[#keys + 1] = key end
-  if iso then
-    -- Logitech firmware zone 47 replaces the standard ISO home-row backslash.
-    keys[#keys + 1] = { led_id = 47, cell = { col = 12.75, row = 3.5 } }
-  end
-  return { base = iso and "tkl_iso" or "tkl", keys = keys }
+  local base = full_size and "full_size" or "tkl"
+  return { base = iso and (base .. "_iso") or base, keys = keys }
 end
 
-local function gpro_tkl_keyboard(layout)
+local function discovered_keyboard(led_ids, profile)
+  profile = profile or {}
+  local present, full_size = {}, false
+  for _, id in ipairs(led_ids) do
+    present[id] = true
+    if id >= FIRST_NUMPAD_LED and id <= LAST_NUMPAD_LED then full_size = true end
+  end
+  for id = 1, 26 do if not present[id] then return nil end end
+  local extra_cells = profile.extra_key_cells or {}
+  local vendor_controls = profile.vendor_key_controls or {}
   return {
-    ansi = gpro_tkl_variant(false),
-    iso = gpro_tkl_variant(true),
-    detected_language = layout or "unknown",
+    ansi = discovered_variant(led_ids, false, full_size, extra_cells, vendor_controls),
+    iso = discovered_variant(led_ids, true, full_size, extra_cells, vendor_controls),
+    detected_language = "unknown",
     languages = { "u_s", "c_h", "i_t", "d_e", "f_r", "u_k" },
-  }
+  }, full_size and "full_size" or "t_k_l"
 end
 
 local function bind_gkeys_to_function_row(keyboard, gkey_count)
@@ -120,17 +147,46 @@ local function bind_gkeys_to_function_row(keyboard, gkey_count)
   end
 end
 
+local CONTROL_KEYS = halod.require("lib.hidpp2.control_keys")
+
+-- Standard keys carry their own control id on FULL_KEY_CUSTOMIZATION devices;
+-- a vendor key is bound through the control id its model profile names. The
+-- ISO variant binds its two extra keys over the ANSI ids.
+local function bind_keys_to_controls(keyboard, buttons)
+  local present = {}
+  for _, button in ipairs(buttons) do present[button.cid] = true end
+  for name, variant in pairs({ ansi = keyboard.ansi, iso = keyboard.iso }) do
+    local cid_of_key = {}
+    for _, button in ipairs(buttons) do
+      local key = CONTROL_KEYS.keys[button.cid]
+      if key then cid_of_key[key] = button.cid end
+    end
+    if name == "iso" then
+      for cid, key in pairs(CONTROL_KEYS.iso) do
+        if present[cid] then cid_of_key[key] = cid end
+      end
+    end
+    for _, mapping in ipairs(variant.keys) do
+      if mapping.key and cid_of_key[mapping.key] then mapping.remap_cid = cid_of_key[mapping.key]
+      elseif mapping.vendor_cid and present[mapping.vendor_cid] then mapping.remap_cid = mapping.vendor_cid end
+      mapping.vendor_cid = nil
+    end
+  end
+end
+
 local function keyboard_with_remap(keyboard, remap_backend, buttons)
   if keyboard and remap_backend == "gkey" then
     bind_gkeys_to_function_row(keyboard, #buttons)
+  elseif keyboard and remap_backend == "fkc" then
+    bind_keys_to_controls(keyboard, buttons)
   end
   return keyboard
 end
 
 return {
   device_profile = device_profile,
-  gpro_tkl_keyboard = gpro_tkl_keyboard,
   bind_gkeys_to_function_row = bind_gkeys_to_function_row,
   keyboard_with_remap = keyboard_with_remap,
+  discovered_keyboard = discovered_keyboard,
 }
 end

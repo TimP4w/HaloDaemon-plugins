@@ -21,7 +21,14 @@ return function(api)
     if checked then return api.dispatch(dev, devnum, sub, reg & 0xff) end
   end
 
-  local function receiver_children(dev, product_name, device_type)
+  local function paired_codename(dev, slot)
+    local ok, reply = pcall(read, dev, DIRECT, 0x02b5, api.bytes(0x40 + slot - 1))
+    if not ok then return nil end
+    local name = reply:sub(3, 2 + (reply:byte(2) or 0)):gsub("%z.*", "")
+    return #name > 0 and name or nil
+  end
+
+  local function receiver_children(dev, branded, device_type)
     if not dev.receiver then return {} end
     -- The count is not a dense upper bound: pairing slots remain sparse after
     -- unpairing and powered-off children may not be included in it.
@@ -42,7 +49,7 @@ return function(api)
           index = slot, key = tostring(slot), serial = serial,
           id = serial and ("logitech-" .. serial)
             or string.format("logitech_%04x_%d", wpid, slot),
-          name = product_name(nil, wpid), device_type = device_type(pair:byte(8), wpid),
+          name = branded(paired_codename(dev, slot)), device_type = device_type(pair:byte(8)),
           extra = { wpid = wpid },
         }
       end
