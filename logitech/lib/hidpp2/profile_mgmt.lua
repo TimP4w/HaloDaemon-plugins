@@ -84,6 +84,29 @@ function M.file_refs(tags)
   return refs
 end
 
+-- The fixed tags whose fields the profile parser lays out; a device whose tag
+-- list differs has profiles the plugin can read as bytes but not edit.
+M.LAYOUT_TAGS = { 0x01, 0x02, 0x12, 0x13, 0x03, 0x0c, 0x0d, 0x0e, 0x0f, 0x07, 0x30 }
+function M.layout_known(tags)
+  local fixed = {}
+  for _, t in ipairs(tags) do if not t.feature then fixed[#fixed + 1] = t.tag end end
+  if #fixed ~= #M.LAYOUT_TAGS then return false end
+  for i, tag in ipairs(M.LAYOUT_TAGS) do if fixed[i] ~= tag then return false end end
+  return true
+end
+
+-- Index of the reference slot that holds a `feature`'s `ordinal`-th file
+-- (first by default), or nil.
+function M.ref_index(state, feature, ordinal)
+  local seen = 0
+  for i, ref in ipairs(state.refs) do
+    if ref.feature == feature then
+      seen = seen + 1
+      if seen == (ordinal or 1) then return i end
+    end
+  end
+end
+
 -- Returns nil for a file the device has never written (HID++ error 0x04).
 function M.read_file(dev, address, length)
   local hi, lo = be16(address)
@@ -134,6 +157,7 @@ end
 
 -- Directory: [crc32 over everything after it][count][count x 10-byte entry][0xff].
 local ENTRY = 10
+M.MAX_FILE_SIZE = 0xff
 function M.parse_directory(data)
   local count = data:byte(5) or 0
   local dir = { crc = u32(data, 1), entries = {} }
@@ -254,6 +278,7 @@ function M.refresh(dev)
   local state = dev.pm or {}
   state.tags = state.tags or M.read_tags(dev)
   state.refs = M.file_refs(state.tags)
+  state.layout_known = M.layout_known(state.tags)
   state.mode = M.mode(dev)
   state.user = M.read_directory(dev, M.USER) or { crc = 0, entries = {} }
   state.factory = M.read_directory(dev, M.FACTORY) or { crc = 0, entries = {} }
@@ -263,7 +288,8 @@ function M.refresh(dev)
       local data = M.read_file(dev, M.USER | e.location, e.length)
       if data then
         local ok, parsed = pcall(M.parse_profile, data, #state.refs)
-        state.profiles[e.id] = { entry = e, data = data, parsed = ok and parsed or nil }
+        state.profiles[e.id] = { entry = e, data = data,
+          parsed = state.layout_known and ok and parsed or nil }
       end
     end
   end
@@ -281,6 +307,9 @@ end
 
 -- Writes a user file and its directory entry; adds the entry when `id` is new.
 function M.write_entry(dev, state, id, file_type, data)
+  if #data > M.MAX_FILE_SIZE then
+    error(string.format("onboard file of %d bytes exceeds the %d-byte directory limit", #data, M.MAX_FILE_SIZE))
+  end
   local dir = state.user
   local e = M.entry(dir, id, file_type)
   if e and sectors(data and #data or 0) > sectors(e.length) then
@@ -302,8 +331,22 @@ end
 
 function M.write_profile(dev, state, id, data)
   local e = M.write_entry(dev, state, id, M.PROFILE_TYPE, data)
-  state.profiles[id] = { entry = e, data = data, parsed = M.parse_profile(data, #state.refs) }
+  state.profiles[id] = { entry = e, data = data,
+    parsed = state.layout_known and M.parse_profile(data, #state.refs) or nil }
   return e
+end
+
+-- A preset entry no profile references any more, reusable for a new preset.
+function M.unreferenced_entry(state, file_type)
+  local referenced = {}
+  for _, profile in pairs(state.profiles) do
+    for _, ref in pairs(profile.parsed and profile.parsed.refs or {}) do
+      if ref then referenced[ref] = true end
+    end
+  end
+  for _, e in ipairs(state.user.entries) do
+    if e.type == file_type and not referenced[e.id] then return e end
+  end
 end
 
 function M.activate_profile(dev, state, id)

@@ -140,10 +140,18 @@ local function request(dev, devnum, feature_index, func, args, patient)
   local address = func | SW_ID
   if long then
     send(dev, packet(devnum, feature_index, address, args, true))
-  elseif not pcall(send, dev, packet(devnum, feature_index, address, args, false)) then
-    dev.long_only = true
-    send(dev, packet(devnum, feature_index, address, args, true))
+    return dispatch(dev, devnum, feature_index, address, nil, patient)
   end
+  -- A device without a short report refuses the write on most hosts; a host
+  -- that accepts it silently leaves the request unanswered, so it is repeated
+  -- as a long one before giving up.
+  if pcall(send, dev, packet(devnum, feature_index, address, args, false)) then
+    local ok, reply = pcall(dispatch, dev, devnum, feature_index, address, nil, patient)
+    if ok then return reply end
+    if not tostring(reply):find("HID++ response did not arrive", 1, true) then error(reply) end
+  end
+  dev.long_only = true
+  send(dev, packet(devnum, feature_index, address, args, true))
   return dispatch(dev, devnum, feature_index, address, nil, patient)
 end
 
@@ -516,7 +524,9 @@ local function active_profile(dev)
   local state = dev.pm or pm.refresh(dev)
   local id = pm.active_profile(state) or error("device has no onboard profile")
   local profile = state.profiles[id]
-  return state, id, profile, profile.parsed or error("onboard profile could not be decoded")
+  return state, id, profile, profile.parsed
+    or error(state.layout_known and "onboard profile could not be decoded"
+      or "onboard profile layout is not one the plugin can edit")
 end
 
 local callbacks
@@ -538,13 +548,15 @@ local function activate_profile(dev, state, id, reclaim)
   end
 end
 
--- Writes the LED records of the active profile and makes the firmware reload it.
+-- Writes the LED records of the active profile and makes the firmware reload
+-- it; an unchanged profile is left running.
 local function profile_lighting(dev, records, flags, reclaim)
   local state, id, profile, p = active_profile(dev)
   for index, record in pairs(records) do p.leds[index] = record end
   p.flags = flags
   local data = pm.serialize_profile(p)
-  if data ~= profile.data then pm.write_profile(dev, state, id, data) end
+  if data == profile.data then return end
+  pm.write_profile(dev, state, id, data)
   activate_profile(dev, state, id, reclaim)
 end
 
@@ -554,28 +566,42 @@ local function next_file_id(dir)
   return id + 1
 end
 
--- The taken-over keys live in a FULL_KEY_CUSTOMIZATION preset file that the
--- active profile's first 0x1b05 reference names.
-local function write_fkc_preset(dev, rows)
+local LAYER_NAMES = { [fkc.LAYER_BASE] = "base", [fkc.LAYER_FN] = "Fn", [fkc.LAYER_GSHIFT] = "G-shift" }
+
+-- The taken-over keys live in FULL_KEY_CUSTOMIZATION preset files, one per
+-- layer, named by the active profile's 0x1b05 references in layer order.
+-- `layers` maps a layer to its rows by control-list index.
+local function write_fkc_presets(dev, layers)
   local state, id, _, p = active_profile(dev)
-  local count = 0
-  for _ in pairs(rows) do count = count + 1 end
-  log(string.format("logitech: key preset for profile %d takes over %d key(s)", id, count), "info")
-  if #state.refs == 0 then error("onboard profile cannot reference a key preset") end
-  local file_id = p.refs[1] or next_file_id(state.user)
-  local data, by_index = fkc.preset(rows)
-  local entry = pm.write_entry(dev, state, file_id, pm.FKC_TYPE, data)
-  dev.fkc.rows = by_index
-  if p.refs[1] ~= file_id then
-    p.refs[1] = file_id
-    pm.write_profile(dev, state, id, pm.serialize_profile(p))
+  dev.fkc.rows, dev.fkc.files = dev.fkc.rows or {}, dev.fkc.files or {}
+  local written, profile_changed = {}, false
+  for layer = fkc.LAYER_BASE, fkc.LAYER_GSHIFT do
+    -- A layer written before stays in step when its last row goes.
+    if layers[layer] or dev.fkc.files[layer] then
+      local slot = pm.ref_index(state, pm.FKC_TYPE, layer + 1)
+        or error(string.format("onboard profile has no %s layer preset", LAYER_NAMES[layer]))
+      local data, by_index = fkc.preset(layers[layer] or {})
+      dev.fkc.rows[layer] = by_index
+      if data ~= dev.fkc.files[layer] then
+        local unreferenced = pm.unreferenced_entry(state, pm.FKC_TYPE)
+        local file_id = p.refs[slot] or unreferenced and unreferenced.id or next_file_id(state.user)
+        local entry = pm.write_entry(dev, state, file_id, pm.FKC_TYPE, data)
+        dev.fkc.files[layer] = data
+        if p.refs[slot] ~= file_id then p.refs[slot] = file_id; profile_changed = true end
+        written[#written + 1] = { id = file_id, entry = entry }
+      end
+    end
   end
+  if profile_changed then pm.write_profile(dev, state, id, pm.serialize_profile(p)) end
+  if #written == 0 then return end
   if not fkc.enabled(dev) then fkc.set_enabled(dev, true) end
   -- The firmware runs a preset only once the preset file itself is configured,
   -- and reloading the profile (or re-entering host mode) drops it again, so
-  -- the preset is configured last.
+  -- the presets are configured last.
   activate_profile(dev, state, id)
-  pm.activate(dev, pm.FKC_TYPE, file_id, entry.length, entry.crc)
+  for _, file in ipairs(written) do
+    pm.activate(dev, pm.FKC_TYPE, file.id, file.entry.length, file.entry.crc)
+  end
 end
 local onboard_mode = onboard.mode
 local set_onboard_mode = onboard.set_mode
@@ -593,7 +619,7 @@ local remap = halod.require("lib.hidpp2.remap")({
   reprog_controls_v4 = REPROG_CONTROLS_V4, gkey = GKEY,
   mouse_button_spy = MOUSE_BUTTON_SPY,
   full_key_customization = FULL_KEY_CUSTOMIZATION, control_list = CONTROL_LIST,
-  fkc = fkc, write_fkc_preset = write_fkc_preset,
+  fkc = fkc, write_fkc_presets = write_fkc_presets,
 })
 local mapping_is_native = remap.mapping_is_native
 local remap_buttons = remap.buttons
@@ -1109,6 +1135,8 @@ callbacks = {
       state.mode = pm.mode(dev)
       if state.mode.host then error("device is in host mode; switch to onboard mode first") end
       activate_profile(dev, state, slot)
+      -- Key presets belong to a profile; the device's mappings follow it.
+      remap.rearm(dev)
       return
     end
     local state = refresh_onboard(dev)
@@ -1125,7 +1153,10 @@ callbacks = {
     if dev.pm then
       local state = dev.pm
       pm.restore_profile(dev, state, slot)
-      if pm.active_profile(state) == slot then activate_profile(dev, state, slot) end
+      if pm.active_profile(state) == slot then
+        activate_profile(dev, state, slot)
+        remap.rearm(dev)
+      end
       return
     end
     if slot >= 0x0100 then error("profile is read-only") end
@@ -1160,10 +1191,7 @@ callbacks = {
     refresh_onboard(dev); restore_rgb_control(dev)
   end,
   set_button_mapping = function(dev, mapping)
-    log(string.format("logitech: map cid 0x%04X base=%s shifted=%s", mapping.cid,
-      mapping.base and mapping.base.type or "native", mapping.shifted and mapping.shifted.type or "native"), "info")
-    set_remap_mapping(dev, mapping.cid, not action_is_native(mapping.base),
-      not action_is_native(mapping.shifted))
+    set_remap_mapping(dev, mapping.cid, mapping.base, mapping.shifted)
   end,
   reset_button_mapping = function(dev, cid)
     set_remap_mapping(dev, cid, false, false)
@@ -1171,7 +1199,6 @@ callbacks = {
   reset_all_button_mappings = function(dev)
     local remap = dev.remap
     if not remap then return end
-    log("logitech: reset all key mappings", "info")
     local cids = {}
     for cid in pairs(remap.base) do cids[cid] = true end
     for cid in pairs(remap.shifted) do cids[cid] = true end

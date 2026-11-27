@@ -92,10 +92,6 @@ local MODIFIER_KEYS = {
 }
 local ISO_HASH_LED, LAST_USAGE_LED = 47, 111
 local FIRST_NUMPAD_LED, LAST_NUMPAD_LED = 80, 96
-local TKL_BOTTOM_ROW_CELLS = {
-  right_super = { col = 11.25, row = 5.5, w = 1.25 },
-  menu = { col = 12.5, row = 5.5, w = 1.25 },
-}
 
 local function usage_key(led_id)
   return USAGE_ORDER_KEYS[led_id] or MODIFIER_KEYS[led_id] or nil
@@ -110,8 +106,7 @@ local function discovered_variant(led_ids, iso, full_size, extra_cells, vendor_c
     elseif not iso and key == "iso_extra" then key = nil
     elseif not full_size and id >= FIRST_NUMPAD_LED and id <= LAST_NUMPAD_LED then key = nil end
     if key then
-      keys[#keys + 1] = { led_id = id, key = key,
-        cell = not full_size and TKL_BOTTOM_ROW_CELLS[key] or nil }
+      keys[#keys + 1] = { led_id = id, key = key }
     elseif id > LAST_USAGE_LED then
       local cell = extra_cells[id]
       if not cell then

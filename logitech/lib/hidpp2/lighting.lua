@@ -419,7 +419,14 @@ local function idle_off_after_sleep_timeout(dev)
   local idle_hi, idle_lo, sleep_hi, sleep_lo = timers:byte(4, 7)
   local sleep = (sleep_hi << 8) | sleep_lo
   if sleep == 0 or sleep == 0xffff or (idle_hi == sleep_hi and idle_lo == sleep_lo) then return end
+  dev.lighting.saved_timers = { idle_hi, idle_lo, sleep_hi, sleep_lo }
   pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, sleep_hi, sleep_lo, sleep_hi, sleep_lo))
+end
+
+local function restore_power_timers(dev)
+  local saved = dev.lighting.saved_timers
+  dev.lighting.saved_timers, dev.lighting.power_configured = nil, nil
+  if saved then pcall(feature, dev, RGB_EFFECTS, 0x70, bytes(1, 0, 0, table.unpack(saved))) end
 end
 
 local function enter_host_mode(dev)
@@ -456,6 +463,7 @@ end
 local function release_rgb_control(dev)
   dev.lighting.frame_cache, dev.lighting.sleeping = nil, false
   dev.lighting.host = false
+  restore_power_timers(dev)
   retried(dev, RGB_EFFECTS, 0x50, bytes(1, 0, 0))
   retried(dev, PROFILE_MANAGEMENT, 0x60, bytes(ONBOARD_MODE), true)
 end

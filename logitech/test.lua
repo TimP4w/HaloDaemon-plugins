@@ -52,6 +52,20 @@ local function profile_management_tests(h, report)
   h:assert_eq(mixed, unhex("00 02 01 01 00 00 00 80 00 80 00 00 00 03 01 01 80 00 00 00 80 01 00 02"),
     "a preset mixes firmware actions with disabled rows")
   h:assert_eq(mixed_rows, { [0] = 1, [1] = 3 }, "row indexes map back to control-list indexes")
+  local tags = {}
+  for _, tag in ipairs(PM.LAYOUT_TAGS) do tags[#tags + 1] = { tag = tag } end
+  tags[#tags + 1] = { tag = 0xe0, feature = 0x4523 }
+  tags[#tags + 1] = { tag = 0xe1, feature = 0x1b05 }
+  h:assert(PM.layout_known(tags), "the tag list the parser lays out is recognised")
+  h:assert(not PM.layout_known({ table.unpack(tags, 2) }), "a profile layout with other tags is not edited")
+  h:assert_eq(PM.ref_index({ refs = PM.file_refs(tags) }, 0x1b05), 2, "the preset slot is the reference tagged 0x1b05")
+  h:assert_eq(PM.ref_index({ refs = PM.file_refs(tags) }, 0x8100), nil, "a feature without a reference has no slot")
+  local reuse_state = { profiles = { [1] = { parsed = { refs = { 4 } } } },
+    user = { entries = { { id = 4, type = 0x1b05 }, { id = 5, type = 0x1b05 }, { id = 1, type = 0x8101 } } } }
+  h:assert_eq(PM.unreferenced_entry(reuse_state, 0x1b05).id, 5, "an orphaned preset entry is reused")
+  local too_large, size_error = pcall(PM.write_entry, nil, { user = { entries = {} } }, 9, 0x1b05, string.rep("\0", 256))
+  h:assert(not too_large and tostring(size_error):find("directory limit", 1, true),
+    "a file beyond the directory's length byte is refused before anything is written")
 
   -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
   -- with both cluster and power-mode ownership claimed.
@@ -72,17 +86,39 @@ local function profile_management_tests(h, report)
     end
     return PM.serialize_directory({ entries = out })
   end
-  local function pm_reads(sub, user_dir, profile, devnum)
+  -- The tag list as the firmware pages it: 16 bytes per read, a reference cut
+  -- at the end of a page is re-read from its own offset.
+  local function tag_reads(sub, devnum, refs)
+    local tags = { 0x01, 0x02, 0x12, 0x13, 0x03, 0x0c, 0x0d, 0x0e, 0x0f, 0x07, 0x30 }
+    for ref = 0, refs - 1 do
+      tags[#tags + 1] = 0xe0 + ref; tags[#tags + 1] = 0x1b; tags[#tags + 1] = 0x05
+    end
+    tags[#tags + 1] = 0xff
+    local out, offset = {}, 0
+    while offset < #tags do
+      local page = { table.unpack(tags, offset + 1, math.min(offset + 16, #tags)) }
+      out[#out + 1] = report(0x11, devnum, sub, 0x11, page)
+      local consumed = 0
+      while consumed < #page do
+        local tag = page[consumed + 1]
+        if tag == 0xff then return out end
+        if tag >= 0xe0 then
+          if consumed + 3 > #page then break end
+          consumed = consumed + 3
+        else consumed = consumed + 1 end
+      end
+      offset = offset + consumed
+    end
+    return out
+  end
+  local function pm_reads(sub, user_dir, profile, devnum, refs)
     devnum = devnum or 0x01
-    local out = {
-      report(0x11, devnum, sub, 0x11, { 0x01, 0x02, 0x12, 0x13, 0x03, 0x0c, 0x0d, 0x0e, 0x0f, 0x07, 0x30,
-        0xe0, 0x1b, 0x05, 0xff }),
-      report(0x11, devnum, sub, 0x61, { 0x03, 0, 1 }),
-      report(0x11, devnum, sub, 0x81, {}),
-    }
+    local out = tag_reads(sub, devnum, refs or 1)
+    out[#out + 1] = report(0x11, devnum, sub, 0x61, { 0x03, 0, 1 })
+    out[#out + 1] = report(0x11, devnum, sub, 0x81, {})
     for _, r in ipairs(chunk_reports(sub, user_dir, devnum)) do out[#out + 1] = r end
     out[#out + 1] = report(0x11, devnum, sub, 0x81, {})
-    local factory_dir = directory({ { id = 1, type = 0x8101, data = FACTORY_PROFILE, location = 1 } })
+    local factory_dir = directory({ { id = 1, type = 0x8101, data = profile, location = 1 } })
     for _, r in ipairs(chunk_reports(sub, factory_dir, devnum)) do out[#out + 1] = r end
     out[#out + 1] = report(0x11, devnum, sub, 0x81, {})
     for _, r in ipairs(chunk_reports(sub, profile, devnum)) do out[#out + 1] = r end
@@ -170,12 +206,15 @@ local function profile_management_tests(h, report)
     "the second signature colour follows")
 
   managed:clear()
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   managed:set_boolean("host_mode", false)
   local release = managed:writes()
-  h:assert_eq(release[1].data[6], 0x00, "leaving host mode releases RGB software control")
-  h:assert_eq(release[2].data[5], 0x03, "leaving host mode returns to the onboard profile")
+  h:assert_eq({ release[1].data[4], release[1].data[8], release[1].data[9] }, { 0x71, 0, 60 },
+    "leaving host mode restores the firmware's idle timeout")
+  h:assert_eq(release[2].data[6], 0x00, "leaving host mode releases RGB software control")
+  h:assert_eq(release[3].data[5], 0x03, "leaving host mode returns to the onboard profile")
 
   -- In onboard mode an effect is stored in the active profile instead.
   local cycle_profile = PM.parse_profile(FACTORY_PROFILE, 1)
@@ -201,6 +240,9 @@ local function profile_management_tests(h, report)
   h:assert_eq({ table.unpack(activate.data, 5, 11) }, { 0x81, 0x01, 0x01, 0x00, 0x01, 0x00, 93 },
     "activation names the profile file, id and length")
   h:assert_eq(find_write(managed_effect, 0x02, 0x61, 0x05), nil, "an onboard-mode effect does not claim host mode")
+  managed:clear()
+  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
+  h:assert_eq(#managed:writes(), 0, "an effect the profile already holds is neither rewritten nor reloaded")
   local managed_status
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
@@ -220,16 +262,20 @@ local function profile_management_tests(h, report)
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x11, {}))
   managed:set_boolean("host_mode", true)
   local back_to_host = managed:writes()
   h:assert_eq(back_to_host[1].data[5], 0x05, "turning host mode on claims the LEDs first")
+  h:assert_eq(back_to_host[5].data[8], 0x01, "re-entering host mode moves the idle timeout again")
   h:assert_eq(back_to_host[#back_to_host].data[4], 0x11, "then the last effect plays live")
   managed:clear()
   queue_file_write(managed, 0x02, signature_data)
   queue_file_write(managed, 0x02, directory({ { id = 1, type = 0x8101, data = signature_data, location = 8 } }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x91, {}))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 0, 0 }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   managed:apply({ mode = "native_effect", id = "signature",
@@ -239,13 +285,16 @@ local function profile_management_tests(h, report)
     "the signature's colours and brightness go to LED records 0 and 2")
   h:assert_eq(signature_writes[#signature_writes].data[5], 0x03, "the signature ends in onboard mode")
   h:assert_eq(signature_writes[#signature_writes - 1].data[6], 0x00, "the signature releases software control")
+  h:assert_eq(signature_writes[#signature_writes - 2].data[4], 0x71, "the signature gives the idle timeout back")
 
   managed:clear()
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 0, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 0, 0, 0, 0, 60, 0x01, 0x2c }))
+  managed:queue_read(report(0x11, 0x01, 0x01, 0x71, { 1 }))
   managed:set_boolean("host_mode", true)
-  h:assert_eq(#managed:writes(), 3, "host mode after the signature only claims the LEDs")
+  h:assert_eq(#managed:writes(), 5, "host mode after the signature claims the LEDs and plays nothing")
   managed:clear()
   managed:queue_read(report(0x11, 0x01, 0x01, 0x51, { 1, 3, 4 }))
   managed:queue_read(report(0x11, 0x01, 0x01, 0x81, {}))
@@ -262,8 +311,8 @@ local function profile_management_tests(h, report)
   managed:pump_events()
   h:assert_eq(#managed:writes(), 0, "the idle/active pair that follows a claim is ignored")
 
-  -- FULL_KEY_CUSTOMIZATION keyboards take keys over through a preset file in
-  -- PROFILE_MANAGEMENT flash and report them as triggers.
+  -- FULL_KEY_CUSTOMIZATION keyboards take keys over through one preset file
+  -- per layer in PROFILE_MANAGEMENT flash and report them as triggers.
   local fkc_reads = {
     report(0x10, 0xff, 0x00, 0x01, { 4 }),
     report(0x11, 0xff, 0x04, 0x01, { 3 }),
@@ -271,7 +320,8 @@ local function profile_management_tests(h, report)
     report(0x11, 0xff, 0x04, 0x11, { 0x1b, 0x05 }),
     report(0x11, 0xff, 0x04, 0x11, { 0x1b, 0x10 }),
   }
-  for _, r in ipairs(pm_reads(0x01, user_dir, FACTORY_PROFILE, 0xff)) do fkc_reads[#fkc_reads + 1] = r end
+  local fkc_user_dir = directory({ { id = 1, type = 0x8101, data = live_profile, location = 8 } })
+  for _, r in ipairs(pm_reads(0x01, fkc_user_dir, live_profile, 0xff, 4)) do fkc_reads[#fkc_reads + 1] = r end
   fkc_reads[#fkc_reads + 1] = report(0x11, 0xff, 0x03, 0x01, { 3 })
   fkc_reads[#fkc_reads + 1] = report(0x11, 0xff, 0x03, 0x11, { 0x01, 0x4c, 0x01, 0x22, 0x00, 0x4e })
   local fkc_dev = h:open({ pid = 0xc356, reads = fkc_reads })
@@ -283,9 +333,9 @@ local function profile_management_tests(h, report)
   h:assert(not fkc_status.requires_host_mode, "onboard key assignments do not depend on host mode")
 
   local preset = FKC.disable_preset({ 1 })
-  local profile_with_ref = FACTORY_PROFILE:sub(1, 91) .. "\0\2"
+  local profile_with_ref = live_profile:sub(1, 91) .. "\0\2" .. live_profile:sub(94)
   local dir_with_preset = directory({
-    { id = 1, type = 0x8101, data = FACTORY_PROFILE, location = 8 },
+    { id = 1, type = 0x8101, data = live_profile, location = 8 },
     { id = 2, type = 0x1b05, data = preset, location = 1 },
   })
   local dir_with_ref = directory({
@@ -326,15 +376,101 @@ local function profile_management_tests(h, report)
     "the profile activation is followed by a mode read")
 
   fkc_dev:clear()
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01 }))
+  fkc_dev:set_button_mapping({ cid = 0x0122,
+    base = { type = "disable" }, shifted = { type = "native" } })
+  h:assert_eq(#fkc_dev:writes(), 0, "a mapping that produces the same row writes nothing")
+
+  fkc_dev:clear()
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, { 0x01 }))
   local fkc_pressed = fkc_dev:pump_events()
-  h:assert_eq(fkc_pressed[1].pressed[1], 0x0122, "a trigger bitmap names the key by its row index")
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01 }))
+  h:assert_eq(fkc_pressed[1].pressed[1], 0x0122, "a base-layer bitmap names the key by its row index")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, { 0x01 }))
   local fkc_held = fkc_dev:pump_events()
   h:assert_eq(#fkc_held[1].pressed + #fkc_held[1].released, 0, "a repeated bitmap of the same key changes nothing")
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, {}))
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, {}))
   local fkc_released = fkc_dev:pump_events()
   h:assert_eq(fkc_released[1].released[1], 0x0122, "an empty bitmap releases the key")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x00, 0xff, 0xff }))
+  h:assert_eq(fkc_dev:pump_events()[1].pressed[1], 0x0122, "a base-layer list names the key by its row index")
+  local empty_list = {}
+  for _ = 1, 15 do empty_list[#empty_list + 1] = 0xff end
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, empty_list))
+  h:assert_eq(fkc_dev:pump_events()[1].released[1], 0x0122, "a list of padding releases the key")
+
+  -- The layer key is a firmware G-shift row in the base preset; the shifted
+  -- actions live in the G-shift layer's own preset, so the host's layer
+  -- state never touches flash.
+  local shifted_base = FKC.preset({ [0] = FKC.GSHIFT_ROW, [1] = FKC.native_row({ type = "disable" }) })
+  local dir_shifted_base = directory({
+    { id = 1, type = 0x8101, data = profile_with_ref, location = 8 },
+    { id = 2, type = 0x1b05, data = shifted_base, location = 1 },
+  })
+  fkc_dev:clear()
+  queue_file_write(fkc_dev, 0x01, shifted_base, 0xff)
+  queue_file_write(fkc_dev, 0x01, dir_shifted_base, 0xff)
+  fkc_dev:queue_read(report(0x11, 0xff, 0x02, 0x31, { 1, 1 }))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x61, { 3, 0, 1 }))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:set_button_mapping({ cid = 0x014c, base = { type = "layer_shift" }, shifted = { type = "native" } })
+  local layer_key_writes = fkc_dev:writes()
+  h:assert_eq(appended_file(layer_key_writes, 0x01, 1, #shifted_base), shifted_base,
+    "the layer key is written as a G-shift row of the base preset")
+  h:assert_eq(find_write(layer_key_writes, 0x01, 0x21, 0).data[6], #shifted_base,
+    "the base preset keeps its file and grows in place")
+
+  local gshift_preset = FKC.disable_preset({ 2 })
+  local profile_two_layers = profile_with_ref:sub(1, 95) .. "\0\3" .. profile_with_ref:sub(98)
+  local dir_gshift = directory({
+    { id = 1, type = 0x8101, data = profile_with_ref, location = 8 },
+    { id = 2, type = 0x1b05, data = shifted_base, location = 1 },
+    { id = 3, type = 0x1b05, data = gshift_preset, location = 2 },
+  })
+  local dir_two_layers = directory({
+    { id = 1, type = 0x8101, data = profile_two_layers, location = 8 },
+    { id = 2, type = 0x1b05, data = shifted_base, location = 1 },
+    { id = 3, type = 0x1b05, data = gshift_preset, location = 2 },
+  })
+  fkc_dev:clear()
+  queue_file_write(fkc_dev, 0x01, gshift_preset, 0xff)
+  queue_file_write(fkc_dev, 0x01, dir_gshift, 0xff)
+  queue_file_write(fkc_dev, 0x01, profile_two_layers, 0xff)
+  queue_file_write(fkc_dev, 0x01, dir_two_layers, 0xff)
+  fkc_dev:queue_read(report(0x11, 0xff, 0x02, 0x31, { 1, 1 }))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x61, { 3, 0, 1 }))
+  fkc_dev:queue_read(report(0x11, 0xff, 0x01, 0x91, {}))
+  fkc_dev:set_button_mapping({ cid = 0x004e,
+    base = { type = "native" }, shifted = { type = "open_app", path = "calc" } })
+  local gshift_writes = fkc_dev:writes()
+  h:assert_eq(appended_file(gshift_writes, 0x01, 1, #gshift_preset), gshift_preset,
+    "a shifted action is a disabled row in the G-shift layer's preset")
+  local gshift_save = find_write(gshift_writes, 0x01, 0x71)
+  h:assert_eq({ gshift_save.data[5], gshift_save.data[6] }, { 0, 2 }, "the G-shift preset takes the next free sector")
+  local profile_rewrites = 0
+  for _, w in ipairs(gshift_writes) do
+    if w.data[3] == 0x01 and w.data[4] == 0x21 and w.data[6] == #profile_two_layers then profile_rewrites = profile_rewrites + 1 end
+  end
+  h:assert_eq(profile_rewrites, 1, "the profile is rewritten once to reference the G-shift preset")
+  local configures = {}
+  for _, w in ipairs(gshift_writes) do
+    if w.data[3] == 0x01 and w.data[4] == 0x91 then configures[#configures + 1] = { w.data[5], w.data[6], w.data[8], w.data[9] } end
+  end
+  h:assert_eq(configures, { { 0x81, 0x01, 0x00, 0x01 }, { 0x1b, 0x05, 0x00, 0x03 } },
+    "only the changed layer's preset is configured after the profile")
+
+  fkc_dev:clear()
+  fkc_dev:key_remap_layer(true)
+  fkc_dev:key_remap_layer(false)
+  h:assert_eq(#fkc_dev:writes(), 0, "the host's layer shift writes nothing to a layer-preset keyboard")
+
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x50, { 0x01 }))
+  local gshift_pressed = fkc_dev:pump_events()
+  h:assert_eq(gshift_pressed[1].pressed, { 0x014c, 0x004e },
+    "a G-shift-layer bitmap reports the layer key before the key, by that layer's row index")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x50, {}))
+  local gshift_released = fkc_dev:pump_events()
+  h:assert_eq(#gshift_released[1].released, 2, "releasing the G-shift layer releases the layer key too")
 end
 
 return function(h)
@@ -370,7 +506,8 @@ return function(h)
   } })
   h:assert(waking_dev:initialize(), "cold G502 retries its initial ROOT lookup")
   h:assert_eq(#waking_dev:writes(), 4,
-    "cold-device retry repeats ROOT once before feature enumeration")
+    "the unanswered ROOT lookup is repeated once before feature enumeration")
+  h:assert_eq(waking_dev:writes()[2].data[1], 0x11, "the repeat goes out as a long report")
 
   -- The same UNIFIED_BATTERY feature is queried using its enumerated runtime
   -- index.  It reports percentage directly and byte 3 signals charging.
@@ -1460,9 +1597,26 @@ return function(h)
   } })
   h:assert(not asleep_headset:initialize(), "an error reply rejects rather than fails init")
 
+  -- A host that accepts a short write for a long-only device leaves the request
+  -- unanswered; the plugin then repeats it as a long report and stays long.
+  local silent_short = h:open({ pid = 0x0aba, reads = {
+    {}, {}, {}, {},
+    report(0x11, 0xff, 0x00, 0x01, { 2 }),
+    report(0x11, 0xff, 0x02, 0x01, { 1 }),
+    report(0x11, 0xff, 0x02, 0x11, { 0x83, 0x00 }),
+    report(0x11, 0xff, 0xff, 0x01, { 0x01, 0x05 }),
+  } })
+  silent_short:initialize()
+  local silent_short_writes = silent_short:writes()
+  h:assert_eq(silent_short_writes[1].data[1], 0x10, "an unknown device is probed with a short report")
+  h:assert_eq({ silent_short_writes[2].data[1], silent_short_writes[2].data[3], silent_short_writes[2].data[4] },
+    { 0x11, 0x00, 0x01 }, "an unanswered short request is repeated as a long one")
+  h:assert_eq(silent_short_writes[3].data[1], 0x11, "later requests stay long")
+
   local silent_child = h:open({ key = "1", reads = {
-    -- three wake-ping attempts, four empty read windows each
-    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+    -- three wake-ping attempts of four empty read windows each; the first is
+    -- repeated as a long report, the rest go long from the start
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
   } })
   h:assert(not silent_child:initialize(), "a device that answers nothing is rejected")
 

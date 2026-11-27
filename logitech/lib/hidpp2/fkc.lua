@@ -12,6 +12,9 @@ local M = {}
 M.OP_DISABLE, M.OP_MOUSE, M.OP_KEY, M.OP_CONSUMER, M.OP_GSHIFT = 0x8000, 0x8001, 0x8002, 0x8003, 0x8004
 M.ACTION_DISABLE, M.ACTION_MODIFIER_ONLY = 0x8000, 0x4000
 M.ROW_SIZE = 9
+-- A profile references one preset file per layer, in this order.
+M.LAYER_BASE, M.LAYER_FN, M.LAYER_GSHIFT, M.LAYER_MACROS = 0, 1, 2, 3
+M.LIST_PADDING = 0xff
 
 local function u16(s, i) return ((s:byte(i) or 0) << 8) | (s:byte(i + 1) or 0) end
 
@@ -88,6 +91,8 @@ function M.decode_preset(data)
 end
 
 local DISABLE_ROW = { action = M.ACTION_DISABLE, opcode = M.OP_DISABLE }
+-- Holding the key switches the firmware to the G-shift layer.
+M.GSHIFT_ROW = { opcode = M.OP_GSHIFT, params = 0x0002 }
 -- Rows that run an action match the plain key press.
 M.FLAG_SINGLE_KEY = 0x80
 local MOUSE_BUTTONS = { left = 1, right = 2, middle = 3, back = 4, forward = 5 }
@@ -98,11 +103,27 @@ local CONSUMER_USAGES = { play = 0xcd, next = 0xb5, prev = 0xb6, volume_up = 0xe
 function M.native_row(action)
   local kind = type(action) == "table" and action.type
   if kind == "disable" then return DISABLE_ROW
+  elseif kind == "layer_shift" then return M.GSHIFT_ROW
   elseif kind == "mouse_button" and MOUSE_BUTTONS[action.btn] then
     return { flags = M.FLAG_SINGLE_KEY, opcode = M.OP_MOUSE, params = 1 << (MOUSE_BUTTONS[action.btn] - 1) }
   elseif kind == "media_key" and CONSUMER_USAGES[action.key] then
     return { flags = M.FLAG_SINGLE_KEY, opcode = M.OP_CONSUMER, params = CONSUMER_USAGES[action.key] }
   end
+end
+
+-- True when the firmware performs the action itself (a mouse button or a
+-- consumer key), so a host acting on the trigger would repeat it.
+function M.firmware_action(action)
+  local row = M.native_row(action)
+  return row ~= nil and row.opcode ~= M.OP_DISABLE and row.opcode ~= M.OP_GSHIFT
+end
+
+-- The row a layer's action puts in that layer's preset: nil for a native
+-- action (the key keeps its plain function), the firmware's own row where it
+-- has one, otherwise a disabled row that the host acts on.
+function M.layer_row(action)
+  if type(action) ~= "table" or action.type == nil or action.type == "native" then return nil end
+  return M.native_row(action) or DISABLE_ROW
 end
 
 -- One group per taken-over key, in control-list order: `rows` maps a cidx to
@@ -127,20 +148,33 @@ function M.disable_preset(cidxs)
   return (M.preset(rows))
 end
 
--- Event 0 is a 128-bit bitmap of the row indexes currently held. Returns the
--- set of their control-list indexes, or nil for any other report.
+-- Trigger events come in a list/bitmap pair per layer: functions 0/1 base,
+-- 2/3 Fn, 4/5 G-shift. A list holds up to 15 row indexes padded with 0xff; a
+-- bitmap holds 128 bits, bit 0 of byte 0 = row 0, of the rows currently held.
+-- Returns the set of control-list indexes held on that layer and the layer,
+-- or nil for any other report.
 function M.trigger_event(dev, report)
   local features = dev.hidpp and dev.hidpp.features
-  if not features or report:byte(3) ~= features[FKC] or report:byte(4) ~= 0x00 then return nil end
-  local rows, pressed = dev.fkc and dev.fkc.rows or {}, {}
-  for i = 5, math.min(#report, 20) do
-    local byte = report:byte(i)
-    for bit = 0, 7 do
-      local cidx = (byte & (1 << bit)) ~= 0 and rows[(i - 5) * 8 + bit]
+  if not features or report:byte(3) ~= features[FKC] then return nil end
+  local fn = (report:byte(4) or 0xff) >> 4
+  if fn > 5 then return nil end
+  local layer = fn >> 1
+  local rows, pressed = dev.fkc and dev.fkc.rows and dev.fkc.rows[layer] or {}, {}
+  if fn & 1 == 0 then
+    for i = 5, math.min(#report, 19) do
+      local cidx = report:byte(i) ~= M.LIST_PADDING and rows[report:byte(i)]
       if cidx then pressed[cidx] = true end
     end
+  else
+    for i = 5, math.min(#report, 20) do
+      local byte = report:byte(i)
+      for bit = 0, 7 do
+        local cidx = (byte & (1 << bit)) ~= 0 and rows[(i - 5) * 8 + bit]
+        if cidx then pressed[cidx] = true end
+      end
+    end
   end
-  return pressed
+  return pressed, layer
 end
 
 return M
