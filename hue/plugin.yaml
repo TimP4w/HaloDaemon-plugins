@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: HaloDaemon
+id: hue
+type: integration
+name: Philips Hue
+author: HaloDaemon
+version: 1.1.0
+api: "1.0"
+license: GPL-3.0-or-later
+description: Controls Philips Hue lights through a local bridge using the CLIP v2 API.
+translations:
+  it:
+    plugin.name: Philips Hue
+    plugin.description: Controlla le luci Philips Hue tramite un bridge locale usando l'API CLIP v2.
+    setup.auth.title: Premi il pulsante di collegamento del bridge
+    setup.auth.instructions.0: Premi il grande pulsante rotondo sulla parte superiore del bridge Hue.
+    setup.auth.instructions.1: Torna qui e avvia l'associazione entro 30 secondi.
+capabilities: [lighting]
+transports:
+  http:
+    # The plugin owns Signify's Hue root. Halo performs standard WebPKI chain,
+    # identity, validity-period and signature verification.
+    host_key: host
+    port_key: port
+    origins: ["https://{host}"]
+    methods: [GET, PUT, POST]
+    allow_private: true
+    max_timeout_ms: 3000
+    tls:
+      profile: custom-ca
+      ca_der_base64: MIICMjCCAdigAwIBAgIUO7FSLbaxikuXAljzVaurLXWmFw4wCgYIKoZIzj0EAwIwOTELMAkGA1UEBhMCTkwxFDASBgNVBAoMC1BoaWxpcHMgSHVlMRQwEgYDVQQDDAtyb290LWJyaWRnZTAiGA8yMDE3MDEwMTAwMDAwMFoYDzIwMzgwMTE5MDMxNDA3WjA5MQswCQYDVQQGEwJOTDEUMBIGA1UECgwLUGhpbGlwcyBIdWUxFDASBgNVBAMMC3Jvb3QtYnJpZGdlMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEjNw2tx2AplOf9x86aTdvEcL1FU65QDxziKvBpW9XXSIcibAeQiKxegpq8Exbr9v6LBnYbna2VcaK0G22jOKkTqOBuTCBtjAPBgNVHRMBAf8EBTADAQH/MA4GA1UdDwEB/wQEAwIBhjAdBgNVHQ4EFgQUZ2ONTFrDT6o8ItRnKfqWKnHFGmQwdAYDVR0jBG0wa4AUZ2ONTFrDT6o8ItRnKfqWKnHFGmShPaQ7MDkxCzAJBgNVBAYTAk5MMRQwEgYDVQQKDAtQaGlsaXBzIEh1ZTEUMBIGA1UEAwwLcm9vdC1icmlkZ2WCFDuxUi22sYpLlwJY81Wrqy11phcOMAoGCCqGSM49BAMCA0gAMEUCIEBYYEOsa07TH7E5MJnGw557lVkORgit2Rm1h3B2sFgDAiEA1Fj/C3AN5psFMjo0//mrQebo0eKd3aWRx+pQY08mk48=
+      verify_identity: bridge_id
+      certificate_identity: subject-cn
+setup:
+  modes: [automatic, manual]
+  discovery:
+    mdns: ["_hue._tcp.local."]
+  auth:
+    kind: button
+    title: Press the bridge link button
+    instructions:
+      - Press the large round button on top of the Hue Bridge.
+      - Return here and start pairing within 30 seconds.
+config:
+  fields:
+    - key: host
+      label: Bridge address
+      kind: host
+      default: "192.168.1.60"
+    - key: port
+      label: Bridge port
+      kind: port
+      default: "443"
+    - key: bridge_id
+      label: Bridge ID
+      kind: text
+      help: Certificate identity advertised by the bridge during discovery.
+    - key: app_key
+      label: Application key
+      kind: text
+      secure: true
+    # Captured at pairing alongside app_key so Entertainment streaming (DTLS/UDP)
+    # needs no re-pairing once the UDP transport lands.
+    - key: client_key
+      label: Entertainment client key
+      kind: text
+      secure: true

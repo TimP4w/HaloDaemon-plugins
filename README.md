@@ -22,6 +22,7 @@ catalog.
 | [`halo_effects`](halo_effects/) | Stock pixmap and direct RGB effects | Effect API | [Callback contract](halo_effects/docs/protocol.md) |
 | [`halo_lcd`](halo_lcd/) | Stock LCD widgets and presets | LCD widget API | [Rendering contract](halo_lcd/docs/protocol.md), [Lua API](docs/lua-api.md#lcd-widget-api) |
 | [`hwmon`](hwmon/) | Linux temperature sensors and motherboard fan headers | hwmon | [Integration behavior](hwmon/docs/protocol.md) |
+| [`hue`](hue/) | Philips Hue lights via a local bridge (CLIP v2) | HTTPS | [Protocol](hue/docs/protocol.md) |
 | [`logitech`](logitech/) | Declared Logitech HID++ devices and receivers | HID | [Overview](logitech/docs/protocol.md), [HID++ 1.0](logitech/docs/hidpp1.md), [HID++ 2.0](logitech/docs/hidpp2.md) |
 | [`nanoleaf`](nanoleaf/) | Nanoleaf light-panel controllers | HTTP + UDP | [Protocol](nanoleaf/docs/protocol.md) |
 | [`nvidia`](nvidia/) | GPUs reported by `nvidia-smi` | Command | [Protocol](nvidia/docs/protocol.md) |
