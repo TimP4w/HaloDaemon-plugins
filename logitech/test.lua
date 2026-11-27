@@ -43,6 +43,15 @@ local function profile_management_tests(h, report)
   h:assert_eq(preset_groups[1].rows[2].index, 1, "rows are numbered across the file")
   h:assert_eq(FKC.disable_preset({ 7, 2 }), unhex("00 02 02 01 00 00 00 80 00 80 00 00 00 07 01 01 00 00 80 00 80 00 00 00"),
     "taken-over keys become sorted big-endian disabled rows")
+  h:assert_eq(FKC.native_row({ type = "mouse_button", btn = "right" }),
+    { flags = 0x80, opcode = 0x8001, params = 0x0002 }, "a mouse button runs in the firmware as a button mask")
+  h:assert_eq(FKC.native_row({ type = "media_key", key = "volume_up" }),
+    { flags = 0x80, opcode = 0x8003, params = 0xe9 }, "a media key runs in the firmware as a consumer usage")
+  h:assert_eq(FKC.native_row({ type = "key_chord", key = 30, modifiers = {} }), nil, "other actions stay on the host")
+  local mixed, mixed_rows = FKC.preset({ [3] = FKC.native_row({ type = "mouse_button", btn = "right" }), [1] = true })
+  h:assert_eq(mixed, unhex("00 02 01 01 00 00 00 80 00 80 00 00 00 03 01 01 80 00 00 00 80 01 00 02"),
+    "a preset mixes firmware actions with disabled rows")
+  h:assert_eq(mixed_rows, { [0] = 1, [1] = 3 }, "row indexes map back to control-list indexes")
 
   -- A keyboard with PROFILE_MANAGEMENT only shows host lighting in host mode
   -- with both cluster and power-mode ownership claimed.
@@ -312,13 +321,13 @@ local function profile_management_tests(h, report)
     "the profile activation is followed by a mode read")
 
   fkc_dev:clear()
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, { 0x02 }))
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01 }))
   local fkc_pressed = fkc_dev:pump_events()
-  h:assert_eq(fkc_pressed[1].pressed[1], 0x0122, "a trigger bitmap names the key by control id")
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01, 0xff }))
+  h:assert_eq(fkc_pressed[1].pressed[1], 0x0122, "a trigger bitmap names the key by its row index")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, { 0x01 }))
   local fkc_held = fkc_dev:pump_events()
-  h:assert_eq(#fkc_held[1].pressed + #fkc_held[1].released, 0, "a trigger list of the same key changes nothing")
-  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x10, {}))
+  h:assert_eq(#fkc_held[1].pressed + #fkc_held[1].released, 0, "a repeated bitmap of the same key changes nothing")
+  fkc_dev:queue_event(report(0x11, 0xff, 0x02, 0x00, {}))
   local fkc_released = fkc_dev:pump_events()
   h:assert_eq(fkc_released[1].released[1], 0x0122, "an empty bitmap releases the key")
 end
@@ -820,6 +829,7 @@ return function(h)
   local receiver = h:open({ pid = 0xc547, reads = {
     report(0x10, 0xff, 0x81, 0, {0x01,0x10,0x02}),
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x03, 0x4b, 0xa7, 0xd6, 0x46, 0x07, 0x02, 0x1a, 0xff, 0x02 }),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0, 0, 0x12, 0x34 }), -- stale bank reply
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0, 0, 0, 0x01 }),
@@ -829,6 +839,7 @@ return function(h)
   h:assert_eq(receiver:writes()[1].data[3], 0x81, "receiver reads notification flags first")
   h:assert_eq(receiver:writes()[2].data,{0x10,0xff,0x80,0,0x01,0x19,0x02},
     "receiver adds wireless and software notifications without clearing other flags")
+  h:assert_eq(receiver:writes()[3].data[5], 0x03, "receiver asks for its own information record")
   receiver:clear()
   local children = receiver:enumerate_controllers()
   h:assert_eq(#children, 1, "receiver enumerates one paired slot")
@@ -839,6 +850,14 @@ return function(h)
   h:assert_eq(receiver_writes[2].data[3], 0x83, "receiver-info uses banked HID++ 1.0 read")
   h:assert_eq(receiver_writes[2].data[5], 0x20, "pairing info slot selector")
   h:assert_eq(receiver_writes[3].data[5], 0x30, "extended-pairing selector")
+  local function slot_probes(writes)
+    local n = 0
+    for _, w in ipairs(writes) do
+      if w.data[3] == 0x83 and w.data[5] >= 0x20 and w.data[5] <= 0x25 then n = n + 1 end
+    end
+    return n
+  end
+  h:assert_eq(slot_probes(receiver_writes), 2, "slot scan stops at the capacity the receiver reports")
 
   -- Receiver behavior is a device capability shared by the HID++ 1.x
   -- families, not a special case tied to the C547 LIGHTSPEED PID. The pairing
@@ -846,6 +865,7 @@ return function(h)
   local unifying = h:open({ pid = 0xc52b, reads = {
     report(0x10, 0xff, 0x81, 0, {0,0,0}),
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x03, 0x12, 0x34, 0x56, 0x78 }),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x12, 0x34, 0, 0, 0x02 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0x12, 0x34, 0x56, 0x78 }),
@@ -854,6 +874,8 @@ return function(h)
   local unifying_children = unifying:enumerate_controllers()
   h:assert_eq(#unifying_children, 1, "Unifying receiver enumerates paired slot")
   h:assert_eq(unifying_children[1].device_type, "mouse", "pairing-record kind supplies device type")
+  h:assert_eq(slot_probes(unifying:writes()), 6,
+    "a receiver that withholds its slot count keeps the catalog value")
 
   local wireless_child = h:open({ key = "1", reads = {
     report(0x10, 0x01, 0x00, 0x11, { 4, 5, 0x5a }), -- wake ping: live, protocol 4.5
@@ -1253,6 +1275,7 @@ return function(h)
   local mixed_rx = h:open({ pid = 0xc547, companion = true, reads = {
     report(0x10, 0xff, 0x81, 0, {0,0,0}),
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x03, 0x4b, 0xa7, 0xd6, 0x46, 0x07, 0x02, 0x1a, 0xff, 0x02 }),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0, 0, 0x40, 0xb0 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0xab, 0xcd, 0xef, 0x12 }),
@@ -1268,6 +1291,7 @@ return function(h)
   local sparse_rx = h:open({ pid = 0xc547, reads = {
     report(0x10, 0xff, 0x81, 0, {0,0,0}),
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x03, 0x4b, 0xa7, 0xd6, 0x46, 0x07, 0x02, 0x1a, 0xff, 0x02 }),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x10, 0xff, 0x8f, 0x83, { 0xb5, 0x09 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x21, 0, 0, 0x40, 0x99, 0, 0, 0x02 }),
@@ -1712,6 +1736,7 @@ return function(h)
   local unlisted_rx = h:open({ pid = 0xc547, reads = {
     report(0x10, 0xff, 0x81, 0, {0,0,0}),
     report(0x10, 0xff, 0x80, 0, {0,9,0}),
+    report(0x11, 0xff, 0x83, 0xb5, { 0x03, 0x4b, 0xa7, 0xd6, 0x46, 0x07, 0x02, 0x1a, 0xff, 0x02 }),
     report(0x10, 0xff, 0x81, 0x02, { 0, 1 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x20, 0x1b, 0x08, 0x40, 0xb7, 0x11, 0, 0x01 }),
     report(0x11, 0xff, 0x83, 0xb5, { 0x30, 0x68, 0x2f, 0xd5, 0xfd }),

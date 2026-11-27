@@ -292,6 +292,14 @@ local function receiver_children(dev)
   return hidpp1.receiver_children(dev, branded, paired_device_type)
 end
 
+-- Receiver information (0x02B5 selector 0x03): bytes 2-5 serial, byte 7 the
+-- number of pairing slots this receiver offers.
+local function receiver_capacity(dev)
+  local ok, info = pcall(v1_read, dev, DIRECT, 0x02b5, bytes(0x03))
+  local slots = ok and info:byte(7) or 0
+  return slots >= 1 and slots <= 6 and slots or nil
+end
+
 local profiles = halod.require("lib.hidpp2.profiles")()
 local device_profile = profiles.device_profile
 local keyboard_with_remap = profiles.keyboard_with_remap
@@ -511,12 +519,23 @@ local function active_profile(dev)
   return state, id, profile, profile.parsed or error("onboard profile could not be decoded")
 end
 
--- Reloads the profile so the firmware picks up a changed file; the lighting
--- claim is renewed because activation hands the LEDs back to the firmware.
+local callbacks
+
+-- Reloads the profile so the firmware picks up a changed file. Activation
+-- hands the LEDs back to the profile, so the claim is renewed and the
+-- selected host lighting is played again.
 local function activate_profile(dev, state, id, reclaim)
   pm.activate_profile(dev, state, id)
   state.mode = pm.mode(dev)
-  if reclaim ~= false and dev.lighting and dev.lighting.host then restore_rgb_control(dev) end
+  if reclaim == false or not dev.lighting or not dev.lighting.host then return end
+  restore_rgb_control(dev)
+  local last = dev.lighting.last_state
+  if last and not dev.lighting.replaying then
+    dev.lighting.replaying = true
+    local ok, err = pcall(callbacks.apply, dev, last)
+    dev.lighting.replaying = nil
+    if not ok then error(err) end
+  end
 end
 
 -- Writes the LED records of the active profile and makes the firmware reload it.
@@ -537,12 +556,16 @@ end
 
 -- The taken-over keys live in a FULL_KEY_CUSTOMIZATION preset file that the
 -- active profile's first 0x1b05 reference names.
-local function write_fkc_preset(dev, cidxs)
+local function write_fkc_preset(dev, rows)
   local state, id, _, p = active_profile(dev)
-  log(string.format("logitech: key preset for profile %d takes over %d key(s)", id, #cidxs), "info")
+  local count = 0
+  for _ in pairs(rows) do count = count + 1 end
+  log(string.format("logitech: key preset for profile %d takes over %d key(s)", id, count), "info")
   if #state.refs == 0 then error("onboard profile cannot reference a key preset") end
   local file_id = p.refs[1] or next_file_id(state.user)
-  local entry = pm.write_entry(dev, state, file_id, pm.FKC_TYPE, fkc.disable_preset(cidxs))
+  local data, by_index = fkc.preset(rows)
+  local entry = pm.write_entry(dev, state, file_id, pm.FKC_TYPE, data)
+  dev.fkc.rows = by_index
   if p.refs[1] ~= file_id then
     p.refs[1] = file_id
     pm.write_profile(dev, state, id, pm.serialize_profile(p))
@@ -626,7 +649,6 @@ local function write_eq_bands(dev, values)
   for i = 1, eq.count do eq.result.bands[i].value = applied[i] end
 end
 
-local callbacks
 callbacks = {
   event_source = function(event)
     local report = event.report
@@ -697,6 +719,8 @@ callbacks = {
       local f0, f1, f2 = 0, 0, 0
       if ok then f0, f1, f2 = flags:byte(1) or 0, flags:byte(2) or 0, flags:byte(3) or 0 end
       v1_write(dev, DIRECT, 0x0000, bytes(f0, f1 | 0x09, f2), true)
+      dev.receiver = { name = dev.receiver.name,
+        max_slots = receiver_capacity(dev) or dev.receiver.max_slots }
       return { ok = true, model = dev.receiver.name, capabilities = { "pairing" } }
     end
     local devnum = tonumber(dev.match.key) or dev.match.index or DIRECT

@@ -105,15 +105,17 @@ local function write_spy_table(dev)
   feature(dev, MOUSE_BUTTON_SPY, 0x40, bytes(table.unpack(out)))
 end
 
--- Control-list indexes of every key whose native output is suppressed.
+-- Preset rows by control-list index for every key whose native output is
+-- suppressed: the firmware runs the action itself where it can, otherwise the
+-- key is disabled and reported to the host.
 suppressed_cidxs = function(dev)
   local remap, out = dev.remap, {}
   local cids = {}
   for cid in pairs(remap.base) do cids[cid] = true end
   for cid in pairs(remap.shifted) do cids[cid] = true end
   for cid in pairs(cids) do
-    local cidx = dev.fkc.index[cid]
-    if cidx and suppressed(remap, cid) then out[#out + 1] = cidx end
+    local cidx, action = dev.fkc.index[cid], suppressed(remap, cid)
+    if cidx and action then out[cidx] = fkc.native_row(action) or true end
   end
   return out
 end
@@ -202,11 +204,16 @@ local function button_events(dev, packet_in)
   local sub, address = packet_in:byte(3), packet_in:byte(4)
   local current = {}
   if remap.backend == "fkc" then
+    if sub == dev.hidpp.features[FKC] then
+      log(string.format("logitech: key customization event %s",
+        (packet_in:sub(4):gsub(".", function(c) return string.format("%02x ", c:byte()) end))), "info")
+    end
     local pressed = fkc.trigger_event(dev, packet_in)
     if not pressed then return nil end
     for cidx in pairs(pressed) do
       local cid = dev.fkc.cids[cidx]
-      if cid then current[#current + 1] = cid end
+      -- Keys whose action runs in the firmware are not the host's to act on.
+      if cid and not fkc.native_row(suppressed(remap, cid)) then current[#current + 1] = cid end
     end
   else
     if address ~= 0 then return nil end

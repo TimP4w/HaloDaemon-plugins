@@ -87,42 +87,60 @@ function M.decode_preset(data)
   return groups
 end
 
--- One disabled row per taken-over key: the firmware swallows the key and
--- reports it as a trigger instead.
-function M.disable_preset(cidxs)
-  table.sort(cidxs)
-  local groups = {}
-  for _, cidx in ipairs(cidxs) do
-    groups[#groups + 1] = { cidx = cidx, rows = { { action = M.ACTION_DISABLE, opcode = M.OP_DISABLE } } }
+local DISABLE_ROW = { action = M.ACTION_DISABLE, opcode = M.OP_DISABLE }
+-- Rows that run an action match the plain key press.
+M.FLAG_SINGLE_KEY = 0x80
+local MOUSE_BUTTONS = { left = 1, right = 2, middle = 3, back = 4, forward = 5 }
+local CONSUMER_USAGES = { play = 0xcd, next = 0xb5, prev = 0xb6, volume_up = 0xe9, volume_down = 0xea, mute = 0xe2 }
+
+-- The row the firmware runs on its own for an action; nil when the host has
+-- to run it (the key then gets a disabled row and is reported as a trigger).
+function M.native_row(action)
+  local kind = type(action) == "table" and action.type
+  if kind == "disable" then return DISABLE_ROW
+  elseif kind == "mouse_button" and MOUSE_BUTTONS[action.btn] then
+    return { flags = M.FLAG_SINGLE_KEY, opcode = M.OP_MOUSE, params = 1 << (MOUSE_BUTTONS[action.btn] - 1) }
+  elseif kind == "media_key" and CONSUMER_USAGES[action.key] then
+    return { flags = M.FLAG_SINGLE_KEY, opcode = M.OP_CONSUMER, params = CONSUMER_USAGES[action.key] }
   end
-  return M.encode_preset(groups)
 end
 
--- Trigger events name the layer in the function nibble: list or bitmap of
--- control-list indexes for base (0/1), Fn (2/3) and G-shift (4/5); 6 reports
--- the enabled state. Returns the set of pressed indexes, or nil.
+-- One group per taken-over key, in control-list order: `rows` maps a cidx to
+-- its row (true = disabled row). Also returns the cidx of each row index,
+-- which is how trigger events name a key.
+function M.preset(rows)
+  local cidxs = {}
+  for cidx in pairs(rows) do cidxs[#cidxs + 1] = cidx end
+  table.sort(cidxs)
+  local groups, by_index = {}, {}
+  for i, cidx in ipairs(cidxs) do
+    local row = rows[cidx]
+    groups[#groups + 1] = { cidx = cidx, rows = { row ~= true and row or DISABLE_ROW } }
+    by_index[i - 1] = cidx
+  end
+  return M.encode_preset(groups), by_index
+end
+
+function M.disable_preset(cidxs)
+  local rows = {}
+  for _, cidx in ipairs(cidxs) do rows[cidx] = DISABLE_ROW end
+  return (M.preset(rows))
+end
+
+-- Event 0 is a 128-bit bitmap of the row indexes currently held. Returns the
+-- set of their control-list indexes, or nil for any other report.
 function M.trigger_event(dev, report)
   local features = dev.hidpp and dev.hidpp.features
-  if not features or report:byte(3) ~= features[FKC] or (report:byte(4) & 0x0f) ~= 0 then return nil end
-  local fn = report:byte(4) >> 4
-  if fn > 5 then return nil end
-  local pressed = {}
-  if fn % 2 == 0 then
-    for i = 5, #report do
-      local cidx = report:byte(i)
-      if cidx == 0xff then break end
-      if i > 5 and cidx == 0 then break end
-      pressed[cidx] = true
-    end
-  else
-    for i = 5, math.min(#report, 20) do
-      local byte = report:byte(i)
-      for bit = 0, 7 do
-        if (byte & (1 << bit)) ~= 0 then pressed[(i - 5) * 8 + bit] = true end
-      end
+  if not features or report:byte(3) ~= features[FKC] or report:byte(4) ~= 0x00 then return nil end
+  local rows, pressed = dev.fkc and dev.fkc.rows or {}, {}
+  for i = 5, math.min(#report, 20) do
+    local byte = report:byte(i)
+    for bit = 0, 7 do
+      local cidx = (byte & (1 << bit)) ~= 0 and rows[(i - 5) * 8 + bit]
+      if cidx then pressed[cidx] = true end
     end
   end
-  return pressed, fn // 2
+  return pressed
 end
 
 return M

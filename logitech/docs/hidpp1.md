@@ -41,7 +41,7 @@ Registers (`v1/mod.rs`):
 |----------|-------|-----|
 | `0x0000` | notification flags | 3-byte bitfield; read-modify-write at receiver init to add wireless `0x000100` and software-present `0x000800` |
 | `0x0002` | `REG_DEVICE_COUNT` | write `[0x02]` → receiver re-broadcasts connect status; read → paired count in reply **byte 1** |
-| `0x02B5` | `REG_RECEIVER_INFO` | pairing records; sub-param `INFO_PAIRING 0x20` / `INFO_EXTENDED_PAIRING 0x30` / `INFO_DEVICE_NAME 0x40`, each `+ devnum − 1` |
+| `0x02B5` | `REG_RECEIVER_INFO` | sub-param `INFO_RECEIVER 0x03` → receiver serial in bytes 2–5, pairing-slot count in byte 7; pairing records `INFO_PAIRING 0x20` / `INFO_EXTENDED_PAIRING 0x30` / `INFO_DEVICE_NAME 0x40`, each `+ devnum − 1` |
 | `0x00B2` | `REG_RECEIVER_PAIRING` | open/close the pairing lock and unpair a slot (Unifying-style); see §2 |
 | `0x00F1` | firmware info | param `0x01`/`0x02` = firmware major.minor / build, `0x03` = bootloader (not used) |
 
