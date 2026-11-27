@@ -1337,6 +1337,12 @@ callbacks = {
       return
     end
     if not dev.lighting then return end
+    if state.mode == "static" and dev.pm and dev.lighting.host == false then
+      local wire, params = lighting.static_record(state.color or { r = 0, g = 0, b = 0 })
+      profile_lighting(dev, { [2] = { id = wire, params = params }, [4] = { id = wire, params = params } },
+        pm.FLAGS_CUSTOM)
+      return
+    end
     restore_rgb_control(dev)
     if state.mode == "per_led" then
       if dev.lighting.wire == "per_key" then
@@ -1351,12 +1357,6 @@ callbacks = {
     end
     if state.mode ~= "static" then return end
     local color = state.color or { r = 0, g = 0, b = 0 }
-    if dev.pm and dev.lighting.host == false then
-      local wire, params = lighting.static_record(color)
-      profile_lighting(dev, { [2] = { id = wire, params = params }, [4] = { id = wire, params = params } },
-        pm.FLAGS_CUSTOM)
-      return
-    end
     if dev.lighting.wire == "per_key" then
       local colors = {}; for _ = 1, #dev.lighting.led_ids do colors[#colors + 1] = color end
       write_per_key_frame(dev, colors)

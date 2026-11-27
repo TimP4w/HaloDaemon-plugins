@@ -243,6 +243,29 @@ local function profile_management_tests(h, report)
   managed:clear()
   managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
   h:assert_eq(#managed:writes(), 0, "an effect the profile already holds is neither rewritten nor reloaded")
+
+  local static_profile = PM.parse_profile(cycle_data, 1)
+  local static_params = { 1, 2, 3, 0x02, 0, 0, 0, 0, 0, 0 }
+  static_profile.leds[2] = { id = 0x01, params = static_params }
+  static_profile.leds[4] = { id = 0x01, params = static_params }
+  local static_data = PM.serialize_profile(static_profile)
+  managed:clear()
+  queue_file_write(managed, 0x02, static_data)
+  queue_file_write(managed, 0x02, directory({ { id = 1, type = 0x8101, data = static_data, location = 8 } }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x91, {}))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:apply({ mode = "static", color = { r = 1, g = 2, b = 3 } })
+  local static_writes = managed:writes()
+  h:assert_eq(appended_file(static_writes, 0x02, 1, #static_data), static_data,
+    "an onboard-mode static colour is written to LED records 1 and 3")
+  h:assert_eq(find_write(static_writes, 0x02, 0x61, 0x05), nil, "an onboard-mode static colour does not claim host mode")
+  managed:clear()
+  queue_file_write(managed, 0x02, cycle_data)
+  queue_file_write(managed, 0x02, directory({ { id = 1, type = 0x8101, data = cycle_data, location = 8 } }))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x91, {}))
+  managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
+  managed:apply({ mode = "native_effect", id = "color_cycle", params = {} })
+  managed:clear()
   local managed_status
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
   managed:queue_read(report(0x11, 0x01, 0x02, 0x61, { 3, 0, 1 }))
