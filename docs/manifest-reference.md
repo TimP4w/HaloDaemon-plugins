@@ -333,10 +333,13 @@ transports:
     timeout_ms: 1000
     feature_report: false
     companion: { usage_page: 0xff00, usage: 2 }
+    udev_vendor_wide: false
 ```
 
 `report_size: 0` means raw writes with no padding. A companion is a second HID
-collection on the same physical device.
+collection on the same physical device. `udev_vendor_wide: true` makes the
+generated Linux udev rules grant every hidraw node of each declared HID vendor
+ID, not only the listed product IDs; device matching is unchanged.
 
 ### USB
 

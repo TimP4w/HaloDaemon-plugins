@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 id: logitech
 name: Logitech HID++
-version: 1.2.0
+version: 1.2.2
 api: "1.0"
 license: GPL-3.0-or-later
 description: Logitech HID++ mice, keyboards, headsets, speakers and receivers.
@@ -84,3 +84,4 @@ transports:
     # (~2x this) so it can't back up queued RGB frames and button-input handling.
     timeout_ms: 250
     companion: { usage_page: 0xff00, usage: 2 }
+    udev_vendor_wide: true
